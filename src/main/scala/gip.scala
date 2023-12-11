@@ -23,7 +23,7 @@ object gip {
 
   sealed trait Identities {
     def providerGiven(email: Email, tenant: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
-    def verify(req: VerifyTokenRequest) : Task[CloudIdentity]
+    def verify(req: VerifyGoogleTokenRequest) : Task[CloudIdentity]
     def claims(req: SetClaimsRequest)   : Task[Unit]
   }
 
@@ -76,7 +76,7 @@ object gip {
         case _            => ZIO.succeed(None)
     }
 
-    override def verify(req: VerifyTokenRequest): Task[CloudIdentity] = {
+    override def verify(req: VerifyGoogleTokenRequest): Task[CloudIdentity] = {
 
       def build(token: FirebaseToken) = {
         CloudIdentity(

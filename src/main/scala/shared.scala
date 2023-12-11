@@ -43,18 +43,20 @@ object proto {
   import zio.json.*
   import types.*
 
-  case class VerifyTokenRequest(token: String)
+  case class VerifyGoogleTokenRequest(token: String)
+  case class VerifyMorbidTokenRequest(token: String)
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
 
-  given JsonDecoder[VerifyTokenRequest] = DeriveJsonDecoder.gen[VerifyTokenRequest]
-  given JsonDecoder[SetClaimsRequest]   = DeriveJsonDecoder.gen[SetClaimsRequest]
-  given JsonDecoder[GetLoginMode]       = DeriveJsonDecoder.gen[GetLoginMode]
+  given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen[VerifyGoogleTokenRequest]
+  given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen[VerifyMorbidTokenRequest]
+  given JsonDecoder[SetClaimsRequest]         = DeriveJsonDecoder.gen[SetClaimsRequest]
+  given JsonDecoder[GetLoginMode]             = DeriveJsonDecoder.gen[GetLoginMode]
 }
 
 object types {
 
-  import zio.json.{JsonEncoder, JsonDecoder, JsonFieldEncoder}
+  import zio.json.{JsonEncoder, JsonDecoder, JsonFieldEncoder, JsonFieldDecoder}
   import scala.annotation.targetName
   import zio.json.internal.Write
   import scala.util.matching.Regex
@@ -161,9 +163,13 @@ object types {
   given JsonDecoder      [Domain]          = safeDecode(domain, 256)
 
   given JsonFieldEncoder[ApplicationName] = JsonFieldEncoder.string
+  given JsonFieldDecoder[ApplicationName] = JsonFieldDecoder.string
   given JsonFieldEncoder[ApplicationCode] = JsonFieldEncoder.string
+  given JsonFieldDecoder[ApplicationCode] = JsonFieldDecoder.string
   given JsonFieldEncoder[RoleName]        = JsonFieldEncoder.string
+  given JsonFieldDecoder[RoleName]        = JsonFieldDecoder.string
   given JsonFieldEncoder[RoleCode]        = JsonFieldEncoder.string
+  given JsonFieldDecoder[RoleCode]        = JsonFieldDecoder.string
 
   extension (string: String)
     def as[T]: T = string.asInstanceOf[T]
@@ -266,7 +272,6 @@ object domain {
   import io.scalaland.chimney.Transformer
   import io.scalaland.chimney.dsl._
   import zio.json.internal.Write
-  import zio.schema.codec.JsonCodec.JsonDecoder
 
   enum UserKind {
     case RE /* Regular */ ,
@@ -280,6 +285,9 @@ object domain {
 
   given JsonEncoder[UserKind]     = (kind: UserKind    , indent: Option[Int], out: Write) => out.write(s"\"${kind.toString}\"")
   given JsonEncoder[ProviderKind] = (kind: ProviderKind, indent: Option[Int], out: Write) => out.write(s"\"${kind.toString}\"")
+
+  given JsonDecoder[UserKind]     = JsonDecoder[String].map(UserKind.valueOf)
+  given JsonDecoder[ProviderKind] = JsonDecoder[String].map(ProviderKind.valueOf)
 
   object raw {
 
@@ -487,6 +495,8 @@ object domain {
       )
 
     given JsonEncoder[MiniApp]  = DeriveJsonEncoder.gen[MiniApp]
+    given JsonDecoder[MiniApp]  = DeriveJsonDecoder.gen[MiniApp]
     given JsonEncoder[MiniUser] = DeriveJsonEncoder.gen[MiniUser]
+    given JsonDecoder[MiniUser] = DeriveJsonDecoder.gen[MiniUser]
   }
 }

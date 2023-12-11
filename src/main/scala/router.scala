@@ -5,7 +5,7 @@ import domain.*
 import domain.raw.*
 import domain.simple.*
 import domain.mini.*
-import tokens.TokenGenerator
+import tokens.*
 import proto.*
 import utils.asJson
 import guara.utils.{parse, trap}
@@ -98,7 +98,7 @@ object router {
 
       trap {
         for {
-          token     <- request.body.parse[VerifyTokenRequest]
+          token     <- request.body.parse[VerifyGoogleTokenRequest]
           identity  <- identities.verify(token)
           maybeUser <- accounts.userByEmail(identity.email)
           user      <- ensureUser(identity, maybeUser)
@@ -130,10 +130,20 @@ object router {
         case Some(user) => Response.json(user.asJson(request.url.queryParams.get("format")))
     }
 
+    private def verify(request: Request): Task[Response] = {
+      trap {
+        for {
+          req   <- request.body.parse[VerifyMorbidTokenRequest]
+          token <- tokens.verify(req.token)
+        } yield Response.json(token.toJson)
+      }
+    }
+
     private def regular = Routes(
       Method.POST / "login" / "provider" -> Handler.fromFunctionZIO[Request](loginProvider),
       Method.POST / "login"              -> Handler.fromFunctionZIO[Request](login),
       Method.POST / "logoff"             -> Handler.fromFunctionZIO[Request](logoff),
+      Method.POST / "verify"             -> Handler.fromFunctionZIO[Request](verify),
       Method.GET  / "test"               -> Handler.fromFunctionZIO[Request](test),
       Method.GET  / "user"               -> Handler.fromFunctionZIO[Request](userByEmail),
     ).sandbox.toHttpApp
