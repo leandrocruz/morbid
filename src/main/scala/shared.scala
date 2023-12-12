@@ -56,9 +56,10 @@ object proto {
 
 object types {
 
+  import guara.utils.{safeCode, safeName, safeDecode}
   import zio.json.{JsonEncoder, JsonDecoder, JsonFieldEncoder, JsonFieldDecoder}
-  import scala.annotation.targetName
   import zio.json.internal.Write
+  import scala.annotation.targetName
   import scala.util.matching.Regex
 
   opaque type TenantId        = Long
@@ -107,22 +108,9 @@ object types {
   // w = [a-zA-Z_0-9]
 
   private val domainFrom = ".+@(.+)"       .r
-  private val code       = "[a-z0-9_]+"    .r
-  private val name       = "[\\w\\.\\- ]+" .r
+  private val codeUpper  = "[a-zA-Z0-9_]+" .r
   private val domain     = "[\\w\\.\\-]+"  .r
   private val email      = "[\\w\\.\\-@]+" .r
-
-  private def safeDecode(regex: Regex, maxLength: Int) = {
-    JsonDecoder.string.mapOrFail { str =>
-      (str.length > maxLength, regex.matches(str)) match
-        case (true, _ ) => Left(s"'$str' must have at most $maxLength chars")
-        case (_, false) => Left(s"'$str' has invalid chars")
-        case (_, true ) => Right(str.trim.replaceAll(" +", " "))
-    }
-  }
-
-  def safeName = safeDecode(name, _)
-  def safeCode = safeDecode(code, _)
 
   given JsonEncoder      [TenantName]      = JsonEncoder.string
   given JsonEncoder      [TenantCode]      = JsonEncoder.string
@@ -150,7 +138,7 @@ object types {
   given JsonDecoder      [PermissionName]  = safeName(128)
   given JsonDecoder      [ProviderName]    = safeName(256)
 
-  given JsonDecoder      [TenantCode]      = safeCode(64)
+  given JsonDecoder      [TenantCode]      = safeDecode(codeUpper, 64)
   given JsonDecoder      [AccountCode]     = safeCode(16)
   given JsonDecoder      [ApplicationCode] = safeCode(16)
   given JsonDecoder      [GroupCode]       = safeCode(16)
