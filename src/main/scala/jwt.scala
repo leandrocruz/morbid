@@ -70,7 +70,7 @@ object tokens {
               .add("version", "v1")
               .add("issuer", "morbid")
             .and()
-            .content("#" + content) /* FIXME: It seems that, if the content is a valid json string, the jwt parser will try to parse it as 'claims' */
+            .content(content)
             .signWith(key)
             .compact()
         }
@@ -100,7 +100,7 @@ object tokens {
       for {
         generic <- ZIO.attempt(parser.parse(payload)).debug
         str     <- ZIO.attempt(generic.accept(Jws.CONTENT).getPayload)
-        token   <- asToken(new String(str.drop(1) /* drop the '#' */))
+        token   <- asToken(new String(str))
         now     <- Clock.localDateTime
         expired =  isExpired(token, now.atZone(zone))
         _       <- ZIO.when(expired) { ZIO.fail(new Exception("Token is expired"))}
