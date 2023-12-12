@@ -1,5 +1,6 @@
 package morbid
 
+import guara.utils.{safeCode, safeName}
 import types.*
 import zio.*
 import zio.json.*
