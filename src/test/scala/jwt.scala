@@ -6,8 +6,6 @@ import zio.json.*
 import zio.test.*
 import zio.test.Assertion.*
 import io.jsonwebtoken.{Jwts, Jws}
-import pdi.jwt.{JwtAlgorithm, JwtClaim, JwtZIOJson}
-
 
 object JwtSpec extends ZIOSpecDefault {
   def spec =
