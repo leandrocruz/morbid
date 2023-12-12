@@ -66,6 +66,7 @@ object tokens {
           Jwts
             .builder()
             .header()
+              .contentType("application/json")
               .add("version", "v1")
               .add("issuer", "morbid")
             .and()
