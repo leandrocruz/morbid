@@ -92,13 +92,13 @@ object tokens {
 
       def isExpired(token: Token, now: ZonedDateTime): Boolean = {
         token.expires match {
-          case Some(at) => at.isAfter(now)
+          case Some(exp) => now.isAfter(exp)
           case _        => false
         }
       }
 
       for {
-        generic <- ZIO.attempt(parser.parse(payload)).debug
+        generic <- ZIO.attempt(parser.parse(payload))
         str     <- ZIO.attempt(generic.accept(Jws.CONTENT).getPayload)
         token   <- asToken(new String(str))
         now     <- Clock.localDateTime
