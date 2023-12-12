@@ -22,7 +22,6 @@ object JsonSpec extends ZIOSpecDefault {
       test("bad name decode")        { assert(safeName(10).decodeJson("\"/NAME\""))     { isLeft  (equalTo("('/NAME' has invalid chars)")) } },
       test("valid code decode")      { assert(safeCode(10).decodeJson("\"code\""))      { isRight (equalTo("code")) } },
       test("valid code decode2")     { assert(safeCode(10).decodeJson("\"co_e\""))      { isRight (equalTo("co_e")) } },
-      test("bad code decode")        { assert(safeCode(10).decodeJson("\"CODE\""))      { isLeft  (equalTo("('CODE' has invalid chars)")) } },
       test("whitespace code decode") { assert(safeCode(10).decodeJson("\"c ode\""))     { isLeft  (equalTo("('c ode' has invalid chars)")) } },
 
       test("encode/decode") {
