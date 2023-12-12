@@ -108,7 +108,6 @@ object types {
   // w = [a-zA-Z_0-9]
 
   private val domainFrom = ".+@(.+)"       .r
-  private val codeUpper  = "[a-zA-Z0-9_]+" .r
   private val domain     = "[\\w\\.\\-]+"  .r
   private val email      = "[\\w\\.\\-@]+" .r
 
@@ -138,7 +137,7 @@ object types {
   given JsonDecoder      [PermissionName]  = safeName(128)
   given JsonDecoder      [ProviderName]    = safeName(256)
 
-  given JsonDecoder      [TenantCode]      = safeDecode(codeUpper, 64)
+  given JsonDecoder      [TenantCode]      = safeCode(64)
   given JsonDecoder      [AccountCode]     = safeCode(16)
   given JsonDecoder      [ApplicationCode] = safeCode(16)
   given JsonDecoder      [GroupCode]       = safeCode(16)
