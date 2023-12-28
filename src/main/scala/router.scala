@@ -1,6 +1,7 @@
 package morbid
 
 import types.*
+import config.MorbidConfig
 import domain.*
 import domain.raw.*
 import domain.simple.*
@@ -8,7 +9,7 @@ import domain.mini.*
 import tokens.*
 import proto.*
 import utils.asJson
-import guara.utils.{parse, trap}
+import guara.utils.parse
 import guara.domain.RequestId
 import guara.errors.*
 import guara.router.Router
@@ -22,6 +23,7 @@ import zio.json.*
 import zio.http.{Cookie, Handler, Header, HttpApp, Method, Path, Request, Response, Routes, handler}
 import zio.http.Middleware.CorsConfig
 import zio.http.Middleware.{CorsConfig, cors}
+import zio.http.Status
 import zio.http.Header.{AccessControlAllowMethods, AccessControlAllowOrigin, Origin}
 import zio.http.codec.PathCodec.{long, string}
 import zio.json.ast.{Json, JsonCursor}
@@ -58,7 +60,6 @@ object cookies {
 object router {
 
   import cookies.*
-  import zio.http.Status
 
   private val corsConfig =  CorsConfig()
 
@@ -68,7 +69,7 @@ object router {
 
   case class LoginSuccess(email: String, admin: Boolean)
 
-  case class MorbidRouter(identities: Identities, accounts: AccountManager, tokens: TokenGenerator) extends Router {
+  case class MorbidRouter(cfg: MorbidConfig, identities: Identities, accounts: AccountManager, tokens: TokenGenerator) extends Router {
 
     private def loginProvider(request: Request): Task[Response] = {
 
@@ -79,7 +80,7 @@ object router {
           case Some(RawIdentityProvider(_, _, _, _, _, _, ProviderKind.SAML, id, name)) => s"""{"type": "saml", "id": "$id", "name": "$name"}"""
       }
 
-      trap {
+      GuaraError.trap {
         for {
           req      <- request.body.parse[GetLoginMode]
           provider <- identities.providerGiven(req.email, req.tenant)
@@ -96,7 +97,7 @@ object router {
         }
       }
 
-      trap {
+      GuaraError.trap {
         for {
           token     <- request.body.parse[VerifyGoogleTokenRequest]
           identity  <- identities.verify(token)
@@ -131,11 +132,21 @@ object router {
     }
 
     private def verify(request: Request): Task[Response] = {
-      trap {
+      GuaraError.trap {
         for {
           req   <- request.body.parse[VerifyMorbidTokenRequest]
           token <- tokens.verify(req.token)
         } yield Response.json(token.toJson)
+      }
+    }
+
+    private def impersonate(request: Request): Task[Response] = {
+      GuaraError.trap {
+        for {
+          req   <- request.body.parse[ImpersonationRequest]
+          same  =  req.magic.is(cfg.magic.password)
+          _     <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
+        } yield Response.notImplemented
       }
     }
 
@@ -144,6 +155,7 @@ object router {
       Method.POST / "login"              -> Handler.fromFunctionZIO[Request](login),
       Method.POST / "logoff"             -> Handler.fromFunctionZIO[Request](logoff),
       Method.POST / "verify"             -> Handler.fromFunctionZIO[Request](verify),
+      Method.POST / "impersonate"        -> Handler.fromFunctionZIO[Request](impersonate),
       Method.GET  / "test"               -> Handler.fromFunctionZIO[Request](test),
       Method.GET  / "user"               -> Handler.fromFunctionZIO[Request](userByEmail),
     ).sandbox.toHttpApp

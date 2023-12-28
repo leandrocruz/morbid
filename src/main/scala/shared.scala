@@ -12,7 +12,8 @@ object config {
   case class JwtConfig(key: String)
   case class IdentityConfig(key: String, database: String)
   case class ClockConfig(timezone: String)
-  case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig)
+  case class MagicConfig(password: String)
+  case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig, magic: MagicConfig)
 
   object MorbidConfig {
     val layer = ZLayer {
@@ -45,9 +46,11 @@ object proto {
 
   case class VerifyGoogleTokenRequest(token: String)
   case class VerifyMorbidTokenRequest(token: String)
+  case class ImpersonationRequest(email: Email, magic: Magic)
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
 
+  given JsonDecoder[ImpersonationRequest]     = DeriveJsonDecoder.gen[ImpersonationRequest]
   given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen[VerifyGoogleTokenRequest]
   given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen[VerifyMorbidTokenRequest]
   given JsonDecoder[SetClaimsRequest]         = DeriveJsonDecoder.gen[SetClaimsRequest]
@@ -87,6 +90,7 @@ object types {
   opaque type UserCode        = String
   opaque type Email           = String
   opaque type Domain          = String
+  opaque type Magic           = String
 
   given JsonEncoder[TenantId]      = JsonEncoder.long
   given JsonDecoder[TenantId]      = JsonDecoder.long
@@ -128,6 +132,7 @@ object types {
   given JsonEncoder      [UserCode]        = JsonEncoder.string
   given JsonEncoder      [Email]           = JsonEncoder.string
   given JsonEncoder      [Domain]          = JsonEncoder.string
+  given JsonEncoder      [Magic]           = JsonEncoder.string
 
   given JsonDecoder      [TenantName]      = safeName(128)
   given JsonDecoder      [AccountName]     = safeName(64)
@@ -148,6 +153,7 @@ object types {
 
   given JsonDecoder      [Email]           = safeDecode(email, 256)
   given JsonDecoder      [Domain]          = safeDecode(domain, 256)
+  given JsonDecoder      [Magic]           = JsonDecoder.string
 
   given JsonFieldEncoder[ApplicationName] = JsonFieldEncoder.string
   given JsonFieldDecoder[ApplicationName] = JsonFieldDecoder.string
@@ -245,6 +251,11 @@ object types {
         case _                 => None
       }
     }
+  }
+
+  extension (it: Magic) {
+    @targetName("magic") def string: String = it
+    def is(value: String): Boolean = it == value
   }
 }
 
