@@ -1,69 +1,10 @@
 package morbid
 
-import zio.*
-
-object config {
-
-  import zio.config.*
-  import zio.config.magnolia.*
-  import zio.config.typesafe.*
-  import Config.*
-
-  case class JwtConfig(key: String)
-  case class IdentityConfig(key: String, database: String)
-  case class ClockConfig(timezone: String)
-  case class MagicConfig(password: String)
-  case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig, magic: MagicConfig)
-
-  object MorbidConfig {
-    val layer = ZLayer {
-      TypesafeConfigProvider.fromResourcePath(enableCommaSeparatedValueAsList = true).load(deriveConfig[MorbidConfig])
-    }
-  }
-
-}
-
-object utils {
-  import zio.json.*
-  import domain.raw.RawUser
-  import domain.simple.*
-  import domain.mini.*
-
-  extension (user: RawUser)
-    def asJson(format: Option[String]): String = {
-      format match {
-        case Some("simple") => user.simple.toJson
-        case Some("mini")   => user.mini.toJson
-        case _              => user.toJson
-      }
-    }
-}
-
-object proto {
-
-  import zio.json.*
-  import types.*
-
-  case class VerifyGoogleTokenRequest(token: String)
-  case class VerifyMorbidTokenRequest(token: String)
-  case class ImpersonationRequest(email: Email, magic: Magic)
-  case class SetClaimsRequest(uid: String, claims: Map[String, String])
-  case class GetLoginMode(email: Email, tenant: Option[TenantCode])
-
-  given JsonDecoder[ImpersonationRequest]     = DeriveJsonDecoder.gen[ImpersonationRequest]
-  given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen[VerifyGoogleTokenRequest]
-  given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen[VerifyMorbidTokenRequest]
-  given JsonDecoder[SetClaimsRequest]         = DeriveJsonDecoder.gen[SetClaimsRequest]
-  given JsonDecoder[GetLoginMode]             = DeriveJsonDecoder.gen[GetLoginMode]
-}
-
 object types {
 
   import guara.utils.{safeCode, safeName, safeDecode}
   import zio.json.{JsonEncoder, JsonDecoder, JsonFieldEncoder, JsonFieldDecoder}
-  import zio.json.internal.Write
   import scala.annotation.targetName
-  import scala.util.matching.Regex
 
   opaque type TenantId        = Long
   opaque type AccountId       = Long
@@ -257,18 +198,15 @@ object types {
     @targetName("magic") def string: String = it
     def is(value: String): Boolean = it == value
   }
+
 }
 
 object domain {
 
   import types.*
-
   import zio.json.*
   import zio.optics.Lens
   import java.time.LocalDateTime
-  import scala.util.{Failure, Success, Try}
-  import io.scalaland.chimney.Transformer
-  import io.scalaland.chimney.dsl._
   import zio.json.internal.Write
 
   enum UserKind {
@@ -284,8 +222,8 @@ object domain {
   given JsonEncoder[UserKind]     = (kind: UserKind    , indent: Option[Int], out: Write) => out.write(s"\"${kind.toString}\"")
   given JsonEncoder[ProviderKind] = (kind: ProviderKind, indent: Option[Int], out: Write) => out.write(s"\"${kind.toString}\"")
 
-  given JsonDecoder[UserKind]     = JsonDecoder[String].map(UserKind.valueOf)
-  given JsonDecoder[ProviderKind] = JsonDecoder[String].map(ProviderKind.valueOf)
+  given JsonDecoder[UserKind]     = JsonDecoder[String](using JsonDecoder.string).map(UserKind.valueOf)
+  given JsonDecoder[ProviderKind] = JsonDecoder[String](using JsonDecoder.string).map(ProviderKind.valueOf)
 
   object raw {
 
