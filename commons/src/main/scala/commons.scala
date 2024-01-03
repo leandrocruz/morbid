@@ -206,8 +206,8 @@ object domain {
   import types.*
   import zio.json.*
   import zio.optics.Lens
-  import java.time.LocalDateTime
   import zio.json.internal.Write
+  import java.time.{LocalDateTime, ZonedDateTime}
 
   enum UserKind {
     case RE /* Regular */ ,
@@ -320,13 +320,21 @@ object domain {
     )
 
     given JsonEncoder[RawApplicationDetails] = DeriveJsonEncoder.gen[RawApplicationDetails]
+    given JsonDecoder[RawApplicationDetails] = DeriveJsonDecoder.gen[RawApplicationDetails]
     given JsonEncoder[RawApplication]        = DeriveJsonEncoder.gen[RawApplication]
+    given JsonDecoder[RawApplication]        = DeriveJsonDecoder.gen[RawApplication]
     given JsonEncoder[RawUserDetails]        = DeriveJsonEncoder.gen[RawUserDetails]
+    given JsonDecoder[RawUserDetails]        = DeriveJsonDecoder.gen[RawUserDetails]
     given JsonEncoder[RawGroup]              = DeriveJsonEncoder.gen[RawGroup]
+    given JsonDecoder[RawGroup]              = DeriveJsonDecoder.gen[RawGroup]
     given JsonEncoder[RawPermission]         = DeriveJsonEncoder.gen[RawPermission]
+    given JsonDecoder[RawPermission]         = DeriveJsonDecoder.gen[RawPermission]
     given JsonEncoder[RawRole]               = DeriveJsonEncoder.gen[RawRole]
+    given JsonDecoder[RawRole]               = DeriveJsonDecoder.gen[RawRole]
     given JsonEncoder[RawUser]               = DeriveJsonEncoder.gen[RawUser]
+    given JsonDecoder[RawUser]               = DeriveJsonDecoder.gen[RawUser]
     given JsonEncoder[RawIdentityProvider]   = DeriveJsonEncoder.gen[RawIdentityProvider]
+    given JsonDecoder[RawIdentityProvider]   = DeriveJsonDecoder.gen[RawIdentityProvider]
   }
 
   object simple {
@@ -434,5 +442,20 @@ object domain {
     given JsonDecoder[MiniApp]  = DeriveJsonDecoder.gen[MiniApp]
     given JsonEncoder[MiniUser] = DeriveJsonEncoder.gen[MiniUser]
     given JsonDecoder[MiniUser] = DeriveJsonDecoder.gen[MiniUser]
+  }
+
+  object token {
+
+    import raw.*
+
+    case class Token(
+      created : ZonedDateTime,
+      expires : Option[ZonedDateTime],
+      user    : RawUser
+    )
+
+    given JsonEncoder[Token] = DeriveJsonEncoder.gen[Token]
+    given JsonDecoder[Token] = DeriveJsonDecoder.gen[Token]
+
   }
 }

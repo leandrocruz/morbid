@@ -103,7 +103,7 @@ object router {
           identity  <- identities.verify(token)
           maybeUser <- accounts.userByEmail(identity.email)
           user      <- ensureUser(identity, maybeUser)
-          encoded   <- tokens.encode(user.mini)
+          encoded   <- tokens.encode(user)
         } yield Response.ok.loggedIn(encoded)
       }
     }

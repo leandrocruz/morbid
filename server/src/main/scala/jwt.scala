@@ -4,17 +4,18 @@ import zio.*
 
 object tokens {
 
+  import domain.raw.RawUser
+  import domain.token.Token
   import morbid.config.MorbidConfig
-  import domain.mini.MiniUser
   import better.files._
-  import io.jsonwebtoken.{Jwts, Jws}
   import zio.json.*
+  import io.jsonwebtoken.{Jwts, Jws}
   import java.util.Base64
   import javax.crypto.spec.SecretKeySpec
   import java.time.{ZoneId, ZonedDateTime}
 
   trait TokenGenerator {
-    def encode(user: MiniUser)  : Task[String]
+    def encode(user: RawUser)   : Task[String]
     def verify(payload: String) : Task[Token]
   }
 
@@ -35,15 +36,6 @@ object tokens {
     }
   }
 
-  case class Token(
-    created: ZonedDateTime,
-    expires: Option[ZonedDateTime],
-    user   : MiniUser
-  )
-
-  given JsonEncoder[Token] = DeriveJsonEncoder.gen[Token]
-  given JsonDecoder[Token] = DeriveJsonDecoder.gen[Token]
-
   case class JwtTokenGenerator (key: SecretKeySpec, zone: ZoneId) extends TokenGenerator {
 
     private val parser = Jwts.parser().verifyWith(key).build()
@@ -51,7 +43,7 @@ object tokens {
     /**
      * https://github.com/jwtk/jjwt#jwt-create
      */
-    override def encode(user: MiniUser): Task[String] = {
+    override def encode(user: RawUser): Task[String] = {
 
       def encodeAsJson(now: ZonedDateTime) = ZIO.attempt {
         Token(
