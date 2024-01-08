@@ -77,6 +77,7 @@ object types {
   given JsonEncoder      [Email]           = JsonEncoder.string
   given JsonEncoder      [Domain]          = JsonEncoder.string
   given JsonEncoder      [Magic]           = JsonEncoder.string
+  given JsonEncoder      [Pin]             = JsonEncoder.string
 
   given JsonDecoder      [TenantName]      = safeName(128)
   given JsonDecoder      [AccountName]     = safeName(64)
@@ -99,6 +100,7 @@ object types {
   given JsonDecoder      [Domain]          = safeDecode(domain, 256)
   given JsonDecoder      [Magic]           = JsonDecoder.string
   given JsonDecoder      [Password]        = JsonDecoder.string
+  given JsonDecoder      [Pin]             = JsonDecoder.string
 
   given JsonFieldEncoder[ApplicationName] = JsonFieldEncoder.string
   given JsonFieldDecoder[ApplicationName] = JsonFieldDecoder.string
@@ -111,6 +113,9 @@ object types {
 
   object UserId:
     def of(value: Long): UserId = value
+
+  object PinId:
+    def of(value: Long): PinId = value
 
   object ApplicationCode:
     def of(value: String): ApplicationCode = value
@@ -138,6 +143,9 @@ object types {
 
   extension (it: UserId)
     @targetName("userId") def long: Long = it
+
+  extension (it: PinId)
+    @targetName("pinId") def long: Long = it
 
   extension (it: ApplicationId)
     @targetName("applicationId") def long: Long = it
@@ -220,6 +228,10 @@ object types {
 
   extension (it: Password)
     @targetName("password") def string: String = it
+
+  extension (it: Pin)
+    @targetName("pin") def string: String = it
+
 }
 
 object domain {

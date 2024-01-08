@@ -211,6 +211,7 @@ object repo {
     def userGiven(email: Email)                                 : Task[Option[RawUser]]
     def providerGiven(domain: Domain, code: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
     def groupsGiven(account: AccountId, app: ApplicationCode)   : Task[Seq[RawGroup]]
+    def setUserPin(user: UserId, pin: Pin)                      : Task[Unit]
   }
 
   object Repo {
@@ -231,6 +232,7 @@ object repo {
     private inline given InsertMeta[TenantRow]           = insertMeta[TenantRow]           (_.id)
     private inline given InsertMeta[AccountRow]          = insertMeta[AccountRow]          (_.id)
     private inline given InsertMeta[UserRow]             = insertMeta[UserRow]             (_.id)
+    private inline given InsertMeta[PinRow]              = insertMeta[PinRow]              (_.id)
     private inline given InsertMeta[ApplicationRow]      = insertMeta[ApplicationRow]      (_.id)
     private inline given InsertMeta[GroupRow]            = insertMeta[GroupRow]            (_.id)
     private inline given InsertMeta[RoleRow]             = insertMeta[RoleRow]             (_.id)
@@ -240,12 +242,13 @@ object repo {
     private inline given MappedEncoding[TenantId, Long]               (_.long)
     private inline given MappedEncoding[AccountId, Long]              (_.long)
     private inline given MappedEncoding[UserId, Long]                 (_.long)
+    private inline given MappedEncoding[PinId, Long]                  (_.long)
     private inline given MappedEncoding[ApplicationId, Long]          (_.long)
     private inline given MappedEncoding[GroupId, Long]                (_.long)
     private inline given MappedEncoding[RoleId, Long]                 (_.long)
     private inline given MappedEncoding[PermissionId, Long]           (_.long)
     private inline given MappedEncoding[ProviderId, Long]             (_.long)
-    private inline given MappedEncoding[TenantCode, String]       (_.string)
+    private inline given MappedEncoding[TenantCode, String]           (_.string)
     private inline given MappedEncoding[TenantName, String]           (_.string)
     private inline given MappedEncoding[AccountName, String]          (_.string)
     private inline given MappedEncoding[AccountCode, String]          (_.string)
@@ -262,10 +265,12 @@ object repo {
     private inline given MappedEncoding[UserCode, String]             (_.string)
     private inline given MappedEncoding[Email, String]                (_.string)
     private inline given MappedEncoding[Domain, String]               (_.string)
+    private inline given MappedEncoding[Pin, String]                  (_.string)
 
     private inline given MappedEncoding[Long, TenantId]               (_.as[TenantId])
     private inline given MappedEncoding[Long, AccountId]              (_.as[AccountId])
     private inline given MappedEncoding[Long, UserId]                 (_.as[UserId])
+    private inline given MappedEncoding[Long, PinId]                  (_.as[PinId])
     private inline given MappedEncoding[Long, ApplicationId]          (_.as[ApplicationId])
     private inline given MappedEncoding[Long, GroupId]                (_.as[GroupId])
     private inline given MappedEncoding[Long, RoleId]                 (_.as[RoleId])
@@ -288,6 +293,7 @@ object repo {
     private inline given MappedEncoding[String, UserCode]             (_.as[UserCode])
     private inline given MappedEncoding[String, Email]                (_.as[Email])
     private inline given MappedEncoding[String, Domain]               (_.as[Domain])
+    private inline given MappedEncoding[String, Pin]                  (_.as[Pin])
 
     private inline given MappedEncoding[String, UserKind]             (UserKind.valueOf)
     private inline given MappedEncoding[UserKind, String]             (_.toString)
@@ -297,6 +303,7 @@ object repo {
     private inline def tenants      = quote { querySchema[TenantRow]           ("tenants")            }
     private inline def accounts     = quote { querySchema[AccountRow]          ("accounts")           }
     private inline def users        = quote { querySchema[UserRow]             ("users")              }
+    private inline def pins         = quote { querySchema[PinRow]              ("pins")               }
     private inline def applications = quote { querySchema[ApplicationRow]      ("applications")       }
     private inline def account2app  = quote { querySchema[AccountToAppRow]     ("account_to_app")     }
     private inline def groups       = quote { querySchema[GroupRow]            ("groups")             }
@@ -481,16 +488,36 @@ object repo {
     override def accountByCode(code: AccountCode): Task[Option[RawAccount]] = {
       inline def query = quote {
         for {
-          t <- tenants                          if t.active && t.deleted.isEmpty 
+          t <- tenants                          if t.active && t.deleted.isEmpty
           a <- accounts .join(_.tenant == t.id) if a.active && a.deleted.isEmpty && a.code == lift(code)
         } yield (t, a)
       }
 
       for {
         rows <- exec(run(query))
-      } yield rows.headOption.map { 
-        case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform 
+      } yield rows.headOption.map {
+        case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform
       }
+    }
+
+    override def setUserPin(user: UserId, pin: Pin): Task[Unit] = {
+
+      def row(now: LocalDateTime) = PinRow(
+        id      = PinId.of(0),
+        created = now,
+        deleted = None,
+        userId  = user ,
+        pin     = pin
+      )
+
+      inline def stmt(row: PinRow) = quote {
+        pins.insertValue(lift(row)).returning(_.id)
+      }
+
+      for {
+        now <- Clock.localDateTime
+        _   <- exec(run(stmt(row(now))))
+      } yield ()
     }
   }
 }

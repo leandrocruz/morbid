@@ -32,6 +32,7 @@ import zio.logging.backend.SLF4J
 import io.scalaland.chimney.dsl.*
 import morbid.domain.token.Token
 import morbid.groups.GroupManager
+import morbid.pins.PinManager
 
 import java.util.Base64
 
@@ -71,7 +72,7 @@ object router {
 
   case class LoginSuccess(email: String, admin: Boolean)
 
-  case class MorbidRouter(cfg: MorbidConfig, identities: Identities, accounts: AccountManager, groups: GroupManager, tokens: TokenGenerator) extends Router {
+  case class MorbidRouter(cfg: MorbidConfig, identities: Identities, accounts: AccountManager, groups: GroupManager, tokens: TokenGenerator, pins: PinManager) extends Router {
 
     private given ApplicationCode = utils.Morbid
 
@@ -160,7 +161,7 @@ object router {
     }
 
     private def createUser = role("user_adm") { (request, token) =>
-      
+
       def securePassword = Password.of("xixicoco") //TODO
       def userCode       = UserCode.of("zzz") //TODO
 
@@ -172,6 +173,14 @@ object router {
         user   <- accounts.createUser(create)
         _      <- identities.createUser(create)
       } yield Response.json(user.toJson) //TODO: return password
+    }
+
+    private def setUserPin(request: Request): Task[Response] = ensureResponse {
+      for {
+        req   <- request.body.parse[SetUserPin]
+        token <- tokenFrom(request)
+        _     <- pins.set(token.user.details.id, req.pin)
+      } yield Response.ok
     }
 
     private def verify(request: Request): Task[Response] = ensureResponse {
@@ -210,6 +219,7 @@ object router {
       Method.GET  / "test"                   -> Handler.fromFunctionZIO[Request](test),
       Method.GET  / "user"                   -> Handler.fromFunctionZIO[Request](userByEmail),
       Method.POST / "user"                   -> Handler.fromFunctionZIO[Request](createUser),
+      Method.POST / "user" / "pin"           -> Handler.fromFunctionZIO[Request](setUserPin),
       Method.GET  / "groups" / string("app") -> handler(groupsGiven),
     ).sandbox.toHttpApp
 
