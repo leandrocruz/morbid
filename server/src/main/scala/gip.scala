@@ -1,5 +1,7 @@
 package morbid
 
+import com.google.firebase.auth.UserRecord
+import com.google.firebase.auth.UserRecord.CreateRequest
 import zio.*
 
 object gip {
@@ -23,8 +25,9 @@ object gip {
 
   sealed trait Identities {
     def providerGiven(email: Email, tenant: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
-    def verify(req: VerifyGoogleTokenRequest) : Task[CloudIdentity]
-    def claims(req: SetClaimsRequest)   : Task[Unit]
+    def verify     (req: VerifyGoogleTokenRequest)               : Task[CloudIdentity]
+    def claims     (req: SetClaimsRequest)                       : Task[Unit]
+    def createUser (req: CreateUser)                             : Task[Unit]
   }
 
   case class CloudIdentity(
@@ -115,6 +118,24 @@ object gip {
       ZIO.attempt {
         auth.setCustomUserClaims(req.uid, req.claims.asJava)
       }
+    }
+
+    private def authGiven(code: Option[TenantCode]) = {
+      code match
+        case Some(value) => auth.getTenantManager.getAuthForTenant(value.string)
+        case None        => auth
+    }
+
+    override def createUser(request: CreateUser): Task[Unit] = {
+      //See https://firebase.google.com/docs/auth/admin/manage-users
+
+      val req = new CreateRequest()
+        .setEmail(request.email.string)
+        .setUid(request.code.string)
+        .setPassword(request.password.string)
+        .setDisabled(false)
+
+      ZIO.attempt { authGiven(request.tenant).createUser(req) }
     }
   }
 }

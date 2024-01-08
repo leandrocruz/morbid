@@ -37,6 +37,15 @@ CREATE TABLE users (
     PRIMARY KEY (id)
 );
 
+CREATE TABLE pins (
+    id       SERIAL                                         ,
+    created  TIMESTAMP    NOT NULL                          ,
+    deleted  TIMESTAMP                                      ,
+    user_id  BIGINT       NOT NULL REFERENCES users (id)    ,
+    pin      VARCHAR(8)   NOT NULL                          ,
+    PRIMARY KEY (id)
+);
+
 CREATE TABLE applications (
     id       SERIAL                               ,
     created  TIMESTAMP    NOT NULL                ,

@@ -6,6 +6,7 @@ import guara.processor.Processor
 import morbid.accounts.AccountManager
 import morbid.config.MorbidConfig
 import morbid.gip.Identities
+import morbid.groups.GroupManager
 import morbid.tokens.TokenGenerator
 import morbid.repo.Repo
 import zio.*
@@ -22,6 +23,7 @@ object MorbidServer extends GuaraApp {
     Processor.drop,
     Identities.layer,
     AccountManager.layer,
+    GroupManager.layer,
     Repo.layer,
     TokenGenerator.layer
   )

@@ -125,6 +125,14 @@ object repo {
     email   : Email
   )
 
+  private case class PinRow(
+    id      : PinId,
+    created : LocalDateTime,
+    deleted : Option[LocalDateTime],
+    userId  : UserId,
+    pin     : Pin,
+  )
+  
   private case class ApplicationRow(
     id      : ApplicationId,
     created : LocalDateTime,
@@ -197,10 +205,12 @@ object repo {
   )
 
   trait Repo {
+    def accountByProvider(code: ProviderCode)                   : Task[Option[RawAccount]]
+    def accountByCode(code: AccountCode)                        : Task[Option[RawAccount]]
     def create(raw: RawUser)                                    : Task[RawUser]
     def userGiven(email: Email)                                 : Task[Option[RawUser]]
-    def accountGiven(code: ProviderCode)                        : Task[Option[RawAccount]]
     def providerGiven(domain: Domain, code: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
+    def groupsGiven(account: AccountId, app: ApplicationCode)   : Task[Seq[RawGroup]]
   }
 
   object Repo {
@@ -419,7 +429,7 @@ object repo {
       } yield result
     }
 
-    override def accountGiven(code: ProviderCode): Task[Option[RawAccount]] = {
+    override def accountByProvider(code: ProviderCode): Task[Option[RawAccount]] = {
 
       inline def query = quote {
         for {
@@ -452,6 +462,35 @@ object repo {
         rows <- exec(run(query))
       } yield rows.headOption.map(_.transformInto[RawIdentityProvider])
 
+    }
+
+    override def groupsGiven(acc: AccountId, code: ApplicationCode): Task[Seq[RawGroup]] = {
+      inline def query = quote {
+        for {
+          app <- applications                        if app.active && app.deleted.isEmpty && app.code == lift(code)
+          a2a <- account2app .join(_.app == app.id)  if               a2a.deleted.isEmpty && a2a.acc  == lift(acc)
+          grp <- groups      .join(_.app == a2a.app) if               grp.deleted.isEmpty
+        } yield grp
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.map(_.transformInto[RawGroup])
+    }
+
+    override def accountByCode(code: AccountCode): Task[Option[RawAccount]] = {
+      inline def query = quote {
+        for {
+          t <- tenants                          if t.active && t.deleted.isEmpty 
+          a <- accounts .join(_.tenant == t.id) if a.active && a.deleted.isEmpty && a.code == lift(code)
+        } yield (t, a)
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.headOption.map { 
+        case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform 
+      }
     }
   }
 }

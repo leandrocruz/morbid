@@ -9,12 +9,14 @@ object accounts {
   import morbid.domain.*
   import morbid.domain.raw.*
   import morbid.gip.*
+  import morbid.proto.CreateUser
 
   import java.time.LocalDateTime
 
   trait AccountManager {
-    def userByEmail(email: Email): Task[Option[RawUser]]
-    def provision(identity: CloudIdentity): Task[RawUser]
+    def userByEmail(email: Email)          : Task[Option[RawUser]]
+    def provision(identity: CloudIdentity) : Task[RawUser]
+    def createUser(req: CreateUser)        : Task[RawUser]
   }
 
   object AccountManager {
@@ -23,30 +25,30 @@ object accounts {
 
   case class LocalAccountManager(repo: Repo) extends AccountManager {
 
+    private def build(account: RawAccount, created: LocalDateTime, code: UserCode, email: Email, kind: Option[UserKind] = None) = {
+      RawUser(details = RawUserDetails(
+        id          = UserId.of(0),
+        tenant      = account.tenant,
+        tenantCode  = account.tenantCode,
+        account     = account.id,
+        accountCode = account.code,
+        created     = created,
+        active      = true,
+        code        = code,
+        email       = email,
+        kind        = kind
+      ))
+    }
+
     override def provision(identity: CloudIdentity): Task[RawUser] = {
 
       def provisionSaml(id: ProviderCode): Task[RawUser] = {
-
-        def build(account: RawAccount, created: LocalDateTime) = {
-          RawUser(details = RawUserDetails(
-              id          = 0.as[UserId],
-              tenant      = account.tenant,
-              tenantCode  = account.tenantCode,
-              account     = account.id,
-              accountCode = account.code,
-              created     = created,
-              active      = true,
-              code        = identity.code,
-              email       = identity.email
-          ))
-        }
-
         for {
           now     <- Clock.localDateTime
-          maybe   <- repo.accountGiven(id)
+          maybe   <- repo.accountByProvider(id)
           account <- ZIO.fromOption(maybe).mapError(_ => new Exception(s"Can't find account for provider '$identity'"))
           _       <- ZIO.logInfo(s"Provisioning user :: tenant:${account.tenant} account:${account.id}, idp:$id, code:${identity.code}, email:${identity.email}")
-          user    <- repo.create(build(account, now))
+          user    <- repo.create(build(account, now, identity.code, identity.email))
           maybe   <- repo.userGiven(user.details.email)
           result  <- ZIO.fromOption(maybe).mapError(_ => new Exception(s"Error reading newly created user, email:${user.details.email}")) // load applications, groups, etc
         } yield result
@@ -58,5 +60,16 @@ object accounts {
     }
 
     override def userByEmail(email: Email): Task[Option[RawUser]] = repo.userGiven(email)
+
+    override def createUser(req: CreateUser): Task[RawUser] = {
+      for {
+        now     <- Clock.localDateTime
+        account <- repo.accountByCode(req.account)
+        user <- account match {
+                  case Some(acc) => repo.create(build(acc, now, req.code, req.email, req.kind))
+                  case None      => ZIO.fail(new Exception(s"Can't find account '${req.account}'"))
+                }
+      } yield user
+    }
   }
 }

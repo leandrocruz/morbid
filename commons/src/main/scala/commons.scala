@@ -14,6 +14,7 @@ object types {
   opaque type GroupId         = Long
   opaque type RoleId          = Long
   opaque type PermissionId    = Long
+  opaque type PinId           = Long
   opaque type TenantName      = String
   opaque type TenantCode      = String
   opaque type AccountName     = String
@@ -30,6 +31,8 @@ object types {
   opaque type ProviderCode    = String
   opaque type UserCode        = String
   opaque type Email           = String
+  opaque type Pin             = String
+  opaque type Password        = String
   opaque type Domain          = String
   opaque type Magic           = String
 
@@ -95,6 +98,7 @@ object types {
   given JsonDecoder      [Email]           = safeDecode(email, 256)
   given JsonDecoder      [Domain]          = safeDecode(domain, 256)
   given JsonDecoder      [Magic]           = JsonDecoder.string
+  given JsonDecoder      [Password]        = JsonDecoder.string
 
   given JsonFieldEncoder[ApplicationName] = JsonFieldEncoder.string
   given JsonFieldDecoder[ApplicationName] = JsonFieldDecoder.string
@@ -104,6 +108,21 @@ object types {
   given JsonFieldDecoder[RoleName]        = JsonFieldDecoder.string
   given JsonFieldEncoder[RoleCode]        = JsonFieldEncoder.string
   given JsonFieldDecoder[RoleCode]        = JsonFieldDecoder.string
+
+  object UserId:
+    def of(value: Long): UserId = value
+
+  object ApplicationCode:
+    def of(value: String): ApplicationCode = value
+
+  object RoleCode:
+    def of(value: String): RoleCode = value
+
+  object UserCode:
+    def of(value: String): UserCode = value
+
+  object Password:
+    def of(value: String): Password = value
 
   extension (string: String)
     def as[T]: T = string.asInstanceOf[T]
@@ -199,6 +218,8 @@ object types {
     def is(value: String): Boolean = it == value
   }
 
+  extension (it: Password)
+    @targetName("password") def string: String = it
 }
 
 object domain {
@@ -452,7 +473,16 @@ object domain {
       created : ZonedDateTime,
       expires : Option[ZonedDateTime],
       user    : RawUser
-    )
+    ) {
+      def roleByCode(code: RoleCode)(using app: ApplicationCode): Option[RawRole] = {
+        for {
+          a <- user.applications.find(_.details.code == app)
+          r <- a.roles.find(_.code == code)
+        } yield r
+      }
+
+      def hasRole(code: RoleCode)(using app: ApplicationCode) = roleByCode(code).isDefined
+    }
 
     given JsonEncoder[Token] = DeriveJsonEncoder.gen[Token]
     given JsonDecoder[Token] = DeriveJsonDecoder.gen[Token]
