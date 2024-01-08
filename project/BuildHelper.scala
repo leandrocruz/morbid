@@ -12,7 +12,7 @@ object BuildHelper {
     val jjwtImpl        = "io.jsonwebtoken"      % "jjwt-impl"          % "0.12.3"
     val jjwtJackson     = "io.jsonwebtoken"      % "jjwt-jackson"       % "0.12.3"
     val chimney         = "io.scalaland"         %% "chimney"           % "0.8.2"
-    val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.1.1"
+    val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.2.0"
     val quillZio        = "io.getquill"          %% "quill-zio"         % "4.8.0"
     val quillZioJdbc    = "io.getquill"          %% "quill-jdbc-zio"    % "4.8.0"
     val zioOptics       = "dev.zio"              %% "zio-optics"        % "0.2.1"
