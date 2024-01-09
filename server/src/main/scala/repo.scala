@@ -212,6 +212,7 @@ object repo {
     def providerGiven(domain: Domain, code: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
     def groupsGiven(account: AccountId, app: ApplicationCode)   : Task[Seq[RawGroup]]
     def setUserPin(user: UserId, pin: Pin)                      : Task[Unit]
+    def getUserPin(user: UserId)                                : Task[Option[Pin]]
   }
 
   object Repo {
@@ -518,6 +519,18 @@ object repo {
         now <- Clock.localDateTime
         _   <- exec(run(stmt(row(now))))
       } yield ()
+    }
+
+    override def getUserPin(user: UserId): Task[Option[Pin]] = {
+      inline def query = quote {
+        (for {
+          p <- pins if p.deleted.isEmpty && p.userId == lift(user)
+        } yield p).sortBy(_.created)(Ord.desc)
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.headOption.map { _.pin }
     }
   }
 }

@@ -56,7 +56,9 @@ object proto {
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
   case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, tenant: Option[TenantCode] = None, kind: Option[UserKind] = None)
   case class CreateUser       (email: Email, code: UserCode,                password: Password,                tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, account: AccountCode)
-  case class SetUserPin(pin: Pin)
+
+  case class SetUserPin     (pin: Pin)
+  case class ValidateUserPin(pin: Pin)
 
   given JsonDecoder[ImpersonationRequest]     = DeriveJsonDecoder.gen[ImpersonationRequest]
   given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen[VerifyGoogleTokenRequest]
@@ -65,4 +67,5 @@ object proto {
   given JsonDecoder[GetLoginMode]             = DeriveJsonDecoder.gen[GetLoginMode]
   given JsonDecoder[CreateUserRequest]        = DeriveJsonDecoder.gen[CreateUserRequest]
   given JsonDecoder[SetUserPin]               = DeriveJsonDecoder.gen[SetUserPin]
+  given JsonDecoder[ValidateUserPin]          = DeriveJsonDecoder.gen[ValidateUserPin]
 }

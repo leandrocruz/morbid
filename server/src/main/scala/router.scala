@@ -183,6 +183,14 @@ object router {
       } yield Response.ok
     }
 
+    private def validateUserPin(request: Request): Task[Response] = ensureResponse {
+      for {
+        req   <- request.body.parse[SetUserPin]
+        token <- tokenFrom(request)
+        valid <- pins.validate(token.user.details.id, req.pin)
+      } yield if(valid) Response.ok else Response.forbidden
+    }
+
     private def verify(request: Request): Task[Response] = ensureResponse {
       for {
         req   <- request.body.parse[VerifyMorbidTokenRequest]
@@ -211,16 +219,17 @@ object router {
     }
 
     private def regular = Routes(
-      Method.POST / "login" / "provider"     -> Handler.fromFunctionZIO[Request](loginProvider),
-      Method.POST / "login"                  -> Handler.fromFunctionZIO[Request](login),
-      Method.POST / "logoff"                 -> Handler.fromFunctionZIO[Request](logoff),
-      Method.POST / "verify"                 -> Handler.fromFunctionZIO[Request](verify),
-      Method.POST / "impersonate"            -> Handler.fromFunctionZIO[Request](impersonate),
-      Method.GET  / "test"                   -> Handler.fromFunctionZIO[Request](test),
-      Method.GET  / "user"                   -> Handler.fromFunctionZIO[Request](userByEmail),
-      Method.POST / "user"                   -> Handler.fromFunctionZIO[Request](createUser),
-      Method.POST / "user" / "pin"           -> Handler.fromFunctionZIO[Request](setUserPin),
-      Method.GET  / "groups" / string("app") -> handler(groupsGiven),
+      Method.POST / "login" / "provider"        -> Handler.fromFunctionZIO[Request](loginProvider),
+      Method.POST / "login"                     -> Handler.fromFunctionZIO[Request](login),
+      Method.POST / "logoff"                    -> Handler.fromFunctionZIO[Request](logoff),
+      Method.POST / "verify"                    -> Handler.fromFunctionZIO[Request](verify),
+      Method.POST / "impersonate"               -> Handler.fromFunctionZIO[Request](impersonate),
+      Method.GET  / "test"                      -> Handler.fromFunctionZIO[Request](test),
+      Method.GET  / "user"                      -> Handler.fromFunctionZIO[Request](userByEmail),
+      Method.POST / "user"                      -> Handler.fromFunctionZIO[Request](createUser),
+      Method.POST / "user" / "pin"              -> Handler.fromFunctionZIO[Request](setUserPin),
+      Method.POST / "user" / "pin" / "validate" -> Handler.fromFunctionZIO[Request](validateUserPin),
+      Method.GET  / "groups" / string("app")    -> handler(groupsGiven),
     ).sandbox.toHttpApp
 
     override def routes: HttpApp[Any] = Echo.routes ++ regular @@ cors(corsConfig)
