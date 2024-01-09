@@ -49,7 +49,6 @@ object BuildHelper {
     ThisBuild / scalaVersion                 := ScalaVersion,
     ThisBuild / scalacOptions                := commonSettings(scalaVersion.value),
     ThisBuild / organization                 := "morbid",
-    ThisBuild / name                         := "morbid",
     ThisBuild / version                      := "v0.0.1-SNAPSHOT",
     ThisBuild / doc / sources                := Seq.empty,
     ThisBuild / packageDoc / publishArtifact := false,
