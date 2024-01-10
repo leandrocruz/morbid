@@ -3,28 +3,41 @@ import sbt.Keys._
 
 object BuildHelper {
 
-  val ScalaVersion = "3.3.0"
+  val ScalaVersion   = "3.3.0"
+  val ZioVersion     = "2.1-RC1" //same as guara
+  val ZioJsonVersion = "0.6.2"    //same as guara
 
   lazy val dependencies = new {
-    val guara           = "guara"                %% "guara-framework"   % "v0.0.2-SNAPSHOT" changing()
     val betterFiles     = "com.github.pathikrit" %% "better-files"      % "3.9.2"
+    val commonsCodec    = "commons-codec"        %  "commons-codec"     % "1.16.0"
+    val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.2.0"
+    val guara           = "guara"                %% "guara-framework"   % "v0.0.2-SNAPSHOT" changing()
     val jjwtApi         = "io.jsonwebtoken"      % "jjwt-api"           % "0.12.3"
     val jjwtImpl        = "io.jsonwebtoken"      % "jjwt-impl"          % "0.12.3"
     val jjwtJackson     = "io.jsonwebtoken"      % "jjwt-jackson"       % "0.12.3"
     val chimney         = "io.scalaland"         %% "chimney"           % "0.8.2"
-    val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.2.0"
     val quillZio        = "io.getquill"          %% "quill-zio"         % "4.8.0"
     val quillZioJdbc    = "io.getquill"          %% "quill-jdbc-zio"    % "4.8.0"
-    val zioOptics       = "dev.zio"              %% "zio-optics"        % "0.2.1"
     val postgresql      = "org.postgresql"       %  "postgresql"        % "42.5.4"
-    val zioTest         = "dev.zio"              %% "zio-test"          % "2.0.19" % Test
-    val zioTestSbt      = "dev.zio"              %% "zio-test-sbt"      % "2.0.19" % Test
-    val zioTestMagnolia = "dev.zio"              %% "zio-test-magnolia" % "2.0.19" % Test
+    val zioOptics       = "dev.zio"              %% "zio-optics"        % "0.2.1"
+    val zio             = "dev.zio"              %% "zio"               % ZioVersion
+    val zioJson         = "dev.zio"              %% "zio-json"          % ZioJsonVersion
+    val zioTest         = "dev.zio"              %% "zio-test"          % ZioVersion % Test
+    val zioTestSbt      = "dev.zio"              %% "zio-test-sbt"      % ZioVersion % Test
+    val zioTestMagnolia = "dev.zio"              %% "zio-test-magnolia" % ZioVersion % Test
   }
 
+  lazy val commonsDependencies = Seq(
+    dependencies.zio,
+    dependencies.zioJson,
+    dependencies.zioOptics,
+    //guara
+  )
+
   lazy val allDependencies = Seq(
-    dependencies.guara,
     dependencies.betterFiles,
+    dependencies.commonsCodec,
+    dependencies.guara,
     dependencies.jjwtApi,
     dependencies.jjwtImpl,
     dependencies.jjwtJackson,

@@ -42,7 +42,7 @@ CREATE TABLE pins (
     created  TIMESTAMP    NOT NULL                          ,
     deleted  TIMESTAMP                                      ,
     user_id  BIGINT       NOT NULL REFERENCES users (id)    ,
-    pin      VARCHAR(8)   NOT NULL                          ,
+    pin      VARCHAR(128) NOT NULL                          ,
     PRIMARY KEY (id)
 );
 

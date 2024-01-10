@@ -130,7 +130,7 @@ object repo {
     created : LocalDateTime,
     deleted : Option[LocalDateTime],
     userId  : UserId,
-    pin     : Pin,
+    pin     : Sha256Hash,
   )
   
   private case class ApplicationRow(
@@ -211,8 +211,8 @@ object repo {
     def userGiven(email: Email)                                 : Task[Option[RawUser]]
     def providerGiven(domain: Domain, code: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
     def groupsGiven(account: AccountId, app: ApplicationCode)   : Task[Seq[RawGroup]]
-    def setUserPin(user: UserId, pin: Pin)                      : Task[Unit]
-    def getUserPin(user: UserId)                                : Task[Option[Pin]]
+    def setUserPin(user: UserId, pin: Sha256Hash)               : Task[Unit]
+    def getUserPin(user: UserId)                                : Task[Option[Sha256Hash]]
   }
 
   object Repo {
@@ -266,7 +266,7 @@ object repo {
     private inline given MappedEncoding[UserCode, String]             (_.string)
     private inline given MappedEncoding[Email, String]                (_.string)
     private inline given MappedEncoding[Domain, String]               (_.string)
-    private inline given MappedEncoding[Pin, String]                  (_.string)
+    private inline given MappedEncoding[Sha256Hash, String]           (_.string)
 
     private inline given MappedEncoding[Long, TenantId]               (_.as[TenantId])
     private inline given MappedEncoding[Long, AccountId]              (_.as[AccountId])
@@ -294,7 +294,7 @@ object repo {
     private inline given MappedEncoding[String, UserCode]             (_.as[UserCode])
     private inline given MappedEncoding[String, Email]                (_.as[Email])
     private inline given MappedEncoding[String, Domain]               (_.as[Domain])
-    private inline given MappedEncoding[String, Pin]                  (_.as[Pin])
+    private inline given MappedEncoding[String, Sha256Hash]           (_.as[Sha256Hash])
 
     private inline given MappedEncoding[String, UserKind]             (UserKind.valueOf)
     private inline given MappedEncoding[UserKind, String]             (_.toString)
@@ -501,7 +501,7 @@ object repo {
       }
     }
 
-    override def setUserPin(user: UserId, pin: Pin): Task[Unit] = {
+    override def setUserPin(user: UserId, pin: Sha256Hash): Task[Unit] = {
 
       def row(now: LocalDateTime) = PinRow(
         id      = PinId.of(0),
@@ -521,7 +521,7 @@ object repo {
       } yield ()
     }
 
-    override def getUserPin(user: UserId): Task[Option[Pin]] = {
+    override def getUserPin(user: UserId): Task[Option[Sha256Hash]] = {
       inline def query = quote {
         (for {
           p <- pins if p.deleted.isEmpty && p.userId == lift(user)

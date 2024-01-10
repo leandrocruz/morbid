@@ -32,6 +32,7 @@ object types {
   opaque type UserCode        = String
   opaque type Email           = String
   opaque type Pin             = String
+  opaque type Sha256Hash      = String
   opaque type Password        = String
   opaque type Domain          = String
   opaque type Magic           = String
@@ -128,6 +129,12 @@ object types {
 
   object Password:
     def of(value: String): Password = value
+
+  object Pin:
+    def of(value: String): Pin = value
+
+  object Sha256Hash:
+    def of(value: String): Sha256Hash = value
 
   extension (string: String)
     def as[T]: T = string.asInstanceOf[T]
@@ -232,6 +239,8 @@ object types {
   extension (it: Pin)
     @targetName("pin") def string: String = it
 
+  extension (it: Sha256Hash)
+    @targetName("sha256hash") def string: String = it
 }
 
 object domain {

@@ -13,7 +13,8 @@ object config {
   case class IdentityConfig(key: String, database: String)
   case class ClockConfig(timezone: String)
   case class MagicConfig(password: String)
-  case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig, magic: MagicConfig)
+  case class PinConfig(prefix: String)
+  case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig, magic: MagicConfig, pin: PinConfig)
 
   object MorbidConfig {
     val layer = ZLayer {
