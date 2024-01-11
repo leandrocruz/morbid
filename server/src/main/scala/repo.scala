@@ -205,14 +205,15 @@ object repo {
   )
 
   trait Repo {
-    def accountByProvider(code: ProviderCode)                   : Task[Option[RawAccount]]
-    def accountByCode(code: AccountCode)                        : Task[Option[RawAccount]]
-    def create(raw: RawUser)                                    : Task[RawUser]
-    def userGiven(email: Email)                                 : Task[Option[RawUser]]
-    def providerGiven(domain: Domain, code: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
-    def groupsGiven(account: AccountId, app: ApplicationCode)   : Task[Seq[RawGroup]]
-    def setUserPin(user: UserId, pin: Sha256Hash)               : Task[Unit]
-    def getUserPin(user: UserId)                                : Task[Option[Sha256Hash]]
+    def accountByProvider(code: ProviderCode)                                   : Task[Option[RawAccount]]
+    def accountByCode(code: AccountCode)                                        : Task[Option[RawAccount]]
+    def create(raw: RawUser)                                                    : Task[RawUser]
+    def userGiven(email: Email)                                                 : Task[Option[RawUser]]
+    def providerGiven(domain: Domain, code: Option[TenantCode])                 : Task[Option[RawIdentityProvider]]
+    def groupsGiven(account: AccountId, app: ApplicationCode)                   : Task[Seq[RawGroup]]
+    def usersGiven (account: AccountId, app: ApplicationCode, group: GroupCode) : Task[Seq[RawUserEntry]]
+    def setUserPin(user: UserId, pin: Sha256Hash)                               : Task[Unit]
+    def getUserPin(user: UserId)                                                : Task[Option[Sha256Hash]]
   }
 
   object Repo {
@@ -484,6 +485,30 @@ object repo {
       for {
         rows <- exec(run(query))
       } yield rows.map(_.transformInto[RawGroup])
+    }
+
+    private inline def printQuery[T](inline quoted: Quoted[Query[T]]): Task[Unit] = {
+      for {
+        str <- exec(ctx.translate(quoted, prettyPrint = false))
+        _   <- ZIO.log(str)
+      } yield ()
+    }
+
+    override def usersGiven(account: AccountId, application: ApplicationCode, group: GroupCode): Task[Seq[RawUserEntry]] = {
+      inline def query = quote {
+        for {
+          app <- applications                       if app.active && app.deleted.isEmpty && app.code == lift(application)
+          a2a <- account2app.join(_.app == app.id)  if               a2a.deleted.isEmpty && a2a.acc  == lift(account)
+          grp <- groups     .join(_.app == app.id)  if               grp.deleted.isEmpty && grp.code == lift(group)
+          u2g <- user2group .join(_.app == app.id)  if               u2g.deleted.isEmpty && u2g.grp  == grp.id
+          usr <- users      .join(_.id  == u2g.usr) if usr.active && usr.deleted.isEmpty
+        } yield usr
+      }
+
+      for {
+        //_    <- printQuery(query)
+        rows <- exec(run(query))
+      } yield rows.map(_.transformInto[RawUserEntry])
     }
 
     override def accountByCode(code: AccountCode): Task[Option[RawAccount]] = {

@@ -211,6 +211,13 @@ object router {
       } yield Response.json(user.toJson).loggedIn(encoded)
     }
 
+    private def groupUsers(app: String, group: String, request: Request): Task[Response] = {
+      for {
+        tk  <- tokenFrom(request)
+        seq <- groups.usersFor(tk.user.details.account, app.as[ApplicationCode], group.as[GroupCode])
+      } yield Response.json(seq.toJson)
+    }
+
     private def groupsGiven(app: String, request: Request): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
@@ -229,7 +236,8 @@ object router {
       Method.POST / "user"                      -> Handler.fromFunctionZIO[Request](createUser),
       Method.POST / "user" / "pin"              -> Handler.fromFunctionZIO[Request](setUserPin),
       Method.POST / "user" / "pin" / "validate" -> Handler.fromFunctionZIO[Request](validateUserPin),
-      Method.GET  / "groups" / string("app")    -> handler(groupsGiven),
+      Method.GET  / "app" / string("app") / "groups"                            -> handler(groupsGiven),
+      Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
     ).sandbox.toHttpApp
 
     override def routes: HttpApp[Any] = Echo.routes ++ regular @@ cors(corsConfig)

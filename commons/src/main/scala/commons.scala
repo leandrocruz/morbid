@@ -127,6 +127,9 @@ object types {
   object UserCode:
     def of(value: String): UserCode = value
 
+  object GroupCode:
+    def of(value: String): GroupCode = value
+
   object Password:
     def of(value: String): Password = value
 
@@ -280,6 +283,17 @@ object domain {
       name       : AccountName,
     )
 
+    case class RawUserEntry(
+      id      : UserId,
+      created : LocalDateTime,
+      deleted : Option[LocalDateTime],
+      account : AccountId,
+      kind    : Option[UserKind],
+      code    : UserCode,
+      active  : Boolean,
+      email   : Email
+    )
+
     case class RawUser(
       details      : RawUserDetails,
       applications : Seq[RawApplication] = Seq.empty
@@ -375,6 +389,8 @@ object domain {
     given JsonDecoder[RawRole]               = DeriveJsonDecoder.gen[RawRole]
     given JsonEncoder[RawUser]               = DeriveJsonEncoder.gen[RawUser]
     given JsonDecoder[RawUser]               = DeriveJsonDecoder.gen[RawUser]
+    given JsonEncoder[RawUserEntry]          = DeriveJsonEncoder.gen[RawUserEntry]
+    given JsonDecoder[RawUserEntry]          = DeriveJsonDecoder.gen[RawUserEntry]
     given JsonEncoder[RawIdentityProvider]   = DeriveJsonEncoder.gen[RawIdentityProvider]
     given JsonDecoder[RawIdentityProvider]   = DeriveJsonDecoder.gen[RawIdentityProvider]
   }
@@ -489,6 +505,14 @@ object domain {
   object token {
 
     import raw.*
+
+    opaque type RawToken = String
+
+    object RawToken:
+      def of(value: String): RawToken = value
+
+    extension (it: RawToken)
+      def string: String = it
 
     case class Token(
       created : ZonedDateTime,
