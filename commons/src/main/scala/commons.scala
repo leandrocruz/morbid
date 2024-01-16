@@ -3,6 +3,7 @@ package morbid
 object types {
 
   import guara.utils.{safeCode, safeName, safeDecode}
+  import zio.json.JsonCodec
   import zio.json.{JsonEncoder, JsonDecoder, JsonFieldEncoder, JsonFieldDecoder}
   import scala.annotation.targetName
 
@@ -37,22 +38,14 @@ object types {
   opaque type Domain          = String
   opaque type Magic           = String
 
-  given JsonEncoder[TenantId]      = JsonEncoder.long
-  given JsonDecoder[TenantId]      = JsonDecoder.long
-  given JsonEncoder[AccountId]     = JsonEncoder.long
-  given JsonDecoder[AccountId]     = JsonDecoder.long
-  given JsonEncoder[UserId]        = JsonEncoder.long
-  given JsonDecoder[UserId]        = JsonDecoder.long
-  given JsonEncoder[ApplicationId] = JsonEncoder.long
-  given JsonDecoder[ApplicationId] = JsonDecoder.long
-  given JsonEncoder[GroupId]       = JsonEncoder.long
-  given JsonDecoder[GroupId]       = JsonDecoder.long
-  given JsonEncoder[RoleId]        = JsonEncoder.long
-  given JsonDecoder[RoleId]        = JsonDecoder.long
-  given JsonEncoder[PermissionId]  = JsonEncoder.long
-  given JsonDecoder[PermissionId]  = JsonDecoder.long
-  given JsonEncoder[ProviderId]    = JsonEncoder.long
-  given JsonDecoder[ProviderId]    = JsonDecoder.long
+  given JsonCodec[TenantId]      = JsonCodec.long
+  given JsonCodec[AccountId]     = JsonCodec.long
+  given JsonCodec[UserId]        = JsonCodec.long
+  given JsonCodec[ApplicationId] = JsonCodec.long
+  given JsonCodec[GroupId]       = JsonCodec.long
+  given JsonCodec[RoleId]        = JsonCodec.long
+  given JsonCodec[PermissionId]  = JsonCodec.long
+  given JsonCodec[ProviderId]    = JsonCodec.long
 
   // w = [a-zA-Z_0-9]
 
@@ -112,120 +105,46 @@ object types {
   given JsonFieldEncoder[RoleCode]        = JsonFieldEncoder.string
   given JsonFieldDecoder[RoleCode]        = JsonFieldDecoder.string
 
-  object UserId:
-    def of(value: Long): UserId = value
+  trait OpaqueOps[N, T] {
+    def of(n: N)     : T         = n.asInstanceOf[T]
+    def value(t: T)  : N         = t.asInstanceOf[N]
+    def option(n: N) : Option[T] = Option(n.asInstanceOf[T])
+  }
 
-  object PinId:
-    def of(value: Long): PinId = value
-
-  object ApplicationCode:
-    def of(value: String): ApplicationCode = value
-
-  object RoleCode:
-    def of(value: String): RoleCode = value
-
-  object UserCode:
-    def of(value: String): UserCode = value
-
-  object GroupCode:
-    def of(value: String): GroupCode = value
-
-  object Password:
-    def of(value: String): Password = value
-
-  object Pin:
-    def of(value: String): Pin = value
-
-  object Sha256Hash:
-    def of(value: String): Sha256Hash = value
-
-  extension (string: String)
-    def as[T]: T = string.asInstanceOf[T]
-
-  extension (long: Long)
-    def as[T]: T = long.asInstanceOf[T]
-
-  extension (it: TenantId)
-    @targetName("tenantId") def long: Long = it
-
-  extension (it: AccountId)
-    @targetName("accountId") def long: Long = it
-
-  extension (it: UserId)
-    @targetName("userId") def long: Long = it
-
-  extension (it: PinId)
-    @targetName("pinId") def long: Long = it
-
-  extension (it: ApplicationId)
-    @targetName("applicationId") def long: Long = it
-
-  extension (it: GroupId)
-    @targetName("groupId") def long: Long = it
-
-  extension (it: RoleId)
-    @targetName("roleId") def long: Long = it
-
-  extension (it: PermissionId)
-    @targetName("permissionId") def long: Long = it
-
-  extension (it: ProviderId)
-    @targetName("providerId") def long: Long = it
-
-  extension (it: TenantName)
-    @targetName("tenantName") def string: String = it
-
-  extension (it: TenantCode)
-    @targetName("tenantCode") def string: String = it
-
-  extension (it: AccountName)
-    @targetName("accountName") def string: String = it
-
-  extension (it: AccountCode)
-    @targetName("accountCode") def string: String = it
-
-  extension (it: ApplicationName)
-    @targetName("applicationName") def string: String = it
-
-  extension (it: ApplicationCode)
-    @targetName("applicationCode") def string: String = it
-
-  extension (it: GroupName)
-    @targetName("groupName") def string: String = it
-
-  extension (it: GroupCode)
-    @targetName("groupCode") def string: String = it
-
-  extension (it: RoleName)
-    @targetName("roleName") def string: String = it
-
-  extension (it: RoleCode)
-    @targetName("roleCode") def string: String = it
-
-  extension (it: PermissionName)
-    @targetName("permName") def string: String = it
-
-  extension (it: PermissionCode)
-    @targetName("permCode") def string: String = it
-
-  extension (it: ProviderName)
-    @targetName("providerName") def string: String = it
-
-  extension (it: ProviderCode)
-    @targetName("providerCode") def string: String = it
-
-  extension (it: UserCode)
-    @targetName("userCode") def string: String = it
-
-  extension (it: Domain)
-    @targetName("domainName") def string: String = it
+  object AccountId       extends OpaqueOps[Long, AccountId]
+  object AccountName     extends OpaqueOps[String, AccountName]
+  object AccountCode     extends OpaqueOps[String, AccountCode]
+  object ApplicationId   extends OpaqueOps[Long, ApplicationId]
+  object ApplicationCode extends OpaqueOps[String, ApplicationCode]
+  object ApplicationName extends OpaqueOps[String, ApplicationName]
+  object Domain          extends OpaqueOps[String, Domain]
+  object Email           extends OpaqueOps[String, Email]
+  object GroupCode       extends OpaqueOps[String, GroupCode]
+  object GroupId         extends OpaqueOps[Long, GroupId]
+  object GroupName       extends OpaqueOps[String, GroupName]
+  object Password        extends OpaqueOps[String, Password]
+  object PinId           extends OpaqueOps[Long, PinId]
+  object Pin             extends OpaqueOps[String, Pin]
+  object PermissionId    extends OpaqueOps[Long, PermissionId]
+  object PermissionCode  extends OpaqueOps[String, PermissionCode]
+  object PermissionName  extends OpaqueOps[String, PermissionName]
+  object ProviderCode    extends OpaqueOps[String, ProviderCode]
+  object ProviderId      extends OpaqueOps[Long, ProviderId]
+  object ProviderName    extends OpaqueOps[String, ProviderName]
+  object RoleCode        extends OpaqueOps[String, RoleCode]
+  object RoleId          extends OpaqueOps[Long, RoleId]
+  object RoleName        extends OpaqueOps[String, RoleName]
+  object Sha256Hash      extends OpaqueOps[String, Sha256Hash]
+  object TenantCode      extends OpaqueOps[String, TenantCode]
+  object TenantId        extends OpaqueOps[Long, TenantId]
+  object TenantName      extends OpaqueOps[String, TenantName]
+  object UserCode        extends OpaqueOps[String, UserCode]
+  object UserId          extends OpaqueOps[Long, UserId]
 
   extension (it: Email) {
-    @targetName("emailName") def string: String = it
-
     def domainName: Option[Domain] = {
       it match {
-        case domainFrom(value) => Some(value.as[Domain])
+        case domainFrom(value) => Some(Domain.of(value))
         case _                 => None
       }
     }
@@ -235,15 +154,6 @@ object types {
     @targetName("magic") def string: String = it
     def is(value: String): Boolean = it == value
   }
-
-  extension (it: Password)
-    @targetName("password") def string: String = it
-
-  extension (it: Pin)
-    @targetName("pin") def string: String = it
-
-  extension (it: Sha256Hash)
-    @targetName("sha256hash") def string: String = it
 }
 
 object domain {

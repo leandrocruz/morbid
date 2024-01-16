@@ -84,10 +84,10 @@ object gip {
       def build(token: FirebaseToken) = {
         CloudIdentity(
           issuer = token.getIssuer,
-          code   = token.getUid.as[UserCode],
-          email  = token.getEmail.as[Email],
+          code   = UserCode.of(token.getUid),
+          email  = Email.of(token.getEmail),
           kind   = ProviderKind.UP,
-          tenant = Option(token.getTenantId.as[TenantCode]),
+          tenant = TenantCode.option(token.getTenantId),
         )
       }
 
@@ -122,7 +122,7 @@ object gip {
 
     private def authGiven(code: Option[TenantCode]) = {
       code match
-        case Some(value) => auth.getTenantManager.getAuthForTenant(value.string)
+        case Some(value) => auth.getTenantManager.getAuthForTenant(TenantCode.value(value))
         case None        => auth
     }
 
@@ -130,9 +130,9 @@ object gip {
       //See https://firebase.google.com/docs/auth/admin/manage-users
 
       val req = new CreateRequest()
-        .setEmail(request.email.string)
-        .setUid(request.code.string)
-        .setPassword(request.password.string)
+        .setEmail(Email.value(request.email))
+        .setUid(UserCode.value(request.code))
+        .setPassword(Password.value(request.password))
         .setDisabled(false)
 
       ZIO.attempt { authGiven(request.tenant).createUser(req) }

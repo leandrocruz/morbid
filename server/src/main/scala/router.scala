@@ -2,6 +2,7 @@ package morbid
 
 import types.*
 import config.MorbidConfig
+import billing.Billing
 import domain.*
 import domain.raw.*
 import domain.simple.*
@@ -33,6 +34,7 @@ import io.scalaland.chimney.dsl.*
 import morbid.domain.token.Token
 import morbid.groups.GroupManager
 import morbid.pins.PinManager
+import io.github.iltotore.iron.constraint.all.*
 
 import java.util.Base64
 
@@ -72,7 +74,14 @@ object router {
 
   case class LoginSuccess(email: String, admin: Boolean)
 
-  case class MorbidRouter(cfg: MorbidConfig, identities: Identities, accounts: AccountManager, groups: GroupManager, tokens: TokenGenerator, pins: PinManager) extends Router {
+  case class MorbidRouter(
+    cfg        : MorbidConfig,
+    identities : Identities,
+    accounts   : AccountManager,
+    groups     : GroupManager,
+    tokens     : TokenGenerator,
+    pins       : PinManager,
+    billing    : Billing) extends Router {
 
     private given ApplicationCode = utils.Morbid
 
@@ -136,7 +145,7 @@ object router {
     private def userByEmail(request: Request): Task[Response] = {
       for {
         email     <- ZIO.fromOption(request.url.queryParams.get("email")).mapError(_ => new Exception("email not provided"))
-        maybeUser <- accounts.userByEmail(email.as[Email])
+        maybeUser <- accounts.userByEmail(Email.of(email))
       } yield maybeUser match
         case None       => Response.notFound
         case Some(user) => Response.json(user.asJson(request.url.queryParams.get("format")))
@@ -150,7 +159,7 @@ object router {
           .mapError(_ => ReturnResponseError(Response.forbidden(s"Required role $role is missing")))
       }
 
-      val roles = codes.toList.prepended(code).map(RoleCode.of)
+      val roles = codes.toList.prepended(code).map(name => RoleCode.of(name))
       ensureResponse {
         for {
           token  <- tokenFrom(request)
@@ -211,32 +220,44 @@ object router {
       } yield Response.json(user.toJson).loggedIn(encoded)
     }
 
+    private def usersByAccount(app: String, request: Request): Task[Response] = {
+      role("adm") { (_, _) =>
+        for {
+          data   <- billing.usersByAccount(ApplicationCode.of(app))
+          result = data.map {
+                     case (acc, count) => (s"${acc.name} (id:${acc.id}, code:${acc.code})", count)
+                   }
+        } yield Response.json(result.toJson)
+      } (request)
+    }
+
     private def groupUsers(app: String, group: String, request: Request): Task[Response] = {
       for {
         tk  <- tokenFrom(request)
-        seq <- groups.usersFor(tk.user.details.account, app.as[ApplicationCode], group.as[GroupCode])
+        seq <- groups.usersFor(tk.user.details.account, ApplicationCode.of(app), GroupCode.of(group))
       } yield Response.json(seq.toJson)
     }
 
     private def groupsGiven(app: String, request: Request): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
-        seq <- groups.groupsFor(tk.user.details.account, app.as[ApplicationCode])
+        seq <- groups.groupsFor(tk.user.details.account, ApplicationCode.of(app))
       } yield Response.json(seq.toJson)
     }
 
     private def regular = Routes(
-      Method.POST / "login" / "provider"        -> Handler.fromFunctionZIO[Request](loginProvider),
-      Method.POST / "login"                     -> Handler.fromFunctionZIO[Request](login),
-      Method.POST / "logoff"                    -> Handler.fromFunctionZIO[Request](logoff),
-      Method.POST / "verify"                    -> Handler.fromFunctionZIO[Request](verify),
-      Method.POST / "impersonate"               -> Handler.fromFunctionZIO[Request](impersonate),
-      Method.GET  / "test"                      -> Handler.fromFunctionZIO[Request](test),
-      Method.GET  / "user"                      -> Handler.fromFunctionZIO[Request](userByEmail),
-      Method.POST / "user"                      -> Handler.fromFunctionZIO[Request](createUser),
-      Method.POST / "user" / "pin"              -> Handler.fromFunctionZIO[Request](setUserPin),
-      Method.POST / "user" / "pin" / "validate" -> Handler.fromFunctionZIO[Request](validateUserPin),
-      Method.GET  / "app" / string("app") / "groups"                            -> handler(groupsGiven),
+      Method.POST / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProvider),
+      Method.POST / "login"                          -> Handler.fromFunctionZIO[Request](login),
+      Method.POST / "logoff"                         -> Handler.fromFunctionZIO[Request](logoff),
+      Method.POST / "verify"                         -> Handler.fromFunctionZIO[Request](verify),
+      Method.POST / "impersonate"                    -> Handler.fromFunctionZIO[Request](impersonate),
+      Method.GET  / "test"                           -> Handler.fromFunctionZIO[Request](test),
+      Method.GET  / "user"                           -> Handler.fromFunctionZIO[Request](userByEmail),
+      Method.POST / "user"                           -> Handler.fromFunctionZIO[Request](createUser),
+      Method.POST / "user" / "pin"                   -> Handler.fromFunctionZIO[Request](setUserPin),
+      Method.POST / "user" / "pin" / "validate"      -> Handler.fromFunctionZIO[Request](validateUserPin),
+      Method.GET  / "app" / string("app") / "users"  -> handler(usersByAccount),
+      Method.GET  / "app" / string("app") / "groups" -> handler(groupsGiven),
       Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
     ).sandbox.toHttpApp
 

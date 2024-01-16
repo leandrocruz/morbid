@@ -4,6 +4,7 @@ import router.MorbidRouter
 import guara.GuaraApp
 import guara.processor.Processor
 import morbid.accounts.AccountManager
+import morbid.billing.Billing
 import morbid.config.MorbidConfig
 import morbid.gip.Identities
 import morbid.groups.GroupManager
@@ -27,6 +28,7 @@ object MorbidServer extends GuaraApp {
     GroupManager.layer,
     Repo.layer,
     TokenGenerator.layer,
-    PinManager.layer
+    PinManager.layer,
+    Billing.layer
   )
 }

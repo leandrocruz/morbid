@@ -208,6 +208,7 @@ object repo {
     def accountByProvider(code: ProviderCode)                                   : Task[Option[RawAccount]]
     def accountByCode(code: AccountCode)                                        : Task[Option[RawAccount]]
     def create(raw: RawUser)                                                    : Task[RawUser]
+    def usersByAccount(app: ApplicationCode)                                    : Task[Map[RawAccount, Int]]
     def userGiven(email: Email)                                                 : Task[Option[RawUser]]
     def providerGiven(domain: Domain, code: Option[TenantCode])                 : Task[Option[RawIdentityProvider]]
     def groupsGiven(account: AccountId, app: ApplicationCode)                   : Task[Seq[RawGroup]]
@@ -241,61 +242,61 @@ object repo {
     private inline given InsertMeta[PermissionRow]       = insertMeta[PermissionRow]       (_.id)
     private inline given InsertMeta[IdentityProviderRow] = insertMeta[IdentityProviderRow] (_.id)
 
-    private inline given MappedEncoding[TenantId, Long]               (_.long)
-    private inline given MappedEncoding[AccountId, Long]              (_.long)
-    private inline given MappedEncoding[UserId, Long]                 (_.long)
-    private inline given MappedEncoding[PinId, Long]                  (_.long)
-    private inline given MappedEncoding[ApplicationId, Long]          (_.long)
-    private inline given MappedEncoding[GroupId, Long]                (_.long)
-    private inline given MappedEncoding[RoleId, Long]                 (_.long)
-    private inline given MappedEncoding[PermissionId, Long]           (_.long)
-    private inline given MappedEncoding[ProviderId, Long]             (_.long)
-    private inline given MappedEncoding[TenantCode, String]           (_.string)
-    private inline given MappedEncoding[TenantName, String]           (_.string)
-    private inline given MappedEncoding[AccountName, String]          (_.string)
-    private inline given MappedEncoding[AccountCode, String]          (_.string)
-    private inline given MappedEncoding[ApplicationName, String]      (_.string)
-    private inline given MappedEncoding[ApplicationCode, String]      (_.string)
-    private inline given MappedEncoding[GroupName, String]            (_.string)
-    private inline given MappedEncoding[GroupCode, String]            (_.string)
-    private inline given MappedEncoding[RoleName, String]             (_.string)
-    private inline given MappedEncoding[RoleCode, String]             (_.string)
-    private inline given MappedEncoding[PermissionName, String]       (_.string)
-    private inline given MappedEncoding[PermissionCode, String]       (_.string)
-    private inline given MappedEncoding[ProviderName, String]         (_.string)
-    private inline given MappedEncoding[ProviderCode, String]         (_.string)
-    private inline given MappedEncoding[UserCode, String]             (_.string)
-    private inline given MappedEncoding[Email, String]                (_.string)
-    private inline given MappedEncoding[Domain, String]               (_.string)
-    private inline given MappedEncoding[Sha256Hash, String]           (_.string)
+    private inline given MappedEncoding[TenantId, Long]               (TenantId.value)
+    private inline given MappedEncoding[AccountId, Long]              (AccountId.value)
+    private inline given MappedEncoding[UserId, Long]                 (UserId.value)
+    private inline given MappedEncoding[PinId, Long]                  (PinId.value)
+    private inline given MappedEncoding[ApplicationId, Long]          (ApplicationId.value)
+    private inline given MappedEncoding[GroupId, Long]                (GroupId.value)
+    private inline given MappedEncoding[RoleId, Long]                 (RoleId.value)
+    private inline given MappedEncoding[PermissionId, Long]           (PermissionId.value)
+    private inline given MappedEncoding[ProviderId, Long]             (ProviderId.value)
+    private inline given MappedEncoding[TenantCode, String]           (TenantCode.value)
+    private inline given MappedEncoding[TenantName, String]           (TenantName.value)
+    private inline given MappedEncoding[AccountName, String]          (AccountName.value)
+    private inline given MappedEncoding[AccountCode, String]          (AccountCode.value)
+    private inline given MappedEncoding[ApplicationName, String]      (ApplicationName.value)
+    private inline given MappedEncoding[ApplicationCode, String]      (ApplicationCode.value)
+    private inline given MappedEncoding[GroupName, String]            (GroupName.value)
+    private inline given MappedEncoding[GroupCode, String]            (GroupCode.value)
+    private inline given MappedEncoding[RoleName, String]             (RoleName.value)
+    private inline given MappedEncoding[RoleCode, String]             (RoleCode.value)
+    private inline given MappedEncoding[PermissionName, String]       (PermissionName.value)
+    private inline given MappedEncoding[PermissionCode, String]       (PermissionCode.value)
+    private inline given MappedEncoding[ProviderName, String]         (ProviderName.value)
+    private inline given MappedEncoding[ProviderCode, String]         (ProviderCode.value)
+    private inline given MappedEncoding[UserCode, String]             (UserCode.value)
+    private inline given MappedEncoding[Email, String]                (Email.value)
+    private inline given MappedEncoding[Domain, String]               (Domain.value)
+    private inline given MappedEncoding[Sha256Hash, String]           (Sha256Hash.value)
 
-    private inline given MappedEncoding[Long, TenantId]               (_.as[TenantId])
-    private inline given MappedEncoding[Long, AccountId]              (_.as[AccountId])
-    private inline given MappedEncoding[Long, UserId]                 (_.as[UserId])
-    private inline given MappedEncoding[Long, PinId]                  (_.as[PinId])
-    private inline given MappedEncoding[Long, ApplicationId]          (_.as[ApplicationId])
-    private inline given MappedEncoding[Long, GroupId]                (_.as[GroupId])
-    private inline given MappedEncoding[Long, RoleId]                 (_.as[RoleId])
-    private inline given MappedEncoding[Long, PermissionId]           (_.as[PermissionId])
-    private inline given MappedEncoding[Long, ProviderId]             (_.as[ProviderId])
-    private inline given MappedEncoding[String, TenantCode]           (_.as[TenantCode])
-    private inline given MappedEncoding[String, TenantName]           (_.as[TenantName])
-    private inline given MappedEncoding[String, AccountName]          (_.as[AccountName])
-    private inline given MappedEncoding[String, AccountCode]          (_.as[AccountCode])
-    private inline given MappedEncoding[String, ApplicationName]      (_.as[ApplicationName])
-    private inline given MappedEncoding[String, ApplicationCode]      (_.as[ApplicationCode])
-    private inline given MappedEncoding[String, GroupName]            (_.as[GroupName])
-    private inline given MappedEncoding[String, GroupCode]            (_.as[GroupCode])
-    private inline given MappedEncoding[String, RoleName]             (_.as[RoleName])
-    private inline given MappedEncoding[String, RoleCode]             (_.as[RoleCode])
-    private inline given MappedEncoding[String, PermissionName]       (_.as[PermissionName])
-    private inline given MappedEncoding[String, PermissionCode]       (_.as[PermissionCode])
-    private inline given MappedEncoding[String, ProviderName]         (_.as[ProviderName])
-    private inline given MappedEncoding[String, ProviderCode]         (_.as[ProviderCode])
-    private inline given MappedEncoding[String, UserCode]             (_.as[UserCode])
-    private inline given MappedEncoding[String, Email]                (_.as[Email])
-    private inline given MappedEncoding[String, Domain]               (_.as[Domain])
-    private inline given MappedEncoding[String, Sha256Hash]           (_.as[Sha256Hash])
+    private inline given MappedEncoding[Long, TenantId]               (TenantId.of)
+    private inline given MappedEncoding[Long, AccountId]              (AccountId.of)
+    private inline given MappedEncoding[Long, UserId]                 (UserId.of)
+    private inline given MappedEncoding[Long, PinId]                  (PinId.of)
+    private inline given MappedEncoding[Long, ApplicationId]          (ApplicationId.of)
+    private inline given MappedEncoding[Long, GroupId]                (GroupId.of)
+    private inline given MappedEncoding[Long, RoleId]                 (RoleId.of)
+    private inline given MappedEncoding[Long, PermissionId]           (PermissionId.of)
+    private inline given MappedEncoding[Long, ProviderId]             (ProviderId.of)
+    private inline given MappedEncoding[String, TenantCode]           (TenantCode.of)
+    private inline given MappedEncoding[String, TenantName]           (TenantName.of)
+    private inline given MappedEncoding[String, AccountName]          (AccountName.of)
+    private inline given MappedEncoding[String, AccountCode]          (AccountCode.of)
+    private inline given MappedEncoding[String, ApplicationName]      (ApplicationName.of)
+    private inline given MappedEncoding[String, ApplicationCode]      (ApplicationCode.of)
+    private inline given MappedEncoding[String, GroupName]            (GroupName.of)
+    private inline given MappedEncoding[String, GroupCode]            (GroupCode.of)
+    private inline given MappedEncoding[String, RoleName]             (RoleName.of)
+    private inline given MappedEncoding[String, RoleCode]             (RoleCode.of)
+    private inline given MappedEncoding[String, PermissionName]       (PermissionName.of)
+    private inline given MappedEncoding[String, PermissionCode]       (PermissionCode.of)
+    private inline given MappedEncoding[String, ProviderName]         (ProviderName.of)
+    private inline given MappedEncoding[String, ProviderCode]         (ProviderCode.of)
+    private inline given MappedEncoding[String, UserCode]             (UserCode.of)
+    private inline given MappedEncoding[String, Email]                (Email.of)
+    private inline given MappedEncoding[String, Domain]               (Domain.of)
+    private inline given MappedEncoding[String, Sha256Hash]           (Sha256Hash.of)
 
     private inline given MappedEncoding[String, UserKind]             (UserKind.valueOf)
     private inline given MappedEncoding[UserKind, String]             (_.toString)
@@ -457,7 +458,7 @@ object repo {
 
     override def providerGiven(domain: Domain, tenant: Option[TenantCode]): Task[Option[RawIdentityProvider]] = {
 
-      val code = tenant.getOrElse("DEFAULT".as[TenantCode])
+      val code = tenant.getOrElse(TenantCode.of("DEFAULT"))
 
       inline def query = quote {
         for {
@@ -556,6 +557,26 @@ object repo {
       for {
         rows <- exec(run(query))
       } yield rows.headOption.map { _.pin }
+    }
+
+    override def usersByAccount(code: ApplicationCode): Task[Map[RawAccount, Int]] = {
+      inline def query = quote {
+        (for {
+          app <- applications                           if app.active && app.deleted.isEmpty && app.code == lift(code)
+          a2a <- account2app .join(_.app == app.id)     if               a2a.deleted.isEmpty
+          acc <- accounts    .join(_.id == a2a.acc)     if acc.active && acc.deleted.isEmpty
+          usr <- users       .join(_.account == acc.id) if usr.active && usr.deleted.isEmpty
+        } yield (acc, usr)).groupBy(_._1).map {
+          case (acc, users) => (acc, users.size)
+        }
+      }
+
+      for {
+        _    <- printQuery(query)
+        rows <- exec(run(query))
+      } yield rows.map {
+        case (account, count) => account.into[RawAccount].withFieldConst(_.tenantCode, TenantCode.of("")).transform -> count.toInt
+      }.toMap
     }
   }
 }

@@ -24,15 +24,15 @@ object pins {
     private val prefix = config.pin.prefix
 
     override def set(user: UserId, pin: Pin): Task[Unit] = {
-      val hash = DigestUtils.sha256Hex(prefix + pin.string)
+      val hash = DigestUtils.sha256Hex(prefix + Pin.value(pin))
       repo.setUserPin(user, Sha256Hash.of(hash))
     }
 
     override def validate(user: UserId, pin: Pin): Task[Boolean] = {
-      val hash = DigestUtils.sha256Hex(prefix + pin.string)
+      val hash = DigestUtils.sha256Hex(prefix + Pin.value(pin))
       for {
         expected <- repo.getUserPin(user)
-      } yield expected.map(_.string).map(Pin.of).contains(hash)
+      } yield expected.map(Sha256Hash.value).map(Pin.of).contains(hash)
     }
 
   }
