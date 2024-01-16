@@ -32,6 +32,7 @@ object tokens {
 
       for {
         config  <- ZIO.service[MorbidConfig]
+        _       <- ZIO.logInfo(s"Loading JWT key from '${config.jwt.key}'")
         key     <- readKey(config)
         zone    <- ZIO.attempt(config.clock.timezone).map(ZoneId.of)
       } yield JwtTokenGenerator(key, zone)
