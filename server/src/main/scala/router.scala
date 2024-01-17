@@ -35,6 +35,7 @@ import morbid.domain.token.Token
 import morbid.groups.GroupManager
 import morbid.pins.PinManager
 
+import java.time.{Instant, LocalDateTime}
 import java.util.Base64
 
 object cookies {
@@ -105,6 +106,32 @@ object router {
           provider <- identities.providerGiven(req.email, req.tenant)
         } yield Response.json(encode(provider))
       }
+    }
+
+    private def loginProviderForAccount(request: Request): Task[Response] = {
+
+      def build(tk: Token, now: LocalDateTime, domain: Domain): RawIdentityProvider = {
+        RawIdentityProvider(
+          id      = ProviderId.of(0),
+          created = now,
+          deleted = None,
+          account = tk.user.details.account,
+          active  = true,
+          domain  = domain,
+          kind    = ProviderKind.UP,
+          code    = ProviderCode.of(""),
+          name    = ProviderName.of(""),
+        )
+      }
+
+      for {
+        token  <- tokenFrom(request)
+        maybe  <- identities.providerGiven(token.user.details.account)
+        domain <- ZIO.fromOption(token.user.details.email.domainName).mapError(_ => new Exception("Error extracting domain from user email"))
+        now    <- Clock.localDateTime
+      } yield maybe match
+        case None           => Response.json(build(token, now, domain).toJson)
+        case Some(provider) => Response.json(provider.toJson)
     }
 
     private def login(request: Request): Task[Response] = {
@@ -246,6 +273,7 @@ object router {
 
     private def regular = Routes(
       Method.POST / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProvider),
+      Method.GET  / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
       Method.POST / "login"                          -> Handler.fromFunctionZIO[Request](login),
       Method.POST / "logoff"                         -> Handler.fromFunctionZIO[Request](logoff),
       Method.POST / "verify"                         -> Handler.fromFunctionZIO[Request](verify),

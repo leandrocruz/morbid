@@ -211,6 +211,7 @@ object repo {
     def usersByAccount(app: ApplicationCode)                                    : Task[Map[RawAccount, Int]]
     def userGiven(email: Email)                                                 : Task[Option[RawUser]]
     def providerGiven(domain: Domain, code: Option[TenantCode])                 : Task[Option[RawIdentityProvider]]
+    def providerGiven(account: AccountId)                                       : Task[Option[RawIdentityProvider]]
     def groupsGiven(account: AccountId, app: ApplicationCode)                   : Task[Seq[RawGroup]]
     def usersGiven (account: AccountId, app: ApplicationCode, group: GroupCode) : Task[Seq[RawUserEntry]]
     def setUserPin(user: UserId, pin: Sha256Hash)                               : Task[Unit]
@@ -454,6 +455,20 @@ object repo {
       } yield rows.headOption.map {
         case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenantCode, tenant.code).transform
       }
+    }
+
+    override def providerGiven(account: AccountId): Task[Option[RawIdentityProvider]] = {
+      inline def query = quote {
+        for {
+          t <- tenants                                                        if t.active && t.deleted.isEmpty
+          a <- accounts  .join(_.tenant == t.id)                              if a.active && a.deleted.isEmpty && a.id == lift(account)
+          p <- providers .join(_.account == a.id).sortBy(_.created)(Ord.desc) if p.active && p.deleted.isEmpty
+        } yield p
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.headOption.map(_.transformInto[RawIdentityProvider])
     }
 
     override def providerGiven(domain: Domain, tenant: Option[TenantCode]): Task[Option[RawIdentityProvider]] = {

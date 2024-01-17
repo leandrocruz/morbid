@@ -25,9 +25,10 @@ object gip {
 
   sealed trait Identities {
     def providerGiven(email: Email, tenant: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
-    def verify     (req: VerifyGoogleTokenRequest)               : Task[CloudIdentity]
-    def claims     (req: SetClaimsRequest)                       : Task[Unit]
-    def createUser (req: CreateUser)                             : Task[Unit]
+    def providerGiven(account: AccountId)                       : Task[Option[RawIdentityProvider]]
+    def verify     (req: VerifyGoogleTokenRequest)              : Task[CloudIdentity]
+    def claims     (req: SetClaimsRequest)                      : Task[Unit]
+    def createUser (req: CreateUser)                            : Task[Unit]
   }
 
   case class CloudIdentity(
@@ -72,6 +73,10 @@ object gip {
   }
 
   private case class GoogleIdentities(auth: FirebaseAuth, repo: Repo) extends Identities {
+
+    override def providerGiven(account: AccountId): Task[Option[RawIdentityProvider]] = {
+      repo.providerGiven(account)
+    }
 
     override def providerGiven(email: Email, tenant: Option[TenantCode]): Task[Option[RawIdentityProvider]] = {
       email.domainName match
