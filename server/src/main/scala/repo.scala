@@ -505,19 +505,17 @@ object repo {
     }
 
     override def rolesGiven(acc: AccountId, code: ApplicationCode): Task[Seq[RawRole]] = {
-      inline
-
-      def query = quote {
+      inline def query = quote {
         for {
           app <- applications                        if app.active && app.deleted.isEmpty && app.code == lift(code)
-          a2a <- account2app .join(_.app == app.id)  if               a2a.deleted.isEmpty && a2a.acc == lift(acc)
+          a2a <- account2app .join(_.app == app.id)  if               a2a.deleted.isEmpty && a2a.acc  == lift(acc)
           rol <- roles       .join(_.app == a2a.app) if               rol.deleted.isEmpty
         } yield rol
       }
 
       for {
         rows <- exec(run(query))
-      } yield rows.map(_.transformInto[RawRole])
+      } yield rows.map(_.into[RawRole].withFieldConst(_.permissions, Seq.empty).transform)
     }
 
     private inline def printQuery[T](inline quoted: Quoted[Query[T]]): Task[Unit] = {
