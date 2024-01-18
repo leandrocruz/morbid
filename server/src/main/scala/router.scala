@@ -86,9 +86,10 @@ object router {
     private given ApplicationCode = utils.Morbid
 
     private def tokenFrom(request: Request): Task[Token] = {
-      request.headers.get("X-MorbidToken") match
-        case None        => GuaraError.fail(Response.unauthorized("Authorization cookie or header is missing"))
-        case Some(value) => tokens.verify(value)
+      (request.headers.get("X-MorbidToken"), request.cookie("morbid-token")) match
+        case (None, None     ) => GuaraError.fail(Response.unauthorized("Authorization cookie or header is missing"))
+        case (Some(header), _) => tokens.verify(header)
+        case (_, Some(cookie)) => tokens.verify(cookie.content)
     }
 
     private def loginProvider(request: Request): Task[Response] = {
@@ -109,7 +110,6 @@ object router {
     }
 
     private def loginProviderForAccount(request: Request): Task[Response] = {
-
       def build(tk: Token, now: LocalDateTime, domain: Domain): RawIdentityProvider = {
         RawIdentityProvider(
           id      = ProviderId.of(0),
