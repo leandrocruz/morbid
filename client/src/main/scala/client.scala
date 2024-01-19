@@ -20,6 +20,7 @@ object client {
     def groups                              (using token: RawToken): Task[Seq[RawGroup]]
     def groupByCode       (group: GroupCode)(using token: RawToken): Task[Option[RawGroup]]
     def usersByGroupByCode(group: GroupCode)(using token: RawToken): Task[Seq[RawUserEntry]]
+    def roles                               (using token: RawToken): Task[Seq[RawRole]]
   }
 
   case class MorbidClientConfig(url: String)
@@ -68,5 +69,6 @@ object client {
     override def groups                              (using token: RawToken): Task[Seq[RawGroup]]     = request[Seq[RawGroup]]    (base / "app" / appCode / "groups")
     override def groupByCode       (group: GroupCode)(using token: RawToken): Task[Option[RawGroup]]  = request[Option[RawGroup]] (base / "app" / appCode / "group")
     override def usersByGroupByCode(group: GroupCode)(using token: RawToken): Task[Seq[RawUserEntry]] = request[Seq[RawUserEntry]](base / "app" / appCode / "group" / GroupCode.value(group) / "users")
+    override def roles                               (using token: RawToken): Task[Seq[RawRole]]      = request[Seq[RawRole]]     (base / "app" / appCode / "roles")
   }
 }

@@ -214,6 +214,7 @@ object repo {
     def providerGiven(account: AccountId)                                       : Task[Option[RawIdentityProvider]]
     def groupsGiven(account: AccountId, app: ApplicationCode)                   : Task[Seq[RawGroup]]
     def usersGiven (account: AccountId, app: ApplicationCode, group: GroupCode) : Task[Seq[RawUserEntry]]
+    def rolesGiven (account: AccountId, app: ApplicationCode)                   : Task[Seq[RawRole]]
     def setUserPin(user: UserId, pin: Sha256Hash)                               : Task[Unit]
     def getUserPin(user: UserId)                                                : Task[Option[Sha256Hash]]
   }
@@ -313,8 +314,8 @@ object repo {
     private inline def groups       = quote { querySchema[GroupRow]            ("groups")             }
     private inline def user2group   = quote { querySchema[UserToGroupRow]      ("user_to_group")      }
     private inline def roles        = quote { querySchema[RoleRow]             ("roles")              }
-    private inline def permissions  = quote { querySchema[PermissionRow]       ("permissions")        }
     private inline def user2role    = quote { querySchema[UserToRoleRow]       ("user_to_role")       }
+    private inline def permissions  = quote { querySchema[PermissionRow]       ("permissions")        }
     private inline def providers    = quote { querySchema[IdentityProviderRow] ("identity_providers") }
 
     private def exec[T](zio: ZIO[DataSource, SQLException, T]): Task[T] = zio.provide(ZLayer.succeed(ds))
@@ -501,6 +502,20 @@ object repo {
       for {
         rows <- exec(run(query))
       } yield rows.map(_.transformInto[RawGroup])
+    }
+
+    override def rolesGiven(acc: AccountId, code: ApplicationCode): Task[Seq[RawRole]] = {
+      inline def query = quote {
+        for {
+          app <- applications                        if app.active && app.deleted.isEmpty && app.code == lift(code)
+          a2a <- account2app .join(_.app == app.id)  if               a2a.deleted.isEmpty && a2a.acc  == lift(acc)
+          rol <- roles       .join(_.app == a2a.app) if               rol.deleted.isEmpty
+        } yield rol
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.map(_.into[RawRole].withFieldConst(_.permissions, Seq.empty).transform)
     }
 
     private inline def printQuery[T](inline quoted: Quoted[Query[T]]): Task[Unit] = {

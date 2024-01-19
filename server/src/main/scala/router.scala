@@ -33,6 +33,7 @@ import zio.logging.backend.SLF4J
 import io.scalaland.chimney.dsl.*
 import morbid.domain.token.Token
 import morbid.groups.GroupManager
+import morbid.roles.RoleManager
 import morbid.pins.PinManager
 
 import java.time.{Instant, LocalDateTime}
@@ -79,6 +80,7 @@ object router {
     identities : Identities,
     accounts   : AccountManager,
     groups     : GroupManager,
+    roles      : RoleManager,
     tokens     : TokenGenerator,
     pins       : PinManager,
     billing    : Billing) extends Router {
@@ -86,9 +88,10 @@ object router {
     private given ApplicationCode = utils.Morbid
 
     private def tokenFrom(request: Request): Task[Token] = {
-      request.headers.get("X-MorbidToken") match
-        case None        => GuaraError.fail(Response.unauthorized("Authorization cookie or header is missing"))
-        case Some(value) => tokens.verify(value)
+      (request.headers.get("X-MorbidToken"), request.cookie("morbid-token")) match
+        case (None, None     ) => GuaraError.fail(Response.unauthorized("Authorization cookie or header is missing"))
+        case (Some(header), _) => tokens.verify(header)
+        case (_, Some(cookie)) => tokens.verify(cookie.content)
     }
 
     private def loginProvider(request: Request): Task[Response] = {
@@ -109,7 +112,6 @@ object router {
     }
 
     private def loginProviderForAccount(request: Request): Task[Response] = {
-
       def build(tk: Token, now: LocalDateTime, domain: Domain): RawIdentityProvider = {
         RawIdentityProvider(
           id      = ProviderId.of(0),
@@ -271,6 +273,13 @@ object router {
       } yield Response.json(seq.toJson)
     }
 
+    private def rolesGiven(app: String, request: Request): Task[Response] = ensureResponse {
+      for {
+        tk  <- tokenFrom(request)
+        seq <- roles.rolesFor(tk.user.details.account, ApplicationCode.of(app))
+      } yield Response.json(seq.toJson)
+    }
+
     private def regular = Routes(
       Method.POST / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProvider),
       Method.GET  / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
@@ -286,6 +295,7 @@ object router {
       Method.GET  / "app" / string("app") / "users"  -> handler(usersByAccount),
       Method.GET  / "app" / string("app") / "groups" -> handler(groupsGiven),
       Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
+      Method.GET  / "app" / string("app") / "roles" -> handler(rolesGiven),
     ).sandbox.toHttpApp
 
     override def routes: HttpApp[Any] = Echo.routes ++ regular @@ cors(corsConfig)
