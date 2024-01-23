@@ -198,18 +198,34 @@ object router {
     }
 
     private def createUser = role("user_adm") { (request, token) =>
+      def generatePassword(size: Int): String = {
+        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+"
+        val random = new Random
 
-      def securePassword = Password.of("xixicoco") //TODO
-      def userCode       = UserCode.of("zzz") //TODO
+        def getPassword(remainingSize: Int, actualPassword: StringBuilder): String = {
+          if (remainingSize == 0) actualPassword.toString()
+          else {
+            val i = random.nextInt(chars.length)
+            val newPassword = actualPassword.append(chars.charAt(indice))
+            getPassword(remainingSize - 1, newPassword)
+          }
+        }
+
+        getPassword(size, new StringBuilder)
+      }
+
+      def generateCode(code: String): String = {
+        code
+      }
 
       for {
-        req    <- request.body.parse[CreateUserRequest].debug
-        pwd    = req.password.getOrElse(securePassword)
-        code   = req.code.getOrElse(userCode)
+        req    <- request.body.parse[CreateUserRequest]
+        pwd    = req.password.getOrElse(generatePassword(8))
+        code   = code("code") // TODO
         create = req.into[CreateUser].withFieldConst(_.account, token.user.details.accountCode).withFieldConst(_.password, pwd).withFieldConst(_.code, code).transform
         user   <- accounts.createUser(create)
         _      <- identities.createUser(create)
-      } yield Response.json(user.toJson) //TODO: return password
+      } yield Response.json(user.toJson)
     }
 
     private def setUserPin(request: Request): Task[Response] = ensureResponse {
