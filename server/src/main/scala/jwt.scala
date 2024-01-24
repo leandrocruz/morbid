@@ -4,7 +4,8 @@ import zio.*
 
 object tokens {
 
-  import domain.raw.RawUser
+  import types.*
+  import domain.raw.{RawUser, RawUserDetails}
   import domain.token.Token
   import morbid.config.MorbidConfig
   import better.files._
@@ -24,18 +25,53 @@ object tokens {
   object TokenGenerator {
     val layer = ZLayer {
 
-      def readKey(config: MorbidConfig) = ZIO.attempt {
-        val bytes   = File(config.jwt.key).byteArray
-        val decoded = Base64.getDecoder.decode(bytes)
-        new SecretKeySpec(decoded, 0, decoded.length, "HmacSHA512")
+      def build(config: MorbidConfig, zone: ZoneId) = {
+
+        def readKey(config: MorbidConfig) = ZIO.attempt {
+          val bytes   = File(config.jwt.key).byteArray
+          val decoded = Base64.getDecoder.decode(bytes)
+          new SecretKeySpec(decoded, 0, decoded.length, "HmacSHA512")
+        }
+
+        for {
+          _    <- ZIO.logInfo(s"Loading JWT key from '${config.jwt.key}'")
+          key  <- readKey(config)
+        } yield JwtTokenGenerator(key, zone)
       }
 
       for {
         config  <- ZIO.service[MorbidConfig]
-        _       <- ZIO.logInfo(s"Loading JWT key from '${config.jwt.key}'")
-        key     <- readKey(config)
         zone    <- ZIO.attempt(config.clock.timezone).map(ZoneId.of)
-      } yield JwtTokenGenerator(key, zone)
+        impl    <- if(config.jwt.fake) ZIO.succeed(FakeTokenGenerator(zone)) else build(config, zone)
+      } yield impl
+    }
+  }
+
+  case class FakeTokenGenerator(zone: ZoneId) extends TokenGenerator {
+    override def encode(user: RawUser)   : Task[String] = ZIO.fail(ReturnResponseError(Response.notImplemented("TODO")))
+    override def verify(payload: String) : Task[Token]  = {
+      for {
+        now <- Clock.localDateTime
+      } yield Token(
+        created = now.atZone(zone),
+        expires = None,
+        user    = RawUser(
+          applications = Seq.empty,
+          details      = RawUserDetails(
+            id          = UserId.of(1),
+            created     = now,
+            deleted     = None,
+            tenant      = TenantId.of(1),
+            tenantCode  = TenantCode.of("t1"),
+            account     = AccountId.of(1),
+            accountCode = AccountCode.of("acc1"),
+            kind        = None,
+            active      = true,
+            code        = UserCode.of("usr1"),
+            email       = Email.of("usr1@email.com")
+          )
+        )
+      )
     }
   }
 
@@ -76,7 +112,6 @@ object tokens {
         content <- encodeAsJson(now.atZone(zone))
         result  <- build(content)
       } yield result
-
     }
 
     override def verify(payload: String): Task[Token] = {
