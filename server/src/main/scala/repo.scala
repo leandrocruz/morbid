@@ -205,18 +205,18 @@ object repo {
   )
 
   trait Repo {
-    def accountByProvider(code: ProviderCode)                                   : Task[Option[RawAccount]]
-    def accountByCode(code: AccountCode)                                        : Task[Option[RawAccount]]
-    def create(raw: RawUser)                                                    : Task[RawUser]
-    def usersByAccount(app: ApplicationCode)                                    : Task[Map[RawAccount, Int]]
-    def userGiven(email: Email)                                                 : Task[Option[RawUser]]
-    def providerGiven(domain: Domain, code: Option[TenantCode])                 : Task[Option[RawIdentityProvider]]
-    def providerGiven(account: AccountId)                                       : Task[Option[RawIdentityProvider]]
-    def groupsGiven(account: AccountId, app: ApplicationCode)                   : Task[Seq[RawGroup]]
-    def usersGiven (account: AccountId, app: ApplicationCode, group: GroupCode) : Task[Seq[RawUserEntry]]
-    def rolesGiven (account: AccountId, app: ApplicationCode)                   : Task[Seq[RawRole]]
-    def setUserPin(user: UserId, pin: Sha256Hash)                               : Task[Unit]
-    def getUserPin(user: UserId)                                                : Task[Option[Sha256Hash]]
+    def accountByProvider(code: ProviderCode)                                         : Task[Option[RawAccount]]
+    def accountByCode(code: AccountCode)                                              : Task[Option[RawAccount]]
+    def create(raw: RawUser)                                                          : Task[RawUser]
+    def usersByAccount(app: ApplicationCode)                                          : Task[Map[RawAccount, Int]]
+    def userGiven(email: Email)                                                       : Task[Option[RawUser]]
+    def providerGiven(domain: Domain, code: Option[TenantCode])                       : Task[Option[RawIdentityProvider]]
+    def providerGiven(account: AccountId)                                             : Task[Option[RawIdentityProvider]]
+    def groupsGiven(account: AccountId, app: ApplicationCode, filter: Seq[GroupCode]) : Task[Seq[RawGroup]]
+    def usersGiven (account: AccountId, app: ApplicationCode, group: GroupCode)       : Task[Seq[RawUserEntry]]
+    def rolesGiven (account: AccountId, app: ApplicationCode)                         : Task[Seq[RawRole]]
+    def setUserPin(user: UserId, pin: Sha256Hash)                                     : Task[Unit]
+    def getUserPin(user: UserId)                                                      : Task[Option[Sha256Hash]]
   }
 
   object Repo {
@@ -490,12 +490,12 @@ object repo {
 
     }
 
-    override def groupsGiven(acc: AccountId, code: ApplicationCode): Task[Seq[RawGroup]] = {
+    override def groupsGiven(acc: AccountId, code: ApplicationCode, filter: Seq[GroupCode]): Task[Seq[RawGroup]] = {
       inline def query = quote {
         for {
           app <- applications                        if app.active && app.deleted.isEmpty && app.code == lift(code)
           a2a <- account2app .join(_.app == app.id)  if               a2a.deleted.isEmpty && a2a.acc  == lift(acc)
-          grp <- groups      .join(_.app == a2a.app) if               grp.deleted.isEmpty
+          grp <- groups      .join(_.app == a2a.app) if               grp.deleted.isEmpty && (lift(filter.isEmpty) || liftQuery(filter).contains(grp.code))
         } yield grp
       }
 

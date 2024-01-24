@@ -9,7 +9,7 @@ object config {
   import zio.config.typesafe.*
   import Config.*
 
-  case class JwtConfig(key: String)
+  case class JwtConfig(key: String, fake: Boolean)
   case class IdentityConfig(key: String, database: String)
   case class ClockConfig(timezone: String)
   case class MagicConfig(password: String)
@@ -21,7 +21,6 @@ object config {
       TypesafeConfigProvider.fromResourcePath(enableCommaSeparatedValueAsList = true).load(deriveConfig[MorbidConfig])
     }
   }
-
 }
 
 object utils {
