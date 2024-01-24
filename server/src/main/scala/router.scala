@@ -268,8 +268,9 @@ object router {
 
     private def groupsGiven(app: String, request: Request): Task[Response] = ensureResponse {
       for {
-        tk  <- tokenFrom(request)
-        seq <- groups.groupsFor(tk.user.details.account, ApplicationCode.of(app))
+        tk     <- tokenFrom(request)
+        filter =  request.url.queryParams.getAll("code").getOrElse(Seq.empty).map(GroupCode.of)
+        seq    <- groups.groupsFor(tk.user.details.account, ApplicationCode.of(app), filter)
       } yield Response.json(seq.toJson)
     }
 

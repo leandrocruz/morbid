@@ -17,10 +17,11 @@ object client {
   trait MorbidClient {
     def proxy(request: Request): Task[Response]
     def tokenFrom(token: RawToken): Task[Token]
-    def groups                              (using token: RawToken): Task[Seq[RawGroup]]
-    def groupByCode       (group: GroupCode)(using token: RawToken): Task[Option[RawGroup]]
-    def usersByGroupByCode(group: GroupCode)(using token: RawToken): Task[Seq[RawUserEntry]]
-    def roles                               (using token: RawToken): Task[Seq[RawRole]]
+    def groups                                    (using token: RawToken): Task[Seq[RawGroup]]
+    def groupsByCode      (groups: Seq[GroupCode])(using token: RawToken): Task[Seq[RawGroup]]
+    def groupByCode       (group: GroupCode)      (using token: RawToken): Task[Option[RawGroup]]
+    def usersByGroupByCode(group: GroupCode)      (using token: RawToken): Task[Seq[RawUserEntry]]
+    def roles                                     (using token: RawToken): Task[Seq[RawRole]]
   }
 
   case class MorbidClientConfig(url: String)
@@ -66,9 +67,10 @@ object client {
       } yield result
     }
 
-    override def groups                              (using token: RawToken): Task[Seq[RawGroup]]     = request[Seq[RawGroup]]    (base / "app" / appCode / "groups")
-    override def groupByCode       (group: GroupCode)(using token: RawToken): Task[Option[RawGroup]]  = request[Option[RawGroup]] (base / "app" / appCode / "group")
-    override def usersByGroupByCode(group: GroupCode)(using token: RawToken): Task[Seq[RawUserEntry]] = request[Seq[RawUserEntry]](base / "app" / appCode / "group" / GroupCode.value(group) / "users")
-    override def roles                               (using token: RawToken): Task[Seq[RawRole]]      = request[Seq[RawRole]]     (base / "app" / appCode / "roles")
+    override def groupByCode       (group: GroupCode)       (using token: RawToken): Task[Option[RawGroup]]  = request[Option[RawGroup]]  (base / "app" / appCode / "group")
+    override def groups                                     (using token: RawToken): Task[Seq[RawGroup]]     = request[Seq[RawGroup]]     (base / "app" / appCode / "groups")
+    override def groupsByCode      (groups: Seq[GroupCode]) (using token: RawToken): Task[Seq[RawGroup]]     = request[Seq[RawGroup]]    ((base / "app" / appCode / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
+    override def usersByGroupByCode(group: GroupCode)       (using token: RawToken): Task[Seq[RawUserEntry]] = request[Seq[RawUserEntry]] (base / "app" / appCode / "group" / GroupCode.value(group) / "users")
+    override def roles                                      (using token: RawToken): Task[Seq[RawRole]]      = request[Seq[RawRole]]      (base / "app" / appCode / "roles")
   }
 }
