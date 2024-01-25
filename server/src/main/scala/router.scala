@@ -35,6 +35,7 @@ import morbid.domain.token.Token
 import morbid.groups.GroupManager
 import morbid.roles.RoleManager
 import morbid.pins.PinManager
+import scala.util.Random
 
 import java.time.{Instant, LocalDateTime}
 import java.util.Base64
@@ -206,7 +207,7 @@ object router {
           if (remainingSize == 0) actualPassword.toString()
           else {
             val i = random.nextInt(chars.length)
-            val newPassword = actualPassword.append(chars.charAt(indice))
+            val newPassword = actualPassword.append(chars.charAt(i))
             getPassword(remainingSize - 1, newPassword)
           }
         }
@@ -215,13 +216,30 @@ object router {
       }
 
       def generateCode(code: String): String = {
-        code
+        def getUniqueCode(codeGenerated: String, count: Int = 1): Task[String] = {
+          for {
+            userOption <- accounts.userByCode(UserCode.of(codeGenerated))
+            uniqueCode <- userOption match {
+              case Some(_) => getUniqueCode(s"${codeGenerated}${count + 1}", count + 1)
+              case None => ZIO.succeed(codeGenerated)
+            }
+          } yield uniqueCode
+        }
+
+
+        for {
+          start         <- code.split("@").headOption.map(ZIO.succeed).getOrElse(ZIO.fail(new Exception("Error generating code")))
+          ensureUnique  <- getUniqueCode(start.toLowerCase)
+        } yield ensureUnique
       }
+
+      //def securePassword = Password.of("xixicoco")
+      //def userCode       = UserCode.of("zzz")
 
       for {
         req    <- request.body.parse[CreateUserRequest]
-        pwd    = req.password.getOrElse(generatePassword(8))
-        code   = code("code") // TODO
+        pwd    = Password.of(generatePassword(10))
+        code   = UserCode.of(generateCode(req.email))
         create = req.into[CreateUser].withFieldConst(_.account, token.user.details.accountCode).withFieldConst(_.password, pwd).withFieldConst(_.code, code).transform
         user   <- accounts.createUser(create)
         _      <- identities.createUser(create)

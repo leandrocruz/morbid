@@ -15,6 +15,7 @@ object accounts {
 
   trait AccountManager {
     def userByEmail(email: Email)          : Task[Option[RawUser]]
+    def userByCode(code: UserCode)         : Task[Option[RawUser]]
     def provision(identity: CloudIdentity) : Task[RawUser]
     def createUser(req: CreateUser)        : Task[RawUser]
   }
@@ -61,14 +62,16 @@ object accounts {
 
     override def userByEmail(email: Email): Task[Option[RawUser]] = repo.userGiven(email)
 
+    override def userByCode(code: UserCode): Task[Option[RawUser]] = repo.userByCode(code)
     override def createUser(req: CreateUser): Task[RawUser] = {
       for {
         now     <- Clock.localDateTime
         account <- repo.accountByCode(req.account)
-        user <- account match {
+        user    <- account match {
                   case Some(acc) => repo.create(build(acc, now, req.code, req.email, req.kind))
                   case None      => ZIO.fail(new Exception(s"Can't find account '${req.account}'"))
                 }
+        _  <- repo.associateGroupsToUser(user.details.id, req.groups)
       } yield user
     }
   }

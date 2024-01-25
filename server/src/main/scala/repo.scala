@@ -210,6 +210,7 @@ object repo {
     def create(raw: RawUser)                                                    : Task[RawUser]
     def usersByAccount(app: ApplicationCode)                                    : Task[Map[RawAccount, Int]]
     def userGiven(email: Email)                                                 : Task[Option[RawUser]]
+    def userByCode(code: UserCode)                                              : Task[Option[RawUser]]
     def providerGiven(domain: Domain, code: Option[TenantCode])                 : Task[Option[RawIdentityProvider]]
     def providerGiven(account: AccountId)                                       : Task[Option[RawIdentityProvider]]
     def groupsGiven(account: AccountId, app: ApplicationCode)                   : Task[Seq[RawGroup]]
@@ -217,6 +218,7 @@ object repo {
     def rolesGiven (account: AccountId, app: ApplicationCode)                   : Task[Seq[RawRole]]
     def setUserPin(user: UserId, pin: Sha256Hash)                               : Task[Unit]
     def getUserPin(user: UserId)                                                : Task[Option[Sha256Hash]]
+    def associateGroupsToUser(user: UserId, groups: Seq[GroupCode])             : Task[Unit]
   }
 
   object Repo {
@@ -425,6 +427,19 @@ object repo {
       } yield result
     }
 
+    override def userByCode(code: UserCode): Task[Option[RawUser]] = {
+
+      inline def query = quote {
+        for {
+          usr <- users if usr.active && usr.deleted.isEmpty && usr.code == lift(code)
+        } yield usr
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.headOption.map(_.transformInto[RawUser])
+    }
+
     override def create(raw: RawUser): Task[RawUser] = {
 
       val row = raw.details.transformInto[UserRow]
@@ -587,6 +602,10 @@ object repo {
       for {
         rows <- exec(run(query))
       } yield rows.headOption.map { _.pin }
+    }
+
+    override def associateGroupsToUser(user: UserId, groups: Seq[GroupCode]): Task[Unit] = {
+      // TODO
     }
 
     override def usersByAccount(code: ApplicationCode): Task[Map[RawAccount, Int]] = {

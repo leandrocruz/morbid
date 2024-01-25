@@ -55,8 +55,8 @@ object proto {
   case class ImpersonationRequest(email: Email, magic: Magic)
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
-  case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, tenant: Option[TenantCode] = None, kind: Option[UserKind] = None)
-  case class CreateUser       (email: Email, code: UserCode,                password: Password,                tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, account: AccountCode)
+  case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, tenant: Option[TenantCode] = None, kind: Option[UserKind] = None,                       groups: Option[String] = None)
+  case class CreateUser       (email: Email, code: UserCode,                password: Password,                tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, account: AccountCode, groups: Option[String] = None)
 
   case class SetUserPin     (pin: Pin)
   case class ValidateUserPin(pin: Pin)
