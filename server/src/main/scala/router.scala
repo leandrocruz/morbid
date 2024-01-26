@@ -198,7 +198,10 @@ object router {
       }
     }
 
-    private def createUser = role("user_adm") { (request, token) =>
+    //private def createUser = role("user_adm") { (request, token) =>
+
+    private def createUser(request: Request): Task[Response] = ensureResponse {
+
       def generatePassword(size: Int): String = {
         val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+"
         val random = new Random
@@ -215,23 +218,17 @@ object router {
         getPassword(size, new StringBuilder)
       }
 
-      def generateCode(code: String): UserCode = {
-        def getUniqueCode(codeGenerated: String, count: Int = 1): String = {
+      def generateCode(code: String): Task[UserCode] = {
+        def getUniqueCode(codeGenerated: String, count: Int = 1): Task[UserCode] = {
           for {
-            userOption <- accounts.userByCode(UserCode.of(codeGenerated))
-            uniqueCode <- userOption match {
-              case Some(_) => getUniqueCode(s"${codeGenerated}${count + 1}", count + 1)
-              case None => ZIO.succeed(codeGenerated)
-            }
+            exists     <- accounts.userExists(UserCode.of(codeGenerated))
+            uniqueCode <- if(exists) getUniqueCode(s"${codeGenerated}${count + 1}", count + 1) else ZIO.succeed(UserCode.of(codeGenerated))
           } yield uniqueCode
         }
 
-
-        for {
-          start          <- code.split("@").headOption.map(ZIO.succeed).getOrElse(ZIO.fail(new Exception("Error generating code")))
-          ensureUnique   <- getUniqueCode(start.toLowerCase)
-          codeGenerated  <- UserCode.of(ensureUnique)
-        } yield codeGenerated
+        code.split("@").headOption match
+          case None        => ZIO.fail(new Exception(s"Error generating code from '$code'"))
+          case Some(value) => getUniqueCode(value.toLowerCase)
       }
 
 
@@ -239,9 +236,10 @@ object router {
       //def userCode       = UserCode.of("zzz")
 
       for {
+        token <- tokenFrom(request)
         req    <- request.body.parse[CreateUserRequest]
         pwd    = req.password.getOrElse(Password.of(generatePassword(10)))
-        code   = generateCode(req.email.toString)
+        code   <- generateCode(req.email.toString)
         create = req.into[CreateUser].withFieldConst(_.account, token.user.details.accountCode).withFieldConst(_.password, pwd).withFieldConst(_.code, code).transform
         user   <- accounts.createUser(create)
         _      <- identities.createUser(create)
