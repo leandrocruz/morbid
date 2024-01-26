@@ -215,8 +215,8 @@ object router {
         getPassword(size, new StringBuilder)
       }
 
-      def generateCode(code: String): String = {
-        def getUniqueCode(codeGenerated: String, count: Int = 1): Task[String] = {
+      def generateCode(code: String): UserCode = {
+        def getUniqueCode(codeGenerated: String, count: Int = 1): String = {
           for {
             userOption <- accounts.userByCode(UserCode.of(codeGenerated))
             uniqueCode <- userOption match {
@@ -228,18 +228,20 @@ object router {
 
 
         for {
-          start         <- code.split("@").headOption.map(ZIO.succeed).getOrElse(ZIO.fail(new Exception("Error generating code")))
-          ensureUnique  <- getUniqueCode(start.toLowerCase)
-        } yield ensureUnique
+          start          <- code.split("@").headOption.map(ZIO.succeed).getOrElse(ZIO.fail(new Exception("Error generating code")))
+          ensureUnique   <- getUniqueCode(start.toLowerCase)
+          codeGenerated  <- UserCode.of(ensureUnique)
+        } yield codeGenerated
       }
+
 
       //def securePassword = Password.of("xixicoco")
       //def userCode       = UserCode.of("zzz")
 
       for {
         req    <- request.body.parse[CreateUserRequest]
-        pwd    = Password.of(generatePassword(10))
-        code   = UserCode.of(generateCode(req.email))
+        pwd    = req.password.getOrElse(Password.of(generatePassword(10)))
+        code   = generateCode(req.email.toString)
         create = req.into[CreateUser].withFieldConst(_.account, token.user.details.accountCode).withFieldConst(_.password, pwd).withFieldConst(_.code, code).transform
         user   <- accounts.createUser(create)
         _      <- identities.createUser(create)

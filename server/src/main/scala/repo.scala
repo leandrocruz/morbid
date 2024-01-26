@@ -604,9 +604,7 @@ object repo {
       } yield rows.headOption.map { _.pin }
     }
 
-    override def associateGroupsToUser(user: UserId, groups: Seq[GroupCode]): Task[Unit] = {
-      // TODO
-    }
+    override def associateGroupsToUser(user: UserId, groups: Seq[GroupCode]) = ???
 
     override def usersByAccount(code: ApplicationCode): Task[Map[RawAccount, Int]] = {
       inline def query = quote {

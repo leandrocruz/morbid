@@ -63,6 +63,7 @@ object accounts {
     override def userByEmail(email: Email): Task[Option[RawUser]] = repo.userGiven(email)
 
     override def userByCode(code: UserCode): Task[Option[RawUser]] = repo.userByCode(code)
+
     override def createUser(req: CreateUser): Task[RawUser] = {
       for {
         now     <- Clock.localDateTime
