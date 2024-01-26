@@ -201,7 +201,7 @@ object router {
     //private def createUser(request: Request): Task[Response] = ensureResponse {
     private def createUser = role("user_adm") { (request, token) =>
 
-      def generatePassword:Task[Password] =
+      def generatePassword: Task[Password] =
         ZIO.attempt(Password.of(Random.alphanumeric.take(12).mkString("")))
 
       def uniqueCode(email: Email): Task[UserCode] = {
