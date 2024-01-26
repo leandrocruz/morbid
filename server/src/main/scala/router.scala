@@ -198,52 +198,39 @@ object router {
       }
     }
 
-    //private def createUser = role("user_adm") { (request, token) =>
+    //private def createUser(request: Request): Task[Response] = ensureResponse {
+    private def createUser = role("user_adm") { (request, token) =>
 
-    private def createUser(request: Request): Task[Response] = ensureResponse {
+      def generatePassword:Task[Password] =
+        ZIO.attempt(Password.of(Random.alphanumeric.take(12).mkString("")))
 
-      def generatePassword(size: Int): String = {
-        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+"
-        val random = new Random
+      def uniqueCode(email: Email): Task[UserCode] = {
 
-        def getPassword(remainingSize: Int, actualPassword: StringBuilder): String = {
-          if (remainingSize == 0) actualPassword.toString()
-          else {
-            val i = random.nextInt(chars.length)
-            val newPassword = actualPassword.append(chars.charAt(i))
-            getPassword(remainingSize - 1, newPassword)
-          }
-        }
+        def codeGiven(user: EmailUser, count: Int): Task[UserCode] = {
 
-        getPassword(size, new StringBuilder)
-      }
+          def gen: Task[UserCode] = ZIO.attempt(UserCode.of(Random.alphanumeric.take(128).mkString("")))
 
-      def generateCode(code: String): Task[UserCode] = {
-        def getUniqueCode(codeGenerated: String, count: Int = 1): Task[UserCode] = {
           for {
-            exists     <- accounts.userExists(UserCode.of(codeGenerated))
-            uniqueCode <- if(exists) getUniqueCode(s"${codeGenerated}${count + 1}", count + 1) else ZIO.succeed(UserCode.of(codeGenerated))
-          } yield uniqueCode
+            _      <- ZIO.when(count > 10) { ZIO.fail(new Exception("Can't generate user code. Too many attempts")) }
+            tmp    <- gen
+            exists <- accounts.userExists(tmp)
+            code   <- if(exists) codeGiven(user, count + 1) else ZIO.succeed(tmp)
+          } yield code
         }
 
-        code.split("@").headOption match
-          case None        => ZIO.fail(new Exception(s"Error generating code from '$code'"))
-          case Some(value) => getUniqueCode(value.toLowerCase)
+        email.userName match
+          case None       => ZIO.fail(new Exception(s"Error generating code from '$email'"))
+          case Some(user) => codeGiven(user, 0)
       }
 
-
-      //def securePassword = Password.of("xixicoco")
-      //def userCode       = UserCode.of("zzz")
-
-      for {
-        token <- tokenFrom(request)
+      for
         req    <- request.body.parse[CreateUserRequest]
-        pwd    = req.password.getOrElse(Password.of(generatePassword(10)))
-        code   <- generateCode(req.email.toString)
-        create = req.into[CreateUser].withFieldConst(_.account, token.user.details.accountCode).withFieldConst(_.password, pwd).withFieldConst(_.code, code).transform
+        pwd    <- req.password.map(ZIO.succeed).getOrElse(generatePassword)
+        code   <- req.code.map(ZIO.succeed).getOrElse(uniqueCode(req.email))
+        create =  req.into[CreateUser].withFieldConst(_.account, token.user.details.accountCode).withFieldConst(_.password, pwd).withFieldConst(_.code, code).transform
         user   <- accounts.createUser(create)
         _      <- identities.createUser(create)
-      } yield Response.json(user.toJson)
+      yield Response.json(user.toJson)
     }
 
     private def setUserPin(request: Request): Task[Response] = ensureResponse {

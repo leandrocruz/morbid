@@ -32,6 +32,7 @@ object types {
   opaque type ProviderCode    = String
   opaque type UserCode        = String
   opaque type Email           = String
+  opaque type EmailUser       = String
   opaque type Pin             = String
   opaque type Sha256Hash      = String
   opaque type Password        = String
@@ -50,6 +51,7 @@ object types {
   // w = [a-zA-Z_0-9]
 
   private val domainFrom = ".+@(.+)"       .r
+  private val userFrom   = "(.+)@.+"       .r
   private val domain     = "[\\w\\.\\-]+"  .r
   private val email      = "[\\w\\.\\-@]+" .r
 
@@ -119,6 +121,7 @@ object types {
   object ApplicationName extends OpaqueOps[String, ApplicationName]
   object Domain          extends OpaqueOps[String, Domain]
   object Email           extends OpaqueOps[String, Email]
+  object EmailUser       extends OpaqueOps[String, EmailUser]
   object GroupCode       extends OpaqueOps[String, GroupCode]
   object GroupId         extends OpaqueOps[Long, GroupId]
   object GroupName       extends OpaqueOps[String, GroupName]
@@ -142,12 +145,17 @@ object types {
   object UserId          extends OpaqueOps[Long, UserId]
 
   extension (it: Email) {
-    def domainName: Option[Domain] = {
+    def domainName: Option[Domain] =
       it match {
         case domainFrom(value) => Some(Domain.of(value))
         case _                 => None
       }
-    }
+
+    def userName: Option[EmailUser] =
+      it match {
+        case userFrom(value) => Some(EmailUser.of(value))
+        case _ => None
+      }
   }
 
   extension (it: Magic) {

@@ -131,9 +131,8 @@ object gip {
         case None        => auth
     }
 
+    //See https://firebase.google.com/docs/auth/admin/manage-users
     override def createUser(request: CreateUser): Task[Unit] = {
-      //See https://firebase.google.com/docs/auth/admin/manage-users
-
       val req = new CreateRequest()
         .setEmail(Email.value(request.email))
         .setUid(UserCode.value(request.code))
