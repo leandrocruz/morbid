@@ -69,3 +69,27 @@ object proto {
   given JsonDecoder[SetUserPin]               = DeriveJsonDecoder.gen[SetUserPin]
   given JsonDecoder[ValidateUserPin]          = DeriveJsonDecoder.gen[ValidateUserPin]
 }
+
+object passwords {
+
+  import types.Password
+  import scala.util.Random
+
+  trait PasswordGenerator {
+    def generate: Task[Password]
+  }
+
+  private case class DefaultPasswordGenerator() extends PasswordGenerator {
+    override def generate: Task[Password] =
+      ZIO.attempt {
+        Password.of {
+          Random.alphanumeric.take(12).mkString("")
+        }
+      }
+  }
+
+  object PasswordGenerator {
+    val layer: ZLayer[Any, Nothing, PasswordGenerator] = ZLayer.fromFunction(DefaultPasswordGenerator.apply _)
+  }
+
+}

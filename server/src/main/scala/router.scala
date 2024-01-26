@@ -33,10 +33,11 @@ import zio.logging.backend.SLF4J
 import io.scalaland.chimney.dsl.*
 import morbid.domain.token.Token
 import morbid.groups.GroupManager
+import morbid.passwords.PasswordGenerator
 import morbid.roles.RoleManager
 import morbid.pins.PinManager
-import scala.util.Random
 
+import scala.util.Random
 import java.time.{Instant, LocalDateTime}
 import java.util.Base64
 
@@ -84,6 +85,7 @@ object router {
     roles      : RoleManager,
     tokens     : TokenGenerator,
     pins       : PinManager,
+    passGen    : PasswordGenerator,
     billing    : Billing) extends Router {
 
     private given ApplicationCode = utils.Morbid
@@ -198,11 +200,7 @@ object router {
       }
     }
 
-    //private def createUser(request: Request): Task[Response] = ensureResponse {
     private def createUser = role("user_adm") { (request, token) =>
-
-      def generatePassword: Task[Password] =
-        ZIO.attempt(Password.of(Random.alphanumeric.take(12).mkString("")))
 
       def uniqueCode(email: Email): Task[UserCode] = {
 
@@ -225,8 +223,8 @@ object router {
 
       for
         req    <- request.body.parse[CreateUserRequest]
-        pwd    <- req.password.map(ZIO.succeed).getOrElse(generatePassword)
-        code   <- req.code.map(ZIO.succeed).getOrElse(uniqueCode(req.email))
+        pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate)
+        code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
         create =  req.into[CreateUser].withFieldConst(_.account, token.user.details.accountCode).withFieldConst(_.password, pwd).withFieldConst(_.code, code).transform
         user   <- accounts.createUser(create)
         _      <- identities.createUser(create)

@@ -12,6 +12,7 @@ import morbid.roles.RoleManager
 import morbid.pins.PinManager
 import morbid.tokens.TokenGenerator
 import morbid.repo.Repo
+import morbid.passwords.PasswordGenerator
 import zio.*
 import zio.logging.LogFormat
 import zio.logging.backend.SLF4J
@@ -31,6 +32,7 @@ object MorbidServer extends GuaraApp {
     Repo.layer,
     TokenGenerator.layer,
     PinManager.layer,
-    Billing.layer
+    Billing.layer,
+    PasswordGenerator.layer
   )
 }
