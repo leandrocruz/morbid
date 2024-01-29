@@ -210,6 +210,7 @@ object repo {
     def create(raw: RawUser)                                                          : Task[RawUser]
     def usersByAccount(app: ApplicationCode)                                          : Task[Map[RawAccount, Int]]
     def userGiven(email: Email)                                                       : Task[Option[RawUser]]
+    def userExists(code: UserCode)                                                    : Task[Boolean]
     def providerGiven(domain: Domain, code: Option[TenantCode])                       : Task[Option[RawIdentityProvider]]
     def providerGiven(account: AccountId)                                             : Task[Option[RawIdentityProvider]]
     def groupsGiven(account: AccountId, app: ApplicationCode, filter: Seq[GroupCode]) : Task[Seq[RawGroup]]
@@ -423,6 +424,20 @@ object repo {
           case None      => ZIO.succeed(None)
           case Some(usr) => groupsAndRoles(usr)
       } yield result
+    }
+
+    override def userExists(code: UserCode): Task[Boolean] = {
+      inline def query = quote {
+        for {
+          ten <- tenants                             if ten.active && ten.deleted.isEmpty
+          acc <- accounts .join(_.tenant == ten.id)  if acc.active && acc.deleted.isEmpty
+          usr <- users    .join(_.account == acc.id) if usr.active && usr.deleted.isEmpty && usr.code == lift(code)
+        } yield usr
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.length == 1
     }
 
     override def create(raw: RawUser): Task[RawUser] = {

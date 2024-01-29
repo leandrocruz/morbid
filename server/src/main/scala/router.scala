@@ -33,9 +33,11 @@ import zio.logging.backend.SLF4J
 import io.scalaland.chimney.dsl.*
 import morbid.domain.token.Token
 import morbid.groups.GroupManager
+import morbid.passwords.PasswordGenerator
 import morbid.roles.RoleManager
 import morbid.pins.PinManager
 
+import scala.util.Random
 import java.time.{Instant, LocalDateTime}
 import java.util.Base64
 
@@ -83,6 +85,7 @@ object router {
     roles      : RoleManager,
     tokens     : TokenGenerator,
     pins       : PinManager,
+    passGen    : PasswordGenerator,
     billing    : Billing) extends Router {
 
     private given ApplicationCode = utils.Morbid
@@ -199,17 +202,33 @@ object router {
 
     private def createUser = role("user_adm") { (request, token) =>
 
-      def securePassword = Password.of("xixicoco") //TODO
-      def userCode       = UserCode.of("zzz") //TODO
+      def uniqueCode(email: Email): Task[UserCode] = {
 
-      for {
-        req    <- request.body.parse[CreateUserRequest].debug
-        pwd    = req.password.getOrElse(securePassword)
-        code   = req.code.getOrElse(userCode)
-        create = req.into[CreateUser].withFieldConst(_.account, token.user.details.accountCode).withFieldConst(_.password, pwd).withFieldConst(_.code, code).transform
+        def attemptUnique(user: EmailUser, count: Int): Task[UserCode] = {
+
+          def gen: Task[UserCode] = ZIO.attempt(UserCode.of(Random.alphanumeric.take(128).mkString("")))
+
+          for {
+            _      <- ZIO.when(count > 10) { ZIO.fail(new Exception("Can't generate user code. Too many attempts")) }
+            tmp    <- gen
+            exists <- accounts.userExists(tmp)
+            code   <- if(exists) attemptUnique(user, count + 1) else ZIO.succeed(tmp)
+          } yield code
+        }
+
+        email.userName match
+          case None       => ZIO.fail(new Exception(s"Error generating code from '$email'"))
+          case Some(user) => attemptUnique(user, 0)
+      }
+
+      for
+        req    <- request.body.parse[CreateUserRequest]
+        pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate)
+        code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
+        create =  req.into[CreateUser].withFieldConst(_.account, token.user.details.accountCode).withFieldConst(_.password, pwd).withFieldConst(_.code, code).transform
         user   <- accounts.createUser(create)
         _      <- identities.createUser(create)
-      } yield Response.json(user.toJson) //TODO: return password
+      yield Response.json(user.toJson)
     }
 
     private def setUserPin(request: Request): Task[Response] = ensureResponse {

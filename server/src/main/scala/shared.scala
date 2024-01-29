@@ -54,9 +54,8 @@ object proto {
   case class ImpersonationRequest(email: Email, magic: Magic)
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
-  case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, tenant: Option[TenantCode] = None, kind: Option[UserKind] = None)
-  case class CreateUser       (email: Email, code: UserCode,                password: Password,                tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, account: AccountCode)
-
+  case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, tenant: Option[TenantCode] = None, kind: Option[UserKind] = None,                       groups: Seq[GroupCode] = Seq.empty)
+  case class CreateUser       (email: Email, code: UserCode,                password: Password,                tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, account: AccountCode, groups: Seq[GroupCode] = Seq.empty)
   case class SetUserPin     (pin: Pin)
   case class ValidateUserPin(pin: Pin)
 
@@ -68,4 +67,28 @@ object proto {
   given JsonDecoder[CreateUserRequest]        = DeriveJsonDecoder.gen[CreateUserRequest]
   given JsonDecoder[SetUserPin]               = DeriveJsonDecoder.gen[SetUserPin]
   given JsonDecoder[ValidateUserPin]          = DeriveJsonDecoder.gen[ValidateUserPin]
+}
+
+object passwords {
+
+  import types.Password
+  import scala.util.Random
+
+  trait PasswordGenerator {
+    def generate: Task[Password]
+  }
+
+  private case class DefaultPasswordGenerator() extends PasswordGenerator {
+    override def generate: Task[Password] =
+      ZIO.attempt {
+        Password.of {
+          Random.alphanumeric.take(12).mkString("")
+        }
+      }
+  }
+
+  object PasswordGenerator {
+    val layer: ZLayer[Any, Nothing, PasswordGenerator] = ZLayer.fromFunction(DefaultPasswordGenerator.apply _)
+  }
+
 }
