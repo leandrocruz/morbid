@@ -222,12 +222,44 @@ object router {
 
     private def createUser = role("user_adm") { (request, token) =>
 
-      def configureApplications(user: RawUser, req: CreateUserRequest): Task[Unit] =
-//        for {
-//          _      <- groups     setGroups  (user.details.account, user.details.id, req.groups)
-//          _      <- roles      setRoles   (user.details.account, user.details.id, req.roles)
-//        } yield ???
-        ???
+      def configureApplications(user: RawUser, req: CreateUserRequest): Task[Seq[Unit]] = {
+
+        def configureApplication(cua: CreateUserApplication): Task[Unit] = {
+
+          def ensureApplication(app: Option[RawApplication]): Task[RawApplication] = {
+            ZIO.fromOption(app).mapError(_ => new Exception(s"Can't find application '${cua.application}' for account '${user.details.accountCode}'"))
+          }
+
+          def ensureGroups(application: RawApplication): Task[Seq[RawGroup]] = {
+            val found = cua.groups.map(code => (code, application.groups.find(_.code == code)))
+            ZIO.foreach(found) {
+              case (code, None      ) => ZIO.fail(new Exception(s"Group '$code' is missing in application '${application.details.code}' for account '${user.details.accountCode}'"))
+              case (_   , Some(item)) => ZIO.succeed(item)
+            }
+          }
+
+          def ensureRoles(application: RawApplication): Task[Seq[RawRole]] = {
+            val found = cua.roles.map(code => (code, application.roles.find(_.code == code)))
+            ZIO.foreach(found) {
+              case (code, None)       => ZIO.fail(new Exception(s"Role '$code' is missing in application '${application.details.code}' for account '${user.details.accountCode}'"))
+              case (_   , Some(item)) => ZIO.succeed(item)
+            }
+          }
+
+          for {
+            maybe       <- applications.applicationGiven(user.details.accountCode, cua.application)
+            application <- ensureApplication(maybe)
+            groupsToAdd <- ensureGroups(application)
+            rolesToAdd  <- ensureRoles(application)
+            _           <- groups .addGroups(user.details.account, application.details.id, user.details.id, groupsToAdd.map(_.id)) .fork
+            _           <- roles  .addRoles (user.details.account, application.details.id, user.details.id, rolesToAdd.map(_.id))  .fork
+          } yield ()
+        }
+
+        ZIO.foreachPar(req.applications) {
+          configureApplication
+        }
+      }
 
       def uniqueCode(email: Email): Task[UserCode] = {
 
@@ -261,9 +293,9 @@ object router {
         pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate)
         code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
         create  = buildRequest(req, token, pwd, code)
-        user   <- accounts   createUser (create)
-        _      <- identities createUser (create)
-        _      <- configureApplications(user, req)
+        user   <- accounts.createUser(create)
+        _      <- configureApplications(user, req) .fork
+        _      <- identities.createUser(create)    .fork
       yield Response.json(user.toJson)
     }
 

@@ -205,21 +205,23 @@ object repo {
   )
 
   trait Repo {
-    def accountByProvider(code: ProviderCode)                                           : Task[Option[RawAccount]]
-    def accountByCode(code: AccountCode)                                                : Task[Option[RawAccount]]
-    def applicationDetailsGiven(account: AccountCode)                                   : Task[Seq[RawApplicationDetails]]
-    def applicationGiven(account: AccountCode, application: ApplicationCode)            : Task[Option[RawApplication]]
-    def create(raw: RawUser)                                                            : Task[RawUser]
-    def getUserPin(user: UserId)                                                        : Task[Option[Sha256Hash]]
-    def groupsGiven(account: AccountCode, app: ApplicationCode, filter: Seq[GroupCode]) : Task[Seq[RawGroup]]
-    def providerGiven(domain: Domain, code: Option[TenantCode])                         : Task[Option[RawIdentityProvider]]
-    def providerGiven(account: AccountId)                                               : Task[Option[RawIdentityProvider]]
-    def rolesGiven(account: AccountCode, app: ApplicationCode)                          : Task[Seq[RawRole]]
-    def setUserPin(user: UserId, pin: Sha256Hash)                                       : Task[Unit]
-    def usersByAccount(app: ApplicationCode)                                            : Task[Map[RawAccount, Int]]
-    def userExists(code: UserCode)                                                      : Task[Boolean]
-    def userGiven(email: Email)                                                         : Task[Option[RawUser]]
-    def usersGiven(account: AccountCode, app: ApplicationCode, group: GroupCode)        : Task[Seq[RawUserEntry]]
+    def accountByProvider(code: ProviderCode)                                                 : Task[Option[RawAccount]]
+    def accountByCode(code: AccountCode)                                                      : Task[Option[RawAccount]]
+    def addGroups(account: AccountId, app: ApplicationId, user: UserId, groups: Seq[GroupId]) : Task[Unit]
+    def addRoles(account: AccountId, app: ApplicationId, user: UserId, roles: Seq[RoleId])    : Task[Unit]
+    def applicationDetailsGiven(account: AccountCode)                                         : Task[Seq[RawApplicationDetails]]
+    def applicationGiven(account: AccountCode, application: ApplicationCode)                  : Task[Option[RawApplication]]
+    def create(raw: RawUser)                                                                  : Task[RawUser]
+    def getUserPin(user: UserId)                                                              : Task[Option[Sha256Hash]]
+    def groupsGiven(account: AccountCode, app: ApplicationCode, filter: Seq[GroupCode])       : Task[Seq[RawGroup]]
+    def providerGiven(domain: Domain, code: Option[TenantCode])                               : Task[Option[RawIdentityProvider]]
+    def providerGiven(account: AccountId)                                                     : Task[Option[RawIdentityProvider]]
+    def rolesGiven(account: AccountCode, app: ApplicationCode)                                : Task[Seq[RawRole]]
+    def setUserPin(user: UserId, pin: Sha256Hash)                                             : Task[Unit]
+    def usersByAccount(app: ApplicationCode)                                                  : Task[Map[RawAccount, Int]]
+    def userExists(code: UserCode)                                                            : Task[Boolean]
+    def userGiven(email: Email)                                                               : Task[Option[RawUser]]
+    def usersGiven(account: AccountCode, app: ApplicationCode, group: GroupCode)              : Task[Seq[RawUserEntry]]
   }
 
   object Repo {
@@ -636,6 +638,30 @@ object repo {
           case Some(app) => appFrom(app)
         }
       } yield result
+    }
+
+    override def addGroups(account: AccountId, app: ApplicationId, user: UserId, groups: Seq[GroupId]): Task[Unit] = {
+      def insertValues(rows: Seq[UserToGroupRow]) = quote {
+        liftQuery(rows).foreach(row => user2group.insertValue(row))
+      }
+
+      for {
+        now  <- Clock.localDateTime
+        rows =  groups.map(grp => UserToGroupRow(usr = user, app = app, grp = grp, created = now, deleted = None))
+        _    <- exec(run(insertValues(rows)))
+      } yield ()
+    }
+
+    override def addRoles(account: AccountId, app: ApplicationId, user: UserId, roles: Seq[RoleId]): Task[Unit] = {
+      def insertValues(rows: Seq[UserToRoleRow]) = quote {
+        liftQuery(rows).foreach(row => user2role.insertValue(row))
+      }
+
+      for {
+        now <- Clock.localDateTime
+        rows = roles.map(rid => UserToRoleRow(usr = user, app = app, rid = rid, created = now, deleted = None))
+        _ <- exec(run(insertValues(rows)))
+      } yield ()
     }
 
     override def setUserPin(user: UserId, pin: Sha256Hash): Task[Unit] = {

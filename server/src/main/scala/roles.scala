@@ -9,8 +9,8 @@ object roles {
   import morbid.repo.Repo
 
   trait RoleManager {
-    def rolesFor(account: AccountCode, app: ApplicationCode) : Task[Seq[RawRole]]
-    //def setRoles(user: UserId, roles: Seq[RoleCode])       : Task[Unit]
+    def rolesFor(account: AccountCode, app: ApplicationCode)                               : Task[Seq[RawRole]]
+    def addRoles(account: AccountId, app: ApplicationId, user: UserId, roles: Seq[RoleId]) : Task[Unit]
   }
 
   object RoleManager {
@@ -18,7 +18,7 @@ object roles {
   }
 
   case class LocalRoleManager(repo: Repo) extends RoleManager {
-    override def rolesFor(account: AccountCode, app: ApplicationCode) : Task[Seq[RawRole]] = repo.rolesGiven(account, app)
-    //override def setRoles(user: UserId, roles: Seq[RoleCode])       : Task[Unit]         = ??? //repo.setRoles(user, roles)
+    override def rolesFor(account: AccountCode, app: ApplicationCode)                               : Task[Seq[RawRole]] = repo.rolesGiven(account, app)
+    override def addRoles(account: AccountId, app: ApplicationId, user: UserId, roles: Seq[RoleId]) : Task[Unit]         = repo.addRoles(account, app, user, roles)
   }
 }
