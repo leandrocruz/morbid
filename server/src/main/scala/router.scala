@@ -31,6 +31,7 @@ import zio.json.ast.{Json, JsonCursor}
 import zio.logging.LogFormat
 import zio.logging.backend.SLF4J
 import io.scalaland.chimney.dsl.*
+import morbid.applications.Applications
 import morbid.domain.token.Token
 import morbid.groups.GroupManager
 import morbid.passwords.PasswordGenerator
@@ -78,15 +79,17 @@ object router {
   case class LoginSuccess(email: String, admin: Boolean)
 
   case class MorbidRouter(
-    cfg        : MorbidConfig,
-    identities : Identities,
-    accounts   : AccountManager,
-    groups     : GroupManager,
-    roles      : RoleManager,
-    tokens     : TokenGenerator,
-    pins       : PinManager,
-    passGen    : PasswordGenerator,
-    billing    : Billing) extends Router {
+    accounts     : AccountManager,
+    applications : Applications,
+    billing      : Billing,
+    cfg          : MorbidConfig,
+    groups       : GroupManager,
+    identities   : Identities,
+    pins         : PinManager,
+    passGen      : PasswordGenerator,
+    roles        : RoleManager,
+    tokens       : TokenGenerator
+  ) extends Router {
 
     private given ApplicationCode = utils.Morbid
 
@@ -95,6 +98,22 @@ object router {
         case (None, None     ) => GuaraError.fail(Response.unauthorized("Authorization cookie or header is missing"))
         case (Some(header), _) => tokens.verify(header)
         case (_, Some(cookie)) => tokens.verify(cookie.content)
+    }
+
+    private def applicationDetailsGiven(request: Request): Task[Response] = {
+      for {
+        tk   <- tokenFrom(request)
+        apps <- applications.applicationDetailsGiven(tk.user.details.accountCode)
+      } yield Response.json(apps.toJson)
+    }
+
+    private def applicationGiven(app: String, request: Request): Task[Response] = {
+      for {
+        tk     <- tokenFrom(request)
+        result <- applications.applicationGiven(tk.user.details.accountCode, ApplicationCode.of(app))
+      } yield result match
+        case None              => Response.notFound
+        case Some(application) => Response.json(application.toJson)
     }
 
     private def loginProvider(request: Request): Task[Response] = {
@@ -185,6 +204,7 @@ object router {
     private def role(code: String, codes: String*)(fn: (Request, Token) => Task[Response])(request: Request): Task[Response] = {
 
       def hasRole(token: Token)(role: RoleCode): Task[RawRole] = {
+
         ZIO
           .fromOption(token.roleByCode(role))
           .mapError(_ => ReturnResponseError(Response.forbidden(s"Required role $role is missing")))
@@ -193,7 +213,7 @@ object router {
       val roles = codes.toList.prepended(code).map(name => RoleCode.of(name))
       ensureResponse {
         for {
-          token  <- tokenFrom(request)
+          token  <- tokenFrom(request).debug
           _      <- ZIO.foreach(roles) { hasRole(token) }
           result <- fn(request, token)
         } yield result
@@ -201,6 +221,13 @@ object router {
     }
 
     private def createUser = role("user_adm") { (request, token) =>
+
+      def configureApplications(user: RawUser, req: CreateUserRequest): Task[Unit] =
+//        for {
+//          _      <- groups     setGroups  (user.details.account, user.details.id, req.groups)
+//          _      <- roles      setRoles   (user.details.account, user.details.id, req.roles)
+//        } yield ???
+        ???
 
       def uniqueCode(email: Email): Task[UserCode] = {
 
@@ -221,13 +248,22 @@ object router {
           case Some(user) => attemptUnique(user, 0)
       }
 
+      def buildRequest(req: CreateUserRequest, token: Token, password: Password, code: UserCode) =
+        req
+          .into[CreateUser]
+          .withFieldConst(_.account, token.user.details.accountCode)
+          .withFieldConst(_.password, password)
+          .withFieldConst(_.code, code)
+          .transform
+
       for
         req    <- request.body.parse[CreateUserRequest]
         pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate)
         code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
-        create =  req.into[CreateUser].withFieldConst(_.account, token.user.details.accountCode).withFieldConst(_.password, pwd).withFieldConst(_.code, code).transform
-        user   <- accounts.createUser(create)
-        _      <- identities.createUser(create)
+        create  = buildRequest(req, token, pwd, code)
+        user   <- accounts   createUser (create)
+        _      <- identities createUser (create)
+        _      <- configureApplications(user, req)
       yield Response.json(user.toJson)
     }
 
@@ -281,7 +317,7 @@ object router {
     private def groupUsers(app: String, group: String, request: Request): Task[Response] = {
       for {
         tk  <- tokenFrom(request)
-        seq <- groups.usersFor(tk.user.details.account, ApplicationCode.of(app), GroupCode.of(group))
+        seq <- groups.usersFor(tk.user.details.accountCode, ApplicationCode.of(app), GroupCode.of(group))
       } yield Response.json(seq.toJson)
     }
 
@@ -289,18 +325,20 @@ object router {
       for {
         tk     <- tokenFrom(request)
         filter =  request.url.queryParams.getAll("code").getOrElse(Seq.empty).map(GroupCode.of)
-        seq    <- groups.groupsFor(tk.user.details.account, ApplicationCode.of(app), filter)
+        seq    <- groups.groupsFor(tk.user.details.accountCode, ApplicationCode.of(app), filter)
       } yield Response.json(seq.toJson)
     }
 
     private def rolesGiven(app: String, request: Request): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
-        seq <- roles.rolesFor(tk.user.details.account, ApplicationCode.of(app))
+        seq <- roles.rolesFor(tk.user.details.accountCode, ApplicationCode.of(app))
       } yield Response.json(seq.toJson)
     }
 
     private def regular = Routes(
+      Method.GET  / "applications"                   -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
+      Method.GET  / "application" / string("app")    -> handler(applicationGiven),
       Method.POST / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProvider),
       Method.GET  / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
       Method.POST / "login"                          -> Handler.fromFunctionZIO[Request](login),

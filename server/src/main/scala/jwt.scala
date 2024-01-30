@@ -5,7 +5,7 @@ import zio.*
 object tokens {
 
   import types.*
-  import domain.raw.{RawUser, RawUserDetails}
+  import domain.raw.*
   import domain.token.Token
   import morbid.config.MorbidConfig
   import better.files._
@@ -15,7 +15,7 @@ object tokens {
   import io.jsonwebtoken.{Jwts, Jws}
   import java.util.Base64
   import javax.crypto.spec.SecretKeySpec
-  import java.time.{ZoneId, ZonedDateTime}
+  import java.time.{ZoneId, ZonedDateTime, LocalDateTime}
 
   trait TokenGenerator {
     def encode(user: RawUser)   : Task[String]
@@ -47,24 +47,62 @@ object tokens {
     }
   }
 
-  case class FakeTokenGenerator(zone: ZoneId) extends TokenGenerator {
+  private case class FakeTokenGenerator(zone: ZoneId) extends TokenGenerator {
     override def encode(user: RawUser)   : Task[String] = ZIO.fail(ReturnResponseError(Response.notImplemented("TODO")))
     override def verify(payload: String) : Task[Token]  = {
+
+      val groups = Seq(
+        RawGroup(
+          id      = GroupId.of(1),
+          created = LocalDateTime.now,
+          deleted = None,
+          code    = GroupCode.of("g1"),
+          name    = GroupName.of("G1")
+        )
+      )
+
+      val roles = Seq(
+        RawRole(
+          id          = RoleId.of(1),
+          created     = LocalDateTime.now,
+          deleted     = None,
+          code        = RoleCode.of("user_adm"),
+          name        = RoleName.of("User Admin"),
+          permissions = Seq.empty
+        )
+      )
+
+      val apps = Seq(
+        RawApplication(
+          details = RawApplicationDetails(
+            id      = ApplicationId.of(1),
+            created = LocalDateTime.now(),
+            deleted = None,
+            active  = true,
+            code    = ApplicationCode.of("morbid"),
+            name    = ApplicationName.of("Morbid")
+          ),
+          groups = groups,
+          roles  = roles
+        )
+      )
+
       for {
-        now <- Clock.localDateTime
+        now  <- Clock.localDateTime
+
       } yield Token(
         created = now.atZone(zone),
         expires = None,
         user    = RawUser(
-          applications = Seq.empty,
+          applications = apps,
           details      = RawUserDetails(
             id          = UserId.of(1),
             created     = now,
             deleted     = None,
             tenant      = TenantId.of(1),
-            tenantCode  = TenantCode.of("t1"),
+            tenantCode  = TenantCode.of("DEFAULT"),
             account     = AccountId.of(1),
-            accountCode = AccountCode.of("acc1"),
+            accountCode = AccountCode.of("a1"),
             kind        = None,
             active      = true,
             code        = UserCode.of("usr1"),
@@ -75,7 +113,7 @@ object tokens {
     }
   }
 
-  case class JwtTokenGenerator (key: SecretKeySpec, zone: ZoneId) extends TokenGenerator {
+  private case class JwtTokenGenerator (key: SecretKeySpec, zone: ZoneId) extends TokenGenerator {
 
     private val parser = Jwts.parser().verifyWith(key).build()
 

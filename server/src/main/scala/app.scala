@@ -4,6 +4,7 @@ import router.MorbidRouter
 import guara.GuaraApp
 import guara.processor.Processor
 import morbid.accounts.AccountManager
+import morbid.applications.Applications
 import morbid.billing.Billing
 import morbid.config.MorbidConfig
 import morbid.gip.Identities
@@ -22,17 +23,18 @@ object MorbidServer extends GuaraApp {
   override val bootstrap = Runtime.removeDefaultLoggers >>> SLF4J.slf4j(LogFormat.colored)
 
   override val run = startGuara.provide(
+    AccountManager.layer,
+    Applications.layer,
+    Billing.layer,
+    GroupManager.layer,
+    Identities.layer,
     MorbidConfig.layer,
     MorbidRouter.layer,
-    Processor.drop,
-    Identities.layer,
-    AccountManager.layer,
-    GroupManager.layer,
-    RoleManager.layer,
-    Repo.layer,
-    TokenGenerator.layer,
+    PasswordGenerator.layer,
     PinManager.layer,
-    Billing.layer,
-    PasswordGenerator.layer
+    Processor.drop,
+    Repo.layer,
+    RoleManager.layer,
+    TokenGenerator.layer,
   )
 }

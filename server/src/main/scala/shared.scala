@@ -54,8 +54,9 @@ object proto {
   case class ImpersonationRequest(email: Email, magic: Magic)
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
-  case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, tenant: Option[TenantCode] = None, kind: Option[UserKind] = None,                       groups: Seq[GroupCode] = Seq.empty)
-  case class CreateUser       (email: Email, code: UserCode,                password: Password,                tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, account: AccountCode, groups: Seq[GroupCode] = Seq.empty)
+  case class CreateUserApplication(application: ApplicationCode, groups: Seq[GroupCode], roles: Seq[RoleCode])
+  case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, applications: Seq[CreateUserApplication])
+  case class CreateUser       (email: Email, code: UserCode,                password: Password,                tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, account: AccountCode)
   case class SetUserPin     (pin: Pin)
   case class ValidateUserPin(pin: Pin)
 
@@ -64,6 +65,7 @@ object proto {
   given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen[VerifyMorbidTokenRequest]
   given JsonDecoder[SetClaimsRequest]         = DeriveJsonDecoder.gen[SetClaimsRequest]
   given JsonDecoder[GetLoginMode]             = DeriveJsonDecoder.gen[GetLoginMode]
+  given JsonDecoder[CreateUserApplication]    = DeriveJsonDecoder.gen[CreateUserApplication]
   given JsonDecoder[CreateUserRequest]        = DeriveJsonDecoder.gen[CreateUserRequest]
   given JsonDecoder[SetUserPin]               = DeriveJsonDecoder.gen[SetUserPin]
   given JsonDecoder[ValidateUserPin]          = DeriveJsonDecoder.gen[ValidateUserPin]

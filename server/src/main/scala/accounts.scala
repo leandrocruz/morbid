@@ -70,7 +70,6 @@ object accounts {
         opt <- repo.accountByCode(req.account)
         acc <- ZIO.fromOption(opt).mapError(_ => new Exception(s"Can't find account '${req.account}'"))
         usr <- repo.create(build(acc, now, req.code, req.email, req.kind))
-        //TODO: _   <- repo.associateGroupsToUser(usr.details.id, req.groups)
       } yield usr
     }
   }
