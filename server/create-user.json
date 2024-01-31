@@ -1,0 +1,6 @@
+{
+  "email":"user@x.com",
+  "applications": [
+    { "application": "presto", "groups":["g2"], "roles": ["adm"] }
+  ]
+}
