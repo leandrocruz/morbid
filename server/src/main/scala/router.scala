@@ -293,9 +293,11 @@ object router {
         pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate)
         code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
         create  = buildRequest(req, token, pwd, code)
+        _      <- ZIO.logInfo(s"Creating user '${create.email}' in account '${create.account}' in tenant '${create.tenant.getOrElse("_")}'")
         user   <- accounts.createUser(create)
-        _      <- configureApplications(user, req) .fork
-        _      <- identities.createUser(create)    .fork
+        _      <- ZIO.logInfo(s"User '${user.details.email}' created. Configuring applications: ${req.applications.map(_.application).mkString(", ")}")
+        _      <- configureApplications(user, req) <&> identities.createUser(create)
+        _      <- ZIO.logInfo(s"Creation for user '${create.email}' successful")
       yield Response.json(user.toJson)
     }
 
