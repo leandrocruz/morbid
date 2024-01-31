@@ -20,7 +20,8 @@ import zio.logging.backend.SLF4J
 
 object MorbidServer extends GuaraApp {
 
-  override val bootstrap = Runtime.removeDefaultLoggers >>> SLF4J.slf4j(LogFormat.colored)
+  //FIXME: DO NOT ENABLE THIS. It breaks stack trace logging
+  //override val bootstrap = Runtime.removeDefaultLoggers >>> SLF4J.slf4j(LogFormat.colored)
 
   override val run = startGuara.provide(
     AccountManager.layer,
