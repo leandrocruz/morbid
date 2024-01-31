@@ -437,14 +437,23 @@ object domain {
       expires : Option[ZonedDateTime],
       user    : RawUser
     ) {
-      def roleByCode(code: RoleCode)(using app: ApplicationCode): Option[RawRole] = {
+      def roleByCode(code: RoleCode)(using app: ApplicationCode): Option[RawRole] =
         for {
           a <- user.applications.find(_.details.code == app)
           r <- a.roles.find(_.code == code)
         } yield r
-      }
 
-      def hasRole(code: RoleCode)(using app: ApplicationCode) = roleByCode(code).isDefined
+      def hasRole(code: RoleCode)(using app: ApplicationCode) =
+        roleByCode(code).isDefined
+
+      def groups(using app: ApplicationCode): Seq[RawGroup] =
+        user.applications.find(_.details.code == app).map(_.groups).getOrElse(Seq.empty)
+
+      def roles(using app: ApplicationCode): Seq[RawRole] =
+        user.applications.find(_.details.code == app).map(_.roles).getOrElse(Seq.empty)
+
+      def narrowTo(application: ApplicationCode): Token =
+        copy(user = user.copy(applications = user.applications.filter(_.details.code == application)))
     }
 
     given JsonEncoder[Token] = DeriveJsonEncoder.gen[Token]
