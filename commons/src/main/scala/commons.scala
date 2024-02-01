@@ -217,6 +217,11 @@ object domain {
       applications : Seq[RawApplication] = Seq.empty
     )
 
+    case class SingleAppRawUser(
+      details     : RawUserDetails,
+      application : RawApplication
+    )
+
     case class RawUserDetails(
       id          : UserId,
       created     : LocalDateTime,
@@ -293,24 +298,16 @@ object domain {
       set = id => details => Right(details.copy(id = id))
     )
 
-    given JsonEncoder[RawApplicationDetails] = DeriveJsonEncoder.gen[RawApplicationDetails]
-    given JsonDecoder[RawApplicationDetails] = DeriveJsonDecoder.gen[RawApplicationDetails]
-    given JsonEncoder[RawApplication]        = DeriveJsonEncoder.gen[RawApplication]
-    given JsonDecoder[RawApplication]        = DeriveJsonDecoder.gen[RawApplication]
-    given JsonEncoder[RawUserDetails]        = DeriveJsonEncoder.gen[RawUserDetails]
-    given JsonDecoder[RawUserDetails]        = DeriveJsonDecoder.gen[RawUserDetails]
-    given JsonEncoder[RawGroup]              = DeriveJsonEncoder.gen[RawGroup]
-    given JsonDecoder[RawGroup]              = DeriveJsonDecoder.gen[RawGroup]
-    given JsonEncoder[RawPermission]         = DeriveJsonEncoder.gen[RawPermission]
-    given JsonDecoder[RawPermission]         = DeriveJsonDecoder.gen[RawPermission]
-    given JsonEncoder[RawRole]               = DeriveJsonEncoder.gen[RawRole]
-    given JsonDecoder[RawRole]               = DeriveJsonDecoder.gen[RawRole]
-    given JsonEncoder[RawUser]               = DeriveJsonEncoder.gen[RawUser]
-    given JsonDecoder[RawUser]               = DeriveJsonDecoder.gen[RawUser]
-    given JsonEncoder[RawUserEntry]          = DeriveJsonEncoder.gen[RawUserEntry]
-    given JsonDecoder[RawUserEntry]          = DeriveJsonDecoder.gen[RawUserEntry]
-    given JsonEncoder[RawIdentityProvider]   = DeriveJsonEncoder.gen[RawIdentityProvider]
-    given JsonDecoder[RawIdentityProvider]   = DeriveJsonDecoder.gen[RawIdentityProvider]
+    given JsonCodec[RawApplicationDetails] = DeriveJsonCodec.gen
+    given JsonCodec[RawApplication]        = DeriveJsonCodec.gen
+    given JsonCodec[SingleAppRawUser]      = DeriveJsonCodec.gen
+    given JsonCodec[RawUserDetails]        = DeriveJsonCodec.gen
+    given JsonCodec[RawGroup]              = DeriveJsonCodec.gen
+    given JsonCodec[RawPermission]         = DeriveJsonCodec.gen
+    given JsonCodec[RawRole]               = DeriveJsonCodec.gen
+    given JsonCodec[RawUser]               = DeriveJsonCodec.gen
+    given JsonCodec[RawUserEntry]          = DeriveJsonCodec.gen
+    given JsonCodec[RawIdentityProvider]   = DeriveJsonCodec.gen
   }
 
   object simple {
@@ -447,17 +444,27 @@ object domain {
         roleByCode(code).isDefined
 
       def groups(using app: ApplicationCode): Seq[RawGroup] =
-        user.applications.find(_.details.code == app).map(_.groups).getOrElse(Seq.empty)
+        narrowTo(app).map(_.user.application.groups).getOrElse(Seq.empty)
 
       def roles(using app: ApplicationCode): Seq[RawRole] =
-        user.applications.find(_.details.code == app).map(_.roles).getOrElse(Seq.empty)
+        narrowTo(app).map(_.user.application.roles).getOrElse(Seq.empty)
 
-      def narrowTo(application: ApplicationCode): Token =
-        copy(user = user.copy(applications = user.applications.filter(_.details.code == application)))
+      def narrowTo(application: ApplicationCode): Option[SingleAppToken] =
+        user
+          .applications
+          .find(_.details.code == application)
+          .map { found =>
+            SingleAppToken(created, expires, SingleAppRawUser(details = user.details, application = found))
+          }
     }
 
-    given JsonEncoder[Token] = DeriveJsonEncoder.gen[Token]
-    given JsonDecoder[Token] = DeriveJsonDecoder.gen[Token]
+    case class SingleAppToken(
+      created : ZonedDateTime,
+      expires : Option[ZonedDateTime],
+      user    : SingleAppRawUser
+    )
 
+    given JsonCodec[Token]          = DeriveJsonCodec.gen
+    given JsonCodec[SingleAppToken] = DeriveJsonCodec.gen
   }
 }
