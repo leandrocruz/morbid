@@ -17,11 +17,11 @@ object client {
   trait MorbidClient {
     def proxy(request: Request): Task[Response]
     def tokenFrom(token: RawToken): Task[Token]
-    def groups                                    (using token: RawToken): Task[Seq[RawGroup]]
-    def groupsByCode      (groups: Seq[GroupCode])(using token: RawToken): Task[Seq[RawGroup]]
-    def groupByCode       (group: GroupCode)      (using token: RawToken): Task[Option[RawGroup]]
-    def usersByGroupByCode(group: GroupCode)      (using token: RawToken): Task[Seq[RawUserEntry]]
-    def roles                                     (using token: RawToken): Task[Seq[RawRole]]
+    def groups                                    (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
+    def groupsByCode      (groups: Seq[GroupCode])(using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
+    def groupByCode       (group: GroupCode)      (using token: RawToken, app: ApplicationCode): Task[Option[RawGroup]]
+    def usersByGroupByCode(group: GroupCode)      (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
+    def roles                                     (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]
   }
 
   case class MorbidClientConfig(url: String)
@@ -35,25 +35,27 @@ object client {
         url    <- ZIO.fromEither(URL.decode(config.url))
       } yield RemoteMorbidClient(url, client, scope)
     }
-
   }
 
   case class RemoteMorbidClient(base: URL, client: Client, scope: Scope) extends MorbidClient {
 
-    private val appCode = "presto"
-    private val headers = Headers(Chunk(Header.Custom("X-Oystr-Service", "PrestoApi")))
+    private val headers = Headers.empty //Headers(Chunk(Header.Custom("X-Oystr-Service", "PrestoApi")))
     private val applicationJson = Headers(Chunk(Header.ContentType(MediaType("application", "json"))))
+
+    private def perform(request: Request): Task[Response] = for {
+      response <- ZClient.request(request).provideSome(ZLayer.succeed(scope), ZLayer.succeed(client))
+    } yield response
 
     override def proxy(request: Request): Task[Response] = {
       for {
-        resp <- client.request(request.copy(url = base ++ request.url)).provideSome(ZLayer.succeed(scope))
+        resp   <- perform(request.copy(url = base ++ request.url))
       } yield resp.copy(headers = resp.headers ++ headers)
     }
 
     override def tokenFrom(token: RawToken): Task[Token] = {
       val req = Request.post(base / "verify", Body.fromString(s"""{"token":"$token"}""")).copy(headers = applicationJson ++ headers)
       for {
-        res    <- client.request(req).provideSome(ZLayer.succeed(scope))
+        res    <- perform(req)
         result <- res.body.parse[Token]
       } yield result
     }
@@ -62,15 +64,15 @@ object client {
       val req = Request.get(url).copy(headers = headers.addHeader(Header.Custom("X-MorbidToken", token.string)))
       for {
         _      <- ZIO.log(s"Calling '${url.encode}'")
-        res    <- client.request(req).provideSome(ZLayer.succeed(scope))
+        res    <- perform(req)
         result <- res.body.parse[T]
       } yield result
     }
 
-    override def groupByCode       (group: GroupCode)       (using token: RawToken): Task[Option[RawGroup]]  = request[Option[RawGroup]]  (base / "app" / appCode / "group")
-    override def groups                                     (using token: RawToken): Task[Seq[RawGroup]]     = request[Seq[RawGroup]]     (base / "app" / appCode / "groups")
-    override def groupsByCode      (groups: Seq[GroupCode]) (using token: RawToken): Task[Seq[RawGroup]]     = request[Seq[RawGroup]]    ((base / "app" / appCode / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
-    override def usersByGroupByCode(group: GroupCode)       (using token: RawToken): Task[Seq[RawUserEntry]] = request[Seq[RawUserEntry]] (base / "app" / appCode / "group" / GroupCode.value(group) / "users")
-    override def roles                                      (using token: RawToken): Task[Seq[RawRole]]      = request[Seq[RawRole]]      (base / "app" / appCode / "roles")
+    override def groupByCode       (group: GroupCode)       (using token: RawToken, app: ApplicationCode): Task[Option[RawGroup]]  = request[Option[RawGroup]]  (base / "app" / ApplicationCode.value(app) / "group")
+    override def groups                                     (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]     = request[Seq[RawGroup]]     (base / "app" / ApplicationCode.value(app) / "groups")
+    override def groupsByCode      (groups: Seq[GroupCode]) (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]     = request[Seq[RawGroup]]    ((base / "app" / ApplicationCode.value(app) / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
+    override def usersByGroupByCode(group: GroupCode)       (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]] = request[Seq[RawUserEntry]] (base / "app" / ApplicationCode.value(app) / "group" / GroupCode.value(group) / "users")
+    override def roles                                      (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]      = request[Seq[RawRole]]      (base / "app" / ApplicationCode.value(app) / "roles")
   }
 }
