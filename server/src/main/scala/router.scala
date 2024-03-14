@@ -158,6 +158,10 @@ object router {
         case Some(provider) => Response.json(provider.toJson)
     }
 
+    private def loginResponse(token: Token, encoded: String) = {
+      Response.json(token.toJson).loggedIn(encoded)
+    }
+
     private def login(request: Request): Task[Response] = {
 
       def ensureUser(identity: CloudIdentity, maybeUser: Option[RawUser]): Task[RawUser] = {
@@ -169,12 +173,13 @@ object router {
 
       ensureResponse {
         for {
-          token     <- request.body.parse[VerifyGoogleTokenRequest]
-          identity  <- identities.verify(token)
+          vgt       <- request.body.parse[VerifyGoogleTokenRequest]
+          identity  <- identities.verify(vgt)
           maybeUser <- accounts.userByEmail(identity.email)
           user      <- ensureUser(identity, maybeUser)
-          encoded   <- tokens.encode(user)
-        } yield Response.ok.loggedIn(encoded)
+          token     <- tokens.asToken(user)
+          encoded   <- tokens.encode(token)
+        } yield loginResponse(token, encoded)
       }
     }
 
@@ -330,11 +335,12 @@ object router {
         same    =  req.magic.is(cfg.magic.password)
         _       <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
         user    <- accounts.userByEmail(req.email)
-        encoded <- user match {
-                  case Some(value) => tokens.encode(value)
-                  case None        => ZIO.fail(ReturnResponseError(Response.notFound(s"user ${req.email} not found")))
+        token   <- user match {
+                  case Some(usr) => tokens.asToken(usr)
+                  case None      => ZIO.fail(ReturnResponseError(Response.notFound(s"user ${req.email} not found")))
                 }
-      } yield Response.json(user.toJson).loggedIn(encoded)
+        encoded <- tokens.encode(token)
+      } yield loginResponse(token, encoded)
     }
 
     private def usersByAccount(app: String, request: Request): Task[Response] = {

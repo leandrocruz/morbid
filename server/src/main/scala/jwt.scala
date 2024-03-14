@@ -18,8 +18,9 @@ object tokens {
   import java.time.{ZoneId, ZonedDateTime, LocalDateTime}
 
   trait TokenGenerator {
-    def encode(user: RawUser)   : Task[String]
     def verify(payload: String) : Task[Token]
+    def asToken(user: RawUser)  : Task[Token]
+    def encode(token: Token)    : Task[String]
   }
 
   object TokenGenerator {
@@ -48,7 +49,9 @@ object tokens {
   }
 
   private case class FakeTokenGenerator(zone: ZoneId) extends TokenGenerator {
-    override def encode(user: RawUser)   : Task[String] = ZIO.fail(ReturnResponseError(Response.notImplemented("TODO")))
+    override def encode(token: Token)   : Task[String] = ZIO.fail(ReturnResponseError(Response.notImplemented("TODO")))
+    override def asToken(user: RawUser) : Task[Token]  = ZIO.fail(ReturnResponseError(Response.notImplemented("TODO")))
+
     override def verify(payload: String) : Task[Token]  = {
 
       val groups = Seq(
@@ -117,39 +120,33 @@ object tokens {
 
     private val parser = Jwts.parser().verifyWith(key).build()
 
+    override def asToken(user: RawUser): Task[Token] = {
+      for {
+        now <- Clock.localDateTime
+        at  =  now.atZone(zone)
+      } yield Token(
+        created = at,
+        expires = Some(at.plusDays(1)), //TODO: define the expiration policy based on the tenant/account/etc
+        user    = user
+      )
+    }
+
     /**
      * https://github.com/jwtk/jjwt#jwt-create
      */
-    override def encode(user: RawUser): Task[String] = {
-
-      def encodeAsJson(now: ZonedDateTime) = ZIO.attempt {
-        Token(
-          created = now,
-          expires = Some(now.plusDays(1)), //TODO: define the expiration policy based on the tenant/account/etc
-          user    = user
-        ).toJson
+    override def encode(token: Token): Task[String] = {
+      ZIO.attempt {
+        Jwts
+          .builder()
+          .header()
+            .contentType("application/json")
+            .add("version", "v1")
+            .add("issuer", "morbid")
+          .and()
+          .content(token.toJson)
+          .signWith(key)
+          .compact()
       }
-
-      def build(content: String) = {
-        ZIO.attempt {
-          Jwts
-            .builder()
-            .header()
-              .contentType("application/json")
-              .add("version", "v1")
-              .add("issuer", "morbid")
-            .and()
-            .content(content)
-            .signWith(key)
-            .compact()
-        }
-      }
-
-      for {
-        now     <- Clock.localDateTime
-        content <- encodeAsJson(now.atZone(zone))
-        result  <- build(content)
-      } yield result
     }
 
     override def verify(payload: String): Task[Token] = {
