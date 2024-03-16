@@ -21,6 +21,7 @@ object client {
     def groupsByCode      (groups: Seq[GroupCode])(using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
     def groupByCode       (group: GroupCode)      (using token: RawToken, app: ApplicationCode): Task[Option[RawGroup]]
     def usersByGroupByCode(group: GroupCode)      (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
+    def users                                     (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
     def roles                                     (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]
   }
 
@@ -73,6 +74,7 @@ object client {
     override def groups                                     (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]     = request[Seq[RawGroup]]     (base / "app" / ApplicationCode.value(app) / "groups")
     override def groupsByCode      (groups: Seq[GroupCode]) (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]     = request[Seq[RawGroup]]    ((base / "app" / ApplicationCode.value(app) / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
     override def usersByGroupByCode(group: GroupCode)       (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]] = request[Seq[RawUserEntry]] (base / "app" / ApplicationCode.value(app) / "group" / GroupCode.value(group) / "users")
+    override def users                                      (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]] = request[Seq[RawUserEntry]] (base / "app" / ApplicationCode.value(app) / "users")
     override def roles                                      (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]      = request[Seq[RawRole]]      (base / "app" / ApplicationCode.value(app) / "roles")
   }
 }

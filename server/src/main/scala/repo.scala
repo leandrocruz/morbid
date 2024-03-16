@@ -221,7 +221,7 @@ object repo {
     def usersByAccount(app: ApplicationCode)                                                  : Task[Map[RawAccount, Int]]
     def userExists(code: UserCode)                                                            : Task[Boolean]
     def userGiven(email: Email)                                                               : Task[Option[RawUser]]
-    def usersGiven(account: AccountCode, app: ApplicationCode, group: GroupCode)              : Task[Seq[RawUserEntry]]
+    def usersGiven(account: AccountCode, app: ApplicationCode, group: Option[GroupCode])      : Task[Seq[RawUserEntry]]
   }
 
   object Repo {
@@ -555,21 +555,38 @@ object repo {
       } yield ()
     }
 
-    override def usersGiven(account: AccountCode, application: ApplicationCode, group: GroupCode): Task[Seq[RawUserEntry]] = {
-      inline def query = quote {
-        for {
-          ten <- tenants                                 if ten.deleted.isEmpty && ten.active
-          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(account)
-          a2a <- account2app  .join(_.acc == acc.id)     if a2a.deleted.isEmpty
-          app <- applications .join(_.id == a2a.app)     if app.deleted.isEmpty && app.active && app.code == lift(application)
-          grp <- groups       .join(_.app == app.id)     if grp.deleted.isEmpty && grp.code == lift(group)
-          u2g <- user2group   .join(_.app == app.id)     if u2g.deleted.isEmpty && u2g.grp  == grp.id
-          usr <- users        .join(_.id  == u2g.usr)    if usr.deleted.isEmpty && usr.active
-        } yield usr
+    override def usersGiven(account: AccountCode, application: ApplicationCode, group: Option[GroupCode]): Task[Seq[RawUserEntry]] = {
+
+      inline def groupUsers(code: GroupCode) = {
+        quote {
+          for {
+            ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(account)
+            a2a <- account2app  .join(_.acc == acc.id)     if a2a.deleted.isEmpty
+            app <- applications .join(_.id == a2a.app)     if app.deleted.isEmpty && app.active && app.code == lift(application)
+            grp <- groups       .join(_.app == app.id)     if grp.deleted.isEmpty && grp.code == lift(code)
+            u2g <- user2group   .join(_.app == app.id)     if u2g.deleted.isEmpty && u2g.grp  == grp.id
+            usr <- users        .join(_.id  == u2g.usr)    if usr.deleted.isEmpty && usr.active
+          } yield usr
+        }
       }
 
+      inline def appUsers = {
+        quote {
+          for {
+            ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(account)
+            usr <- users        .join(_.account == acc.id) if usr.deleted.isEmpty && usr.active
+          } yield usr
+        }
+      }
+
+      inline def query = group match
+        case Some(code) => groupUsers(code)
+        case None       => appUsers
+
       for {
-        //_    <- printQuery(query)
+        _    <- printQuery(query)
         rows <- exec(run(query))
       } yield rows.map(_.transformInto[RawUserEntry])
     }

@@ -343,7 +343,7 @@ object router {
       } yield loginResponse(token, encoded)
     }
 
-    private def usersByAccount(app: String, request: Request): Task[Response] = {
+    private def userCount(app: String, request: Request): Task[Response] = {
       role("adm") { (_, _) =>
         for {
           data   <- billing.usersByAccount(ApplicationCode.of(app))
@@ -354,12 +354,15 @@ object router {
       } (request)
     }
 
-    private def groupUsers(app: String, group: String, request: Request): Task[Response] = {
+    private def usersGiven(request: Request, application: ApplicationCode, group: Option[GroupCode] = None): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
-        seq <- groups.usersFor(tk.user.details.accountCode, ApplicationCode.of(app), GroupCode.of(group))
+        seq <- groups.usersFor(tk.user.details.accountCode, application, group)
       } yield Response.json(seq.toJson)
     }
+
+    private def usersGiven(app: String, request: Request)                : Task[Response] = usersGiven(request, ApplicationCode.of(app))
+    private def groupUsers(app: String, group: String, request: Request) : Task[Response] = usersGiven(request, ApplicationCode.of(app), Some(GroupCode.of(group)))
 
     private def groupsGiven(app: String, request: Request): Task[Response] = ensureResponse {
       for {
@@ -390,7 +393,7 @@ object router {
       Method.POST / "user"                           -> Handler.fromFunctionZIO[Request](createUser),
       Method.POST / "user" / "pin"                   -> Handler.fromFunctionZIO[Request](setUserPin),
       Method.POST / "user" / "pin" / "validate"      -> Handler.fromFunctionZIO[Request](validateUserPin),
-      Method.GET  / "app" / string("app") / "users"  -> handler(usersByAccount),
+      Method.GET  / "app" / string("app") / "users"  -> handler(usersGiven),
       Method.GET  / "app" / string("app") / "groups" -> handler(groupsGiven),
       Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
       Method.GET  / "app" / string("app") / "roles" -> handler(rolesGiven),
