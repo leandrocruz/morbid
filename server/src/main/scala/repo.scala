@@ -4,11 +4,10 @@ import zio.*
 
 object repo {
 
-  import config.*
   import types.*
   import domain.*
   import domain.raw.*
-  import proto.*
+  import commands.*
   import io.getquill.*
   import io.getquill.jdbczio.Quill
   import javax.sql.DataSource
@@ -205,23 +204,7 @@ object repo {
   )
 
   trait Repo {
-    def accountByProvider(code: ProviderCode)                                                 : Task[Option[RawAccount]]
-    def accountByCode(code: AccountCode)                                                      : Task[Option[RawAccount]]
-    def addGroups(account: AccountId, app: ApplicationId, user: UserId, groups: Seq[GroupId]) : Task[Unit]
-    def addRoles(account: AccountId, app: ApplicationId, user: UserId, roles: Seq[RoleId])    : Task[Unit]
-    def applicationDetailsGiven(account: AccountCode)                                         : Task[Seq[RawApplicationDetails]]
-    def applicationGiven(account: AccountCode, application: ApplicationCode)                  : Task[Option[RawApplication]]
-    def create(raw: RawUser)                                                                  : Task[RawUser]
-    def getUserPin(user: UserId)                                                              : Task[Option[Sha256Hash]]
-    def groupsGiven(account: AccountCode, app: ApplicationCode, filter: Seq[GroupCode])       : Task[Seq[RawGroup]]
-    def providerGiven(domain: Domain, code: Option[TenantCode])                               : Task[Option[RawIdentityProvider]]
-    def providerGiven(account: AccountId)                                                     : Task[Option[RawIdentityProvider]]
-    def rolesGiven(account: AccountCode, app: ApplicationCode)                                : Task[Seq[RawRole]]
-    def setUserPin(user: UserId, pin: Sha256Hash)                                             : Task[Unit]
-    def usersByAccount(app: ApplicationCode)                                                  : Task[Map[RawAccount, Int]]
-    def userExists(code: UserCode)                                                            : Task[Boolean]
-    def userGiven(email: Email)                                                               : Task[Option[RawUser]]
-    def usersGiven(account: AccountCode, app: ApplicationCode, group: Option[GroupCode])      : Task[Seq[RawUserEntry]]
+    def exec[R](command: Command[R]): Task[R]
   }
 
   object Repo {
@@ -325,11 +308,34 @@ object repo {
 
     private def exec[T](zio: ZIO[DataSource, SQLException, T]): Task[T] = zio.provide(ZLayer.succeed(ds))
 
-    override def userGiven(email: Email): Task[Option[RawUser]] = {
+    override def exec[R](command: Command[R]): Task[R] = {
+      command match
+        case r: CreateGroup           => create(r)
+        case r: CreateUser            => create(r)
+        case r: DefineUserPin         => setUserPin(r)
+        case r: GetUserPin            => getUserPin(r)
+        case r: FindAccountByCode     => accountByCode(r)
+        case r: FindAccountByProvider => accountByProvider(r)
+        case r: FindApplication       => applicationGiven(r)
+        case r: FindApplications      => applicationDetailsGiven(r)
+        case r: FindGroups            => groupsGiven(r)
+        case r: FindProviderByAccount => providerGiven(r)
+        case r: FindProviderByDomain  => providerGiven(r)
+        case r: FindRoles             => rolesGiven(r)
+        case r: FindUsersByCodes      => usersGiven(r)
+        case r: FindUserByEmail       => userGiven(r)
+        case r: FindUsersInGroup      => usersGiven(r)
+        case r: LinkUsersToGroups     => addGroups(r)
+        case r: LinkUsersToRoles      => addRoles(r)
+        case r: ReportUsersByAccount  => usersByAccount(r)
+        case r: UserExists            => userExists(r)
+    }
+
+    private def userGiven(request: FindUserByEmail): Task[Option[RawUser]] = {
 
       inline def appQuery = quote {
         for {
-          usr <- users                                   if usr.active && usr.deleted.isEmpty && usr.email == lift(email)
+          usr <- users                                   if usr.active && usr.deleted.isEmpty && usr.email == lift(request.email)
           acc <- accounts     .join(_.id == usr.account) if acc.active && acc.deleted.isEmpty
           ten <- tenants      .join(_.id == acc.tenant)  if ten.active && ten.deleted.isEmpty
           a2a <- account2app  .join(_.acc == acc.id)     if a2a.deleted.isEmpty
@@ -430,12 +436,12 @@ object repo {
       } yield result
     }
 
-    override def userExists(code: UserCode): Task[Boolean] = {
+    private def userExists(request: UserExists): Task[Boolean] = {
       inline def query = quote {
         for {
           ten <- tenants                             if ten.active && ten.deleted.isEmpty
           acc <- accounts .join(_.tenant == ten.id)  if acc.active && acc.deleted.isEmpty
-          usr <- users    .join(_.account == acc.id) if usr.active && usr.deleted.isEmpty && usr.code == lift(code)
+          usr <- users    .join(_.account == acc.id) if usr.active && usr.deleted.isEmpty && usr.code == lift(request.code)
         } yield usr
       }
 
@@ -444,29 +450,75 @@ object repo {
       } yield rows.length == 1
     }
 
-    override def create(raw: RawUser): Task[RawUser] = {
+    private def create(req: CreateUser): Task[RawUser] = {
 
-      val row = raw.details.transformInto[UserRow]
-
-      val stmt = quote {
-        users.insertValue(lift(row)).returning(_.id)
+      def build(created: LocalDateTime) = {
+        RawUser(details = RawUserDetails(
+          id          = UserId.of(0),
+          tenant      = req.account.tenant,
+          tenantCode  = req.account.tenantCode,
+          account     = req.account.id,
+          accountCode = req.account.code,
+          created     = created,
+          active      = true,
+          code        = req.code,
+          email       = req.email,
+          kind        = req.kind
+        ))
       }
 
-      val optic = userDetailsLens >>> idLens
+      def store(raw: RawUser) = {
+        val row = raw.details.transformInto[UserRow]
+
+        inline def stmt = quote {
+          users.insertValue(lift(row)).returning(_.id)
+        }
+
+        val optic = userDetailsLens >>> idLens
+
+        for {
+          id     <- exec(run(stmt))
+          result <- ZIO.fromEither(optic.set(id)(raw))
+        } yield result
+      }
 
       for {
-        id     <- exec(run(stmt))
-        result <- ZIO.fromEither(optic.set(id)(raw))
-      } yield result
+        now <- Clock.localDateTime
+        raw =  build(now)
+        usr <- store(raw)
+      } yield usr
+
     }
 
-    override def accountByProvider(code: ProviderCode): Task[Option[RawAccount]] = {
+    private def create(request: CreateGroup): Task[RawGroup] = {
+
+      def store = {
+        val row = request.group.into[GroupRow].withFieldConst(_.app, request.application.details.id).transform
+
+        inline def stmt = quote {
+          groups.insertValue(lift(row)).returning(_.id)
+        }
+
+        for
+          id <- exec(run(stmt))
+        yield request.group.copy(id = id)
+      }
+
+      for
+        group <- store
+        users <- usersGiven (FindUsersByCodes(request.account, request.users))
+        _     <- addGroups  (LinkUsersToGroups(request.application.details.id, users.map(_.id), Seq(group.id)))
+      yield group
+
+    }
+
+    private def accountByProvider(request: FindAccountByProvider): Task[Option[RawAccount]] = {
 
       inline def query = quote {
         for {
           t <- tenants                           if t.active && t.deleted.isEmpty
           a <- accounts.join(_.tenant == t.id)   if a.active && a.deleted.isEmpty
-          p <- providers.join(_.account == a.id) if p.active && p.deleted.isEmpty && p.code == lift(code)
+          p <- providers.join(_.account == a.id) if p.active && p.deleted.isEmpty && p.code == lift(request.code)
         } yield (t, a)
       }
 
@@ -477,11 +529,11 @@ object repo {
       }
     }
 
-    override def providerGiven(account: AccountId): Task[Option[RawIdentityProvider]] = {
+    private def providerGiven(request: FindProviderByAccount): Task[Option[RawIdentityProvider]] = {
       inline def query = quote {
         for {
           t <- tenants                                                        if t.active && t.deleted.isEmpty
-          a <- accounts  .join(_.tenant == t.id)                              if a.active && a.deleted.isEmpty && a.id == lift(account)
+          a <- accounts  .join(_.tenant == t.id)                              if a.active && a.deleted.isEmpty && a.id == lift(request.account)
           p <- providers .join(_.account == a.id).sortBy(_.created)(Ord.desc) if p.active && p.deleted.isEmpty
         } yield p
       }
@@ -491,15 +543,15 @@ object repo {
       } yield rows.headOption.map(_.transformInto[RawIdentityProvider])
     }
 
-    override def providerGiven(domain: Domain, tenant: Option[TenantCode]): Task[Option[RawIdentityProvider]] = {
+    private def providerGiven(request: FindProviderByDomain): Task[Option[RawIdentityProvider]] = {
 
-      val code = tenant.getOrElse(TenantCode.of("DEFAULT"))
+      val code = request.code.getOrElse(TenantCode.of("DEFAULT"))
 
       inline def query = quote {
         for {
           t <- tenants                                                       if t.active && t.deleted.isEmpty && t.code == lift(code)
           a <- accounts .join(_.tenant == t.id)                              if a.active && a.deleted.isEmpty
-          p <- providers.join(_.account == a.id).sortBy(_.created)(Ord.desc) if p.active && p.deleted.isEmpty && p.domain == lift(domain)
+          p <- providers.join(_.account == a.id).sortBy(_.created)(Ord.desc) if p.active && p.deleted.isEmpty && p.domain == lift(request.domain)
         } yield p
       }
 
@@ -509,14 +561,14 @@ object repo {
 
     }
 
-    override def groupsGiven(account: AccountCode, application: ApplicationCode, filter: Seq[GroupCode] = Seq.empty): Task[Seq[RawGroup]] = {
+    private def groupsGiven(request: FindGroups): Task[Seq[RawGroup]] = {
       inline def query = quote {
         for {
           ten <- tenants                                if ten.deleted.isEmpty && ten.active
-          acc <- accounts     .join(_.tenant == ten.id) if acc.deleted.isEmpty && acc.active && acc.code == lift(account)
+          acc <- accounts     .join(_.tenant == ten.id) if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
           a2a <- account2app  .join(_.acc == acc.id)    if a2a.deleted.isEmpty
-          app <- applications .join(_.id == a2a.app)    if app.deleted.isEmpty && app.active && app.code == lift(application)
-          grp <- groups       .join(_.app == a2a.app)   if grp.deleted.isEmpty && (lift(filter.isEmpty) || liftQuery(filter).contains(grp.code))
+          app <- applications .join(_.id == a2a.app)    if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+          grp <- groups       .join(_.app == a2a.app)   if grp.deleted.isEmpty && (lift(request.filter.isEmpty) || liftQuery(request.filter).contains(grp.code))
         } yield grp
       }
 
@@ -525,7 +577,7 @@ object repo {
       } yield rows.map(_.transformInto[RawGroup])
     }
 
-    override def rolesGiven(account: AccountCode, application: ApplicationCode): Task[Seq[RawRole]] = {
+    private def rolesGiven(request: FindRoles): Task[Seq[RawRole]] = {
 
       def toRole(role: RoleRow, data: Seq[(RoleRow, PermissionRow)]): RawRole = {
         val perms = data.map(_._2).distinct.map(_.transformInto[RawPermission])
@@ -535,9 +587,9 @@ object repo {
       inline def query: Quoted[Query[(RoleRow, PermissionRow)]] = quote {
         for {
           ten <- tenants                                if ten.deleted.isEmpty && ten.active
-          acc <- accounts     .join(_.tenant == ten.id) if acc.deleted.isEmpty && acc.active && acc.code == lift(account)
+          acc <- accounts     .join(_.tenant == ten.id) if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
           a2a <- account2app  .join(_.acc == acc.id)    if a2a.deleted.isEmpty
-          app <- applications .join(_.id == a2a.app)    if app.deleted.isEmpty && app.active && app.code == lift(application)
+          app <- applications .join(_.id == a2a.app)    if app.deleted.isEmpty && app.active && app.code == lift(request.app)
           rol <- roles        .join(_.app == app.id)    if rol.deleted.isEmpty
           per <- permissions  .join(_.rid == rol.id)    if per.deleted.isEmpty
         } yield (rol, per)
@@ -555,18 +607,18 @@ object repo {
       } yield ()
     }
 
-    override def usersGiven(account: AccountCode, application: ApplicationCode, group: Option[GroupCode]): Task[Seq[RawUserEntry]] = {
+    private def usersGiven(request: FindUsersInGroup): Task[Seq[RawUserEntry]] = {
 
       inline def groupUsers(code: GroupCode) = {
         quote {
           for {
             ten <- tenants                                 if ten.deleted.isEmpty && ten.active
-            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(account)
-            a2a <- account2app  .join(_.acc == acc.id)     if a2a.deleted.isEmpty
-            app <- applications .join(_.id == a2a.app)     if app.deleted.isEmpty && app.active && app.code == lift(application)
-            grp <- groups       .join(_.app == app.id)     if grp.deleted.isEmpty && grp.code == lift(code)
-            u2g <- user2group   .join(_.app == app.id)     if u2g.deleted.isEmpty && u2g.grp  == grp.id
-            usr <- users        .join(_.id  == u2g.usr)    if usr.deleted.isEmpty && usr.active
+            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+            a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
+            app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+            grp <- groups       .join(_.app    == app.id)  if grp.deleted.isEmpty && grp.code == lift(code)
+            u2g <- user2group   .join(_.app    == app.id)  if u2g.deleted.isEmpty && u2g.grp  == grp.id
+            usr <- users        .join(_.id     == u2g.usr) if usr.deleted.isEmpty && usr.active
           } yield usr
         }
       }
@@ -575,13 +627,13 @@ object repo {
         quote {
           for {
             ten <- tenants                                 if ten.deleted.isEmpty && ten.active
-            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(account)
+            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
             usr <- users        .join(_.account == acc.id) if usr.deleted.isEmpty && usr.active
           } yield usr
         }
       }
 
-      inline def query = group match
+      inline def query = request.group match
         case Some(code) => groupUsers(code)
         case None       => appUsers
 
@@ -591,11 +643,11 @@ object repo {
       } yield rows.map(_.transformInto[RawUserEntry])
     }
 
-    override def accountByCode(code: AccountCode): Task[Option[RawAccount]] = {
+    private def accountByCode(request: FindAccountByCode): Task[Option[RawAccount]] = {
       inline def query = quote {
         for {
           t <- tenants                          if t.active && t.deleted.isEmpty
-          a <- accounts .join(_.tenant == t.id) if a.active && a.deleted.isEmpty && a.code == lift(code)
+          a <- accounts .join(_.tenant == t.id) if a.active && a.deleted.isEmpty && a.code == lift(request.code)
         } yield (t, a)
       }
 
@@ -606,12 +658,12 @@ object repo {
       }
     }
 
-    override def applicationDetailsGiven(account: AccountCode): Task[Seq[RawApplicationDetails]] = {
+    private def applicationDetailsGiven(request: FindApplications): Task[Seq[RawApplicationDetails]] = {
 
       inline def query = quote {
         for {
           ten <- tenants                                if ten.deleted.isEmpty && ten.active
-          acc <- accounts     .join(_.tenant == ten.id) if acc.deleted.isEmpty && acc.active && acc.code == lift(account)
+          acc <- accounts     .join(_.tenant == ten.id) if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
           a2a <- account2app  .join(_.acc == acc.id)    if a2a.deleted.isEmpty
           app <- applications .join(_.id == a2a.app)    if app.deleted.isEmpty && app.active
         } yield app
@@ -622,12 +674,12 @@ object repo {
       } yield rows.map(_.transformInto[RawApplicationDetails])
     }
 
-    override def applicationGiven(account: AccountCode, application: ApplicationCode): Task[Option[RawApplication]] = {
+    private def applicationGiven(request: FindApplication): Task[Option[RawApplication]] = {
 
       def appFrom(row: ApplicationRow): Task[Option[RawApplication]] = {
         for {
-          f1     <- groupsGiven(account, application).fork
-          f2     <- rolesGiven (account, application).fork
+          f1     <- groupsGiven(FindGroups(request.account, request.application)) .fork
+          f2     <- rolesGiven (FindRoles (request.account, request.application)) .fork
           groups <- f1.join
           roles  <- f2.join
 
@@ -642,9 +694,9 @@ object repo {
       inline def query = quote {
         for {
           ten <- tenants                                 if ten.deleted.isEmpty && ten.active
-          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(account)
-          a2a <- account2app  .join(_.acc == acc.id)     if a2a.deleted.isEmpty
-          app <- applications .join(_.id == a2a.app)     if app.deleted.isEmpty && app.active && app.code == lift(application)
+          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
+          app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.application)
         } yield app
       }
 
@@ -657,38 +709,47 @@ object repo {
       } yield result
     }
 
-    override def addGroups(account: AccountId, app: ApplicationId, user: UserId, groups: Seq[GroupId]): Task[Unit] = {
-      def insertValues(rows: Seq[UserToGroupRow]) = quote {
+    private def addGroups(cmd: LinkUsersToGroups): Task[Unit] = {
+
+      inline def insertValues(rows: Seq[UserToGroupRow]) = quote {
         liftQuery(rows).foreach(row => user2group.insertValue(row))
       }
 
-      for {
+      def rows(now: LocalDateTime) = for
+        user  <- cmd.users
+        group <- cmd.groups
+      yield UserToGroupRow(usr = user, app = cmd.application, grp = group, created = now, deleted = None)
+
+      for
         now  <- Clock.localDateTime
-        rows =  groups.map(grp => UserToGroupRow(usr = user, app = app, grp = grp, created = now, deleted = None))
-        _    <- exec(run(insertValues(rows)))
-      } yield ()
+        _    <- exec(run(insertValues(rows(now))))
+      yield ()
     }
 
-    override def addRoles(account: AccountId, app: ApplicationId, user: UserId, roles: Seq[RoleId]): Task[Unit] = {
+    private def addRoles(request: LinkUsersToRoles): Task[Unit] = {
       def insertValues(rows: Seq[UserToRoleRow]) = quote {
         liftQuery(rows).foreach(row => user2role.insertValue(row))
       }
 
+      def rows(now: LocalDateTime) = for
+        user <- request.users
+        role <- request.roles
+      yield UserToRoleRow(usr = user, app = request.app, rid = role, created = now, deleted = None)
+
       for {
         now <- Clock.localDateTime
-        rows = roles.map(rid => UserToRoleRow(usr = user, app = app, rid = rid, created = now, deleted = None))
-        _ <- exec(run(insertValues(rows)))
+        _ <- exec(run(insertValues(rows(now))))
       } yield ()
     }
 
-    override def setUserPin(user: UserId, pin: Sha256Hash): Task[Unit] = {
+    private def setUserPin(request: DefineUserPin): Task[Unit] = {
 
       def row(now: LocalDateTime) = PinRow(
         id      = PinId.of(0),
         created = now,
         deleted = None,
-        userId  = user ,
-        pin     = pin
+        userId  = request.user ,
+        pin     = request.pin
       )
 
       inline def stmt(row: PinRow) = quote {
@@ -701,10 +762,10 @@ object repo {
       } yield ()
     }
 
-    override def getUserPin(user: UserId): Task[Option[Sha256Hash]] = {
+    private def getUserPin(request: GetUserPin): Task[Option[Sha256Hash]] = {
       inline def query = quote {
         (for {
-          p <- pins if p.deleted.isEmpty && p.userId == lift(user)
+          p <- pins if p.deleted.isEmpty && p.userId == lift(request.user)
         } yield p).sortBy(_.created)(Ord.desc)
       }
 
@@ -713,10 +774,10 @@ object repo {
       } yield rows.headOption.map { _.pin }
     }
 
-    override def usersByAccount(code: ApplicationCode): Task[Map[RawAccount, Int]] = {
+    private def usersByAccount(request: ReportUsersByAccount): Task[Map[RawAccount, Int]] = {
       inline def query = quote {
         (for {
-          app <- applications                           if app.active && app.deleted.isEmpty && app.code == lift(code)
+          app <- applications                           if app.active && app.deleted.isEmpty && app.code == lift(request.app)
           a2a <- account2app .join(_.app == app.id)     if               a2a.deleted.isEmpty
           acc <- accounts    .join(_.id == a2a.acc)     if acc.active && acc.deleted.isEmpty
           usr <- users       .join(_.account == acc.id) if usr.active && usr.deleted.isEmpty
@@ -731,6 +792,23 @@ object repo {
       } yield rows.map {
         case (account, count) => account.into[RawAccount].withFieldConst(_.tenantCode, TenantCode.of("")).transform -> count.toInt
       }.toMap
+    }
+
+    private def usersGiven(request: FindUsersByCodes): Task[Seq[RawUserEntry]] = {
+      inline def query = {
+        quote {
+          for {
+            ten <- tenants                             if ten.deleted.isEmpty && ten.active
+            acc <- accounts .join(_.tenant  == ten.id) if acc.deleted.isEmpty && acc.active && acc.id == lift(request.account)
+            usr <- users    .join(_.account == acc.id) if usr.deleted.isEmpty && usr.active && liftQuery(request.codes).contains(usr.code)
+          } yield usr
+        }
+      }
+
+      for
+        _    <- printQuery(query)
+        rows <- exec(run(query))
+      yield rows.map(_.transformInto[RawUserEntry])
     }
   }
 }

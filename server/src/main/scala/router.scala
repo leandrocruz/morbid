@@ -9,6 +9,7 @@ import domain.simple.*
 import domain.mini.*
 import tokens.*
 import proto.*
+import commands.*
 import utils.asJson
 import guara.utils.{ensureResponse, parse}
 import guara.domain.RequestId
@@ -31,12 +32,10 @@ import zio.json.ast.{Json, JsonCursor}
 import zio.logging.LogFormat
 import zio.logging.backend.SLF4J
 import io.scalaland.chimney.dsl.*
-import morbid.applications.Applications
 import morbid.domain.token.Token
-import morbid.groups.GroupManager
 import morbid.passwords.PasswordGenerator
-import morbid.roles.RoleManager
 import morbid.pins.PinManager
+import morbid.utils.orFail
 
 import scala.util.Random
 import java.time.{Instant, LocalDateTime}
@@ -79,15 +78,13 @@ object router {
   case class LoginSuccess(email: String, admin: Boolean)
 
   case class MorbidRouter(
+    repo         : Repo,
     accounts     : AccountManager,
-    applications : Applications,
     billing      : Billing,
     cfg          : MorbidConfig,
-    groups       : GroupManager,
     identities   : Identities,
     pins         : PinManager,
     passGen      : PasswordGenerator,
-    roles        : RoleManager,
     tokens       : TokenGenerator
   ) extends Router {
 
@@ -103,14 +100,14 @@ object router {
     private def applicationDetailsGiven(request: Request): Task[Response] = {
       for {
         tk   <- tokenFrom(request)
-        apps <- applications.applicationDetailsGiven(tk.user.details.accountCode)
+        apps <- repo.exec(FindApplications(tk.user.details.accountCode))
       } yield Response.json(apps.toJson)
     }
 
     private def applicationGiven(app: String, request: Request): Task[Response] = {
       for {
         tk     <- tokenFrom(request)
-        result <- applications.applicationGiven(tk.user.details.accountCode, ApplicationCode.of(app))
+        result <- repo.exec(FindApplication(tk.user.details.accountCode, ApplicationCode.of(app)))
       } yield result match
         case None              => Response.notFound
         case Some(application) => Response.json(application.toJson)
@@ -151,7 +148,7 @@ object router {
       for {
         token  <- tokenFrom(request)
         maybe  <- identities.providerGiven(token.user.details.account)
-        domain <- ZIO.fromOption(token.user.details.email.domainName).mapError(_ => new Exception("Error extracting domain from user email"))
+        domain <- token.user.details.email.domainName.orFail("Error extracting domain from user email")
         now    <- Clock.localDateTime
       } yield maybe match
         case None           => Response.json(build(token, now, domain).toJson)
@@ -175,7 +172,7 @@ object router {
         for {
           vgt       <- request.body.parse[VerifyGoogleTokenRequest]
           identity  <- identities.verify(vgt)
-          maybeUser <- accounts.userByEmail(identity.email)
+          maybeUser <- repo.exec(FindUserByEmail(identity.email))
           user      <- ensureUser(identity, maybeUser)
           token     <- tokens.asToken(user)
           encoded   <- tokens.encode(token)
@@ -199,8 +196,8 @@ object router {
 
     private def userByEmail(request: Request): Task[Response] = {
       for {
-        email     <- ZIO.fromOption(request.url.queryParams.get("email")).mapError(_ => new Exception("email not provided"))
-        maybeUser <- accounts.userByEmail(Email.of(email))
+        email     <- request.url.queryParams.get("email").orFail("email not provided")
+        maybeUser <- repo.exec(FindUserByEmail(Email.of(email)))
       } yield maybeUser match
         case None       => Response.notFound
         case Some(user) => Response.json(user.asJson(request.url.queryParams.get("format")))
@@ -225,15 +222,43 @@ object router {
       }
     }
 
+    private def createGroup = role("group_adm") { (request, token) =>
+
+      def build(req: CreateGroupRequest, app: RawApplication, code: GroupCode, now: LocalDateTime) = {
+        val group = RawGroup(
+          id      = GroupId.of(0),
+          created = now,
+          deleted = None,
+          code    = code,
+          name    = req.name
+        )
+
+        CreateGroup(
+          account     = token.user.details.account,
+          application = app,
+          users       = req.users,
+          group       = group
+        )
+      }
+
+      def uniqueCode: Task[GroupCode] = ZIO.attempt(GroupCode.of(Random.alphanumeric.take(16).mkString("")))
+
+      for
+        now     <- Clock.localDateTime
+        req     <- request.body.parse[CreateGroupRequest]
+        app     <- repo.exec(FindApplication(token.user.details.accountCode, req.application)).orFail(s"Can't find application '${req.application}'")
+        code    <- uniqueCode
+        _       <- ZIO.logInfo(s"Creating group '${req.name} ($code)' in app '${app.details.code}' in account '${token.user.details.account}' in tenant '${token.user.details.tenant}'")
+        create  =  build(req, app, code, now)
+        created <- repo.exec(create)
+      yield Response.json(created.toJson)
+    }
+
     private def createUser = role("user_adm") { (request, token) =>
 
       def configureApplications(user: RawUser, req: CreateUserRequest): Task[Seq[Unit]] = {
 
         def configureApplication(cua: CreateUserApplication): Task[Unit] = {
-
-          def ensureApplication(app: Option[RawApplication]): Task[RawApplication] = {
-            ZIO.fromOption(app).mapError(_ => new Exception(s"Can't find application '${cua.application}' for account '${user.details.accountCode}'"))
-          }
 
           def ensureGroups(application: RawApplication): Task[Seq[RawGroup]] = {
             val found = cua.groups.map(code => (code, application.groups.find(_.code == code)))
@@ -252,12 +277,11 @@ object router {
           }
 
           for {
-            maybe       <- applications.applicationGiven(user.details.accountCode, cua.application)
-            application <- ensureApplication(maybe)
+            application <- repo.exec(FindApplication(user.details.accountCode, cua.application)).orFail(s"Can't find application '${cua.application}' for account '${user.details.accountCode}'")
             groupsToAdd <- ensureGroups(application)
             rolesToAdd  <- ensureRoles(application)
-            _           <- groups .addGroups(user.details.account, application.details.id, user.details.id, groupsToAdd.map(_.id)) .fork
-            _           <- roles  .addRoles (user.details.account, application.details.id, user.details.id, rolesToAdd.map(_.id))  .fork
+            _           <- repo.exec(LinkUsersToGroups(application.details.id, Seq(user.details.id), groupsToAdd.map(_.id))) .fork
+            _           <- repo.exec(LinkUsersToRoles (application.details.id, Seq(user.details.id), rolesToAdd.map(_.id)))  .fork
           } yield ()
         }
 
@@ -275,7 +299,7 @@ object router {
           for {
             _      <- ZIO.when(count > 10) { ZIO.fail(new Exception("Can't generate user code. Too many attempts")) }
             tmp    <- gen
-            exists <- accounts.userExists(tmp)
+            exists <- repo.exec(UserExists(tmp))
             code   <- if(exists) attemptUnique(user, count + 1) else ZIO.succeed(tmp)
           } yield code
         }
@@ -285,11 +309,10 @@ object router {
           case Some(user) => attemptUnique(user, 0)
       }
 
-      def buildRequest(req: CreateUserRequest, token: Token, password: Password, code: UserCode) =
+      def buildRequest(req: CreateUserRequest, account: RawAccount, code: UserCode) =
         req
           .into[CreateUser]
-          .withFieldConst(_.account, token.user.details.accountCode)
-          .withFieldConst(_.password, password)
+          .withFieldConst(_.account, account)
           .withFieldConst(_.code, code)
           .transform
 
@@ -297,11 +320,12 @@ object router {
         req    <- request.body.parse[CreateUserRequest]
         pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate)
         code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
-        create  = buildRequest(req, token, pwd, code)
-        _      <- ZIO.logInfo(s"Creating user '${create.email}' in account '${create.account}' in tenant '${create.tenant.getOrElse("_")}'")
-        user   <- accounts.createUser(create)
+        acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
+        create  = buildRequest(req, acc, code)
+        _      <- ZIO.logInfo(s"Creating user '${create.email}' in account '${create.account}' in tenant '${create.account.tenantCode}'")
+        user   <- repo.exec(create)
         _      <- ZIO.logInfo(s"User '${user.details.email}' created. Configuring applications: ${req.applications.map(_.application).mkString(", ")}")
-        _      <- configureApplications(user, req) <&> identities.createUser(create)
+        _      <- configureApplications(user, req) <&> identities.createUser(create, pwd)
         _      <- ZIO.logInfo(s"Creation for user '${create.email}' successful")
       yield Response.json(user.toJson)
     }
@@ -334,7 +358,7 @@ object router {
         req     <- request.body.parse[ImpersonationRequest]
         same    =  req.magic.is(cfg.magic.password)
         _       <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
-        user    <- accounts.userByEmail(req.email)
+        user    <- repo.exec(FindUserByEmail(req.email))
         token   <- user match {
                   case Some(usr) => tokens.asToken(usr)
                   case None      => ZIO.fail(ReturnResponseError(Response.notFound(s"user ${req.email} not found")))
@@ -357,7 +381,7 @@ object router {
     private def usersGiven(request: Request, application: ApplicationCode, group: Option[GroupCode] = None): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
-        seq <- groups.usersFor(tk.user.details.accountCode, application, group)
+        seq <- repo.exec(FindUsersInGroup(tk.user.details.accountCode, application, group))
       } yield Response.json(seq.toJson)
     }
 
@@ -368,20 +392,21 @@ object router {
       for {
         tk     <- tokenFrom(request)
         filter =  request.url.queryParams.getAll("code").getOrElse(Seq.empty).map(GroupCode.of)
-        seq    <- groups.groupsFor(tk.user.details.accountCode, ApplicationCode.of(app), filter)
+        seq    <- repo.exec(FindGroups(tk.user.details.accountCode, ApplicationCode.of(app), filter))
       } yield Response.json(seq.toJson)
     }
 
     private def rolesGiven(app: String, request: Request): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
-        seq <- roles.rolesFor(tk.user.details.accountCode, ApplicationCode.of(app))
+        seq <- repo.exec(FindRoles(tk.user.details.accountCode, ApplicationCode.of(app)))
       } yield Response.json(seq.toJson)
     }
 
     private def regular = Routes(
       Method.GET  / "applications"                   -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
       Method.GET  / "application" / string("app")    -> handler(applicationGiven),
+      Method.POST / "group"                          -> Handler.fromFunctionZIO[Request](createGroup),
       Method.POST / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProvider),
       Method.GET  / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
       Method.POST / "login"                          -> Handler.fromFunctionZIO[Request](login),

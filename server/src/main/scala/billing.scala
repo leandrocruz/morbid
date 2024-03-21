@@ -1,8 +1,10 @@
 package morbid
 
+
 object billing {
 
   import zio.*
+  import morbid.commands.ReportUsersByAccount
   import morbid.domain.raw.RawAccount
   import morbid.types.{AccountCode, ApplicationCode}
   import morbid.repo.Repo
@@ -16,6 +18,6 @@ object billing {
   }
 
   case class SimpleBilling(repo: Repo) extends Billing {
-    override def usersByAccount(app: ApplicationCode): Task[Map[RawAccount, Int]] = repo.usersByAccount(app)
+    override def usersByAccount(app: ApplicationCode): Task[Map[RawAccount, Int]] = repo.exec(ReportUsersByAccount(app))
   }
 }

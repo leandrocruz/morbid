@@ -4,10 +4,11 @@ import zio.*
 
 object pins {
 
+  import morbid.repo.Repo
+  import morbid.commands.*
   import morbid.config.MorbidConfig
   import morbid.types.Sha256Hash
   import morbid.types.{UserId, Pin}
-  import morbid.repo.Repo
   import org.apache.commons.codec.digest.DigestUtils
 
   trait PinManager {
@@ -25,13 +26,13 @@ object pins {
 
     override def set(user: UserId, pin: Pin): Task[Unit] = {
       val hash = DigestUtils.sha256Hex(prefix + Pin.value(pin))
-      repo.setUserPin(user, Sha256Hash.of(hash))
+      repo.exec(DefineUserPin(user, Sha256Hash.of(hash)))
     }
 
     override def validate(user: UserId, pin: Pin): Task[Boolean] = {
       val hash = DigestUtils.sha256Hex(prefix + Pin.value(pin))
       for {
-        expected <- repo.getUserPin(user)
+        expected <- repo.exec(GetUserPin(user))
       } yield expected.map(Sha256Hash.value).map(Pin.of).contains(hash)
     }
 
