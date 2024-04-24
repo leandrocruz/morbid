@@ -49,8 +49,18 @@ object tokens {
   }
 
   private case class FakeTokenGenerator(zone: ZoneId) extends TokenGenerator {
-    override def encode(token: Token)   : Task[String] = ZIO.fail(ReturnResponseError(Response.notImplemented("TODO")))
-    override def asToken(user: RawUser) : Task[Token]  = ZIO.fail(ReturnResponseError(Response.notImplemented("TODO")))
+    override def encode(token: Token)   : Task[String] = ZIO.succeed("TODO: encode token")
+
+    override def asToken(user: RawUser) : Task[Token]  = {
+      for {
+        now <- Clock.localDateTime
+        at = now.atZone(zone)
+      } yield Token(
+        created = at,
+        expires = Some(at.plusDays(1)), //TODO: define the expiration policy based on the tenant/account/etc
+        user = user
+      )
+    }
 
     override def verify(payload: String) : Task[Token]  = {
 
@@ -72,7 +82,16 @@ object tokens {
           code        = RoleCode.of("user_adm"),
           name        = RoleName.of("User Admin"),
           permissions = Seq.empty
+        ),
+        RawRole(
+          id          = RoleId.of(2),
+          created     = LocalDateTime.now,
+          deleted     = None,
+          code        = RoleCode.of("group_adm"),
+          name        = RoleName.of("Group Admin"),
+          permissions = Seq.empty
         )
+
       )
 
       val apps = Seq(
