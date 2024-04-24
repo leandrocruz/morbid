@@ -65,7 +65,7 @@ object proto {
   case class ImpersonationRequest(email: Email, magic: Magic)
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
-  case class CreateUserApplication(application: ApplicationCode, groups: Seq[GroupCode], roles: Seq[RoleCode])
+  case class CreateUserApplication(application: ApplicationCode, groups: Seq[GroupCode])
   case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, applications: Seq[CreateUserApplication])
   case class SetUserPin     (pin: Pin)
   case class ValidateUserPin(pin: Pin)
@@ -165,9 +165,9 @@ object commands {
     users       : Seq[UserCode]
   ) extends Command[RawGroup]
 
-  case class LinkUsersToRoles(
+  case class LinkGroupToRoles(
     app   : ApplicationId,
-    users : Seq[UserId],
+    group : GroupId,
     roles : Seq[RoleId]
   ) extends Command[Unit]
 

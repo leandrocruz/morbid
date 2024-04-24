@@ -166,6 +166,13 @@ object repo {
     deleted : Option[LocalDateTime],
   )
 
+  private case class GroupToRoleRow(
+    grp: GroupId,
+    rid: RoleId,
+    created: LocalDateTime,
+    deleted: Option[LocalDateTime],
+  )
+
   private case class RoleRow(
     id      : RoleId,
     created : LocalDateTime,
@@ -182,14 +189,6 @@ object repo {
     rid     : RoleId,
     code    : PermissionCode,
     name    : PermissionName
-  )
-
-  private case class UserToRoleRow(
-    usr     : UserId,
-    app     : ApplicationId,
-    rid     : RoleId,
-    created : LocalDateTime,
-    deleted : Option[LocalDateTime],
   )
 
   private case class IdentityProviderRow(
@@ -214,9 +213,8 @@ object repo {
 
   private case class DatabaseRepo(ds: DataSource) extends Repo {
 
-    private type ApplicationGroups        = (ApplicationId, GroupRow)
-    private type ApplicationRolesAndPerms = (ApplicationId, RoleRow, PermissionRow)
-    private type AppMap[T]                = Map[ApplicationId, Seq[T]]
+    private type ApplicationGroups = (ApplicationId, GroupRow)
+    private type AppMap[T]         = Map[ApplicationId, Seq[T]]
 
     import ctx._
     import extras._
@@ -302,8 +300,8 @@ object repo {
     private inline def account2app  = quote { querySchema[AccountToAppRow]     ("account_to_app")     }
     private inline def groups       = quote { querySchema[GroupRow]            ("groups")             }
     private inline def user2group   = quote { querySchema[UserToGroupRow]      ("user_to_group")      }
+    private inline def group2role   = quote { querySchema[GroupToRoleRow]      ("group_to_role")      }
     private inline def roles        = quote { querySchema[RoleRow]             ("roles")              }
-    private inline def user2role    = quote { querySchema[UserToRoleRow]       ("user_to_role")       }
     private inline def permissions  = quote { querySchema[PermissionRow]       ("permissions")        }
     private inline def providers    = quote { querySchema[IdentityProviderRow] ("identity_providers") }
 
@@ -327,7 +325,7 @@ object repo {
         case r: FindUserByEmail       => userGiven(r)
         case r: FindUsersInGroup      => usersGiven(r)
         case r: LinkUsersToGroups     => addGroups(r)
-        case r: LinkUsersToRoles      => addRoles(r)
+        case r: LinkGroupToRoles      => ZIO.fail(Exception("TODO"))
         case r: ReportUsersByAccount  => usersByAccount(r)
         case r: UserExists            => userExists(r)
     }
@@ -380,52 +378,20 @@ object repo {
           } yield (u2g.app, grp)
         }
 
-        inline def roleQuery = quote {
-          for {
-            u2r  <- user2role                          if u2r.deleted.isEmpty && u2r.usr == lift(uid) && liftQuery(apps).contains(u2r.app)
-            role <- roles.join(_.id == u2r.rid)        if role.deleted.isEmpty
-            perm <- permissions.join(_.rid == role.id) if perm.deleted.isEmpty
-          } yield (u2r.app, role, perm)
-        }
-
         def splitGroups(groups: Seq[ApplicationGroups]): Task[AppMap[RawGroup]] = {
           ZIO.attempt {
-            groups.groupBy(_._1).view.mapValues(_.map(_._2).map(_.transformInto[RawGroup])).toMap
+            groups.groupBy(_._1).view.mapValues(_.map(_._2).map(_.into[RawGroup].withFieldConst(_.roles, Seq.empty).transform)).toMap //FIXME: add roles
           }
         }
 
-        def splitRoles(roles: Seq[ApplicationRolesAndPerms]): Task[AppMap[RawRole]] = {
-
-          def asRoles(seq: Seq[(RoleRow, PermissionRow)]): Seq[RawRole] = {
-            seq.groupBy(_._1).view.mapValues(_.map(_._2)).toMap.map {
-              case (role, perms) =>
-                val raw = role.into[RawRole].enableDefaultValues.transform
-                raw.copy(permissions = perms.map(_.transformInto[RawPermission]))
-            }.toSeq
-          }
-
-          ZIO.attempt {
-            roles.map {
-              case (app, role, perm) => (app, (role, perm))
-            }.groupBy(_._1).view.mapValues(_.map(_._2)).mapValues(asRoles).toMap
-          }
-        }
-
-        def updateApps(groupsByApp: AppMap[RawGroup], rolesByApp: AppMap[RawRole]) = {
-          usr.applications.map { app =>
-            app.copy(
-              groups = groupsByApp.getOrElse(app.details.id, Seq.empty),
-              roles  = rolesByApp .getOrElse(app.details.id, Seq.empty)
-            )
-          }
+        def updateApps(groupsByApp: AppMap[RawGroup]) = {
+          usr.applications.map { app => app.copy( groups = groupsByApp.getOrElse(app.details.id, Seq.empty)) }
         }
 
         for {
           myGroups    <- exec(run(groupQuery))
-          myRoles     <- exec(run(roleQuery))
           groupsByApp <- splitGroups(myGroups)
-          rolesByApp  <- splitRoles(myRoles)
-        } yield Some(usr.copy(applications = updateApps(groupsByApp, rolesByApp)))
+        } yield Some(usr.copy(applications = updateApps(groupsByApp)))
       }
 
       for {
@@ -568,19 +534,41 @@ object repo {
     }
 
     private def groupsGiven(request: FindGroups): Task[Seq[RawGroup]] = {
+
+      def merge(rows: Seq[(GroupRow, Option[RoleRow], Option[PermissionRow])]): Seq[RawGroup] = {
+
+        def toRoles(tuples: Seq[(Option[repo.RoleRow], Option[repo.PermissionRow])]): Seq[RawRole] = {
+          tuples.filter(_._1.isDefined).map(t => (t._1.get, t._2)).groupBy(_._1).view.mapValues(_.map(_._2)).map {
+            case (role, perms) =>
+              role.into[RawRole].withFieldConst(_.permissions, perms.filter(_.isDefined).map(_.get).map(_.transformInto[RawPermission])).transform
+          }.toSeq
+        }
+
+        rows.groupBy(_._1).view.mapValues(_.map(x => (x._2, x._3))).map {
+          case (group, rolesAndPerms: Seq[(Option[RoleRow], Option[PermissionRow])]) =>
+            group
+              .into[RawGroup]
+              .withFieldConst(_.roles, toRoles(rolesAndPerms))
+              .transform
+        }.toSeq
+      }
+
       inline def query = quote {
         for {
-          ten <- tenants                                if ten.deleted.isEmpty && ten.active
-          acc <- accounts     .join(_.tenant == ten.id) if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
-          a2a <- account2app  .join(_.acc == acc.id)    if a2a.deleted.isEmpty
-          app <- applications .join(_.id == a2a.app)    if app.deleted.isEmpty && app.active && app.code == lift(request.app)
-          grp <- groups       .join(_.app == a2a.app)   if grp.deleted.isEmpty && grp.acc == acc.id && (lift(request.filter.isEmpty) || liftQuery(request.filter).contains(grp.code))
-        } yield grp
+          ten <- tenants                                                if ten.deleted.isEmpty && ten.active
+          acc <- accounts     .join    (_.tenant == ten.id)             if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          a2a <- account2app  .join    (_.acc == acc.id)                if a2a.deleted.isEmpty
+          app <- applications .join    (_.id == a2a.app)                if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+          grp <- groups       .join    (_.app == a2a.app)               if grp.deleted.isEmpty && grp.acc == acc.id && (lift(request.filter.isEmpty) || liftQuery(request.filter).contains(grp.code))
+          g2r <- group2role   .leftJoin(_.grp == grp.id)                if g2r.exists(_.deleted.isEmpty)
+          rol <- roles        .leftJoin(r => g2r.exists(_.rid == r.id)) if rol.exists(_.deleted.isEmpty)
+          per <- permissions  .leftJoin(p => rol.exists(_.id == p.rid)) if per.exists(_.deleted.isEmpty)
+        } yield (grp, rol, per)
       }
 
       for {
         rows <- exec(run(query))
-      } yield rows.map(_.transformInto[RawGroup])
+      } yield merge(rows)
     }
 
     private def rolesGiven(request: FindRoles): Task[Seq[RawRole]] = {
@@ -684,15 +672,10 @@ object repo {
 
       def appFrom(row: ApplicationRow): Task[Option[RawApplication]] = {
         for {
-          f1     <- groupsGiven(FindGroups(request.account, request.application)) .fork
-          f2     <- rolesGiven (FindRoles (request.account, request.application)) .fork
-          groups <- f1.join
-          roles  <- f2.join
-
+          groups <- groupsGiven(FindGroups(request.account, request.application))
         } yield Some(RawApplication(
           details = row.transformInto[RawApplicationDetails],
           groups  = groups,
-          roles   = roles
         ))
 
       }
@@ -732,20 +715,21 @@ object repo {
       yield ()
     }
 
-    private def addRoles(request: LinkUsersToRoles): Task[Unit] = {
-      def insertValues(rows: Seq[UserToRoleRow]) = quote {
-        liftQuery(rows).foreach(row => user2role.insertValue(row))
-      }
-
-      def rows(now: LocalDateTime) = for
-        user <- request.users
-        role <- request.roles
-      yield UserToRoleRow(usr = user, app = request.app, rid = role, created = now, deleted = None)
-
-      for {
-        now <- Clock.localDateTime
-        _ <- exec(run(insertValues(rows(now))))
-      } yield ()
+    private def addRoles(request: LinkGroupToRoles): Task[Unit] = {
+//      def insertValues(rows: Seq[UserToRoleRow]) = quote {
+//        liftQuery(rows).foreach(row => user2role.insertValue(row))
+//      }
+//
+//      def rows(now: LocalDateTime) = for
+//        user <- request.users
+//        role <- request.roles
+//      yield UserToRoleRow(usr = user, app = request.app, rid = role, created = now, deleted = None)
+//
+//      for {
+//        now <- Clock.localDateTime
+//        _ <- exec(run(insertValues(rows(now))))
+//      } yield ()
+      ???
     }
 
     private def setUserPin(request: DefineUserPin): Task[Unit] = {

@@ -268,20 +268,10 @@ object router {
             }
           }
 
-          def ensureRoles(application: RawApplication): Task[Seq[RawRole]] = {
-            val found = cua.roles.map(code => (code, application.roles.find(_.code == code)))
-            ZIO.foreach(found) {
-              case (code, None)       => ZIO.fail(new Exception(s"Role '$code' is missing in application '${application.details.code}' for account '${user.details.accountCode}'"))
-              case (_   , Some(item)) => ZIO.succeed(item)
-            }
-          }
-
           for {
             application <- repo.exec(FindApplication(user.details.accountCode, cua.application)).orFail(s"Can't find application '${cua.application}' for account '${user.details.accountCode}'")
             groupsToAdd <- ensureGroups(application)
-            rolesToAdd  <- ensureRoles(application)
             _           <- repo.exec(LinkUsersToGroups(application.details.id, Seq(user.details.id), groupsToAdd.map(_.id))) .fork
-            _           <- repo.exec(LinkUsersToRoles (application.details.id, Seq(user.details.id), rolesToAdd.map(_.id)))  .fork
           } yield ()
         }
 

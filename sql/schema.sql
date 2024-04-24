@@ -127,11 +127,10 @@ CREATE TABLE user_to_group (
     PRIMARY KEY (usr, app, grp)
 );
 
-CREATE TABLE user_to_role (
-    usr      BIGINT    NOT NULL REFERENCES users        (id)    ,
-    app      BIGINT    NOT NULL REFERENCES applications (id)    ,
-    rid      BIGINT    NOT NULL REFERENCES roles        (id)    ,
-    created  TIMESTAMP NOT NULL                                 ,
-    deleted  TIMESTAMP                                          ,
-    PRIMARY KEY (usr, app, rid)
+CREATE TABLE group_to_role (
+    grp      BIGINT    NOT NULL REFERENCES groups (id) ,
+    rid      BIGINT    NOT NULL REFERENCES roles  (id) ,
+    created  TIMESTAMP NOT NULL                        ,
+    deleted  TIMESTAMP                                 ,
+    PRIMARY KEY (grp, rid)
 );

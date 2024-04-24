@@ -64,16 +64,6 @@ object tokens {
 
     override def verify(payload: String) : Task[Token]  = {
 
-      val groups = Seq(
-        RawGroup(
-          id      = GroupId.of(1),
-          created = LocalDateTime.now,
-          deleted = None,
-          code    = GroupCode.of("g1"),
-          name    = GroupName.of("G1")
-        )
-      )
-
       val roles = Seq(
         RawRole(
           id          = RoleId.of(1),
@@ -91,7 +81,17 @@ object tokens {
           name        = RoleName.of("Group Admin"),
           permissions = Seq.empty
         )
+      )
 
+      val groups = Seq(
+        RawGroup(
+          id      = GroupId.of(1),
+          created = LocalDateTime.now,
+          deleted = None,
+          code    = GroupCode.of("g1"),
+          name    = GroupName.of("G1"),
+          roles   = roles
+        )
       )
 
       val apps = Seq(
@@ -104,8 +104,7 @@ object tokens {
             code    = ApplicationCode.of("morbid"),
             name    = ApplicationName.of("Morbid")
           ),
-          groups = groups,
-          roles  = roles
+          groups  = groups
         )
       )
 

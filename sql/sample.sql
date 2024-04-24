@@ -57,6 +57,6 @@ INSERT INTO permissions (created, rid, code, name) VALUES (now(), 5, 'read'  , '
 INSERT INTO permissions (created, rid, code, name) VALUES (now(), 5, 'update', 'Update');
 INSERT INTO permissions (created, rid, code, name) VALUES (now(), 5, 'delete', 'Delete');
 
-INSERT INTO user_to_role (created, usr, app, rid) VALUES (now(), 1, 1 /* Console */, 1 /* Global Admin */);
-INSERT INTO user_to_role (created, usr, app, rid) VALUES (now(), 1, 2 /* Presto */ , 4 /* Credentials Admin */);
-INSERT INTO user_to_role (created, usr, app, rid) VALUES (now(), 1, 2 /* Presto */ , 5 /* Policy Admin */);
+INSERT INTO group_to_role (created, grp, rid) VALUES (now(), 1 /* Console */, 1 /* Global Admin */);
+INSERT INTO group_to_role (created, grp, rid) VALUES (now(), 2 /* Presto */ , 4 /* Credentials Admin */);
+INSERT INTO group_to_role (created, grp, rid) VALUES (now(), 2 /* Presto */ , 5 /* Policy Admin */);

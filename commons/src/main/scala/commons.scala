@@ -247,8 +247,7 @@ object domain {
 
     case class RawApplication(
       details : RawApplicationDetails,
-      groups  : Seq[RawGroup] = Seq.empty,
-      roles   : Seq[RawRole]  = Seq.empty
+      groups  : Seq[RawGroup] = Seq.empty
     )
 
     case class RawIdentityProvider(
@@ -269,6 +268,7 @@ object domain {
       deleted : Option[LocalDateTime],
       code    : GroupCode,
       name    : GroupName,
+      roles   : Seq[RawRole] = Seq.empty
     )
 
     case class RawPermission(
@@ -315,15 +315,14 @@ object domain {
     import raw.*
 
     case class SimplePermission (id: PermissionId, code: PermissionCode, name: PermissionName)
-    case class SimpleRole       (id: RoleId      , code: RoleCode      , name: RoleName, permissions: Seq[SimplePermission])
-    case class SimpleGroup      (id: GroupId     , code: GroupCode     , name: GroupName)
+    case class SimpleRole       (id: RoleId      , code: RoleCode      , name: RoleName , permissions: Seq[SimplePermission])
+    case class SimpleGroup      (id: GroupId     , code: GroupCode     , name: GroupName, roles      : Seq[SimpleRole])
 
     case class SimpleApp(
      id     : ApplicationId,
      code   : ApplicationCode,
      name   : ApplicationName,
      groups : Seq[SimpleGroup],
-     roles  : Seq[SimpleRole]
     )
 
     case class SimpleTenant (id: TenantId, code: TenantCode)
@@ -340,7 +339,7 @@ object domain {
     )
 
     extension (it: RawGroup)
-      def simple:SimpleGroup = SimpleGroup(it.id, it.code, it.name)
+      def simple:SimpleGroup = SimpleGroup(it.id, it.code, it.name, it.roles.map(_.simple))
 
     extension (it: RawPermission)
       def simple: SimplePermission = SimplePermission(it.id, it.code, it.name)
@@ -353,8 +352,7 @@ object domain {
         id     = it.details.id,
         code   = it.details.code,
         name   = it.details.name,
-        groups = it.groups.map(_.simple),
-        roles  = it.roles.map(_.simple)
+        groups = it.groups.map(_.simple)
       )
 
     extension (it: RawUser)
@@ -382,8 +380,12 @@ object domain {
     import raw.*
 
     case class MiniApp(
-      groups : Seq[GroupCode],
-      roles  : Map[RoleCode, Seq[PermissionCode]]
+      groups : Seq[MiniGroup]
+    )
+
+    case class MiniGroup(
+      code  : GroupCode,
+      roles : Map[RoleCode, Seq[PermissionCode]]
     )
 
     case class MiniUser(
@@ -397,8 +399,12 @@ object domain {
 
     extension (it: RawApplication)
       def mini: MiniApp = MiniApp(
-        groups = it.groups.map(_.code),
-        roles  = it.roles.map { role => role.code -> role.permissions.map(_.code) }.toMap
+        groups = it.groups.map { group =>
+          MiniGroup(
+            code  = group.code,
+            roles = group.roles.map { role => role.code -> role.permissions.map(_.code) }.toMap
+          )
+        }
       )
 
     extension (it: RawUser)
@@ -411,10 +417,12 @@ object domain {
         applications = it.applications.map { app => app.details.code -> app.mini }.toMap
       )
 
-    given JsonEncoder[MiniApp]  = DeriveJsonEncoder.gen[MiniApp]
-    given JsonDecoder[MiniApp]  = DeriveJsonDecoder.gen[MiniApp]
-    given JsonEncoder[MiniUser] = DeriveJsonEncoder.gen[MiniUser]
-    given JsonDecoder[MiniUser] = DeriveJsonDecoder.gen[MiniUser]
+    given JsonEncoder[MiniGroup] = DeriveJsonEncoder.gen
+    given JsonEncoder[MiniApp]   = DeriveJsonEncoder.gen
+    given JsonDecoder[MiniGroup] = DeriveJsonDecoder.gen
+    given JsonDecoder[MiniApp]   = DeriveJsonDecoder.gen
+    given JsonEncoder[MiniUser]  = DeriveJsonEncoder.gen
+    given JsonDecoder[MiniUser]  = DeriveJsonDecoder.gen
   }
 
   object token {
@@ -438,7 +446,7 @@ object domain {
       def roleByCode(code: RoleCode)(using app: ApplicationCode): Option[RawRole] =
         for {
           a <- user.applications.find(_.details.code == app)
-          r <- a.roles.find(_.code == code)
+          r <- a.groups.flatMap(_.roles).find(_.code == code)
         } yield r
 
       def hasRole(code: RoleCode)(using app: ApplicationCode) =
@@ -448,7 +456,7 @@ object domain {
         narrowTo(app).map(_.user.application.groups).getOrElse(Seq.empty)
 
       def roles(using app: ApplicationCode): Seq[RawRole] =
-        narrowTo(app).map(_.user.application.roles).getOrElse(Seq.empty)
+        narrowTo(app).map(_.user.application.groups.flatMap(_.roles)).getOrElse(Seq.empty)
 
       def narrowTo(application: ApplicationCode): Option[SingleAppToken] =
         user
