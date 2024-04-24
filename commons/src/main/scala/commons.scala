@@ -430,9 +430,10 @@ object domain {
       def string: String = it
 
     case class Token(
-      created : ZonedDateTime,
-      expires : Option[ZonedDateTime],
-      user    : RawUser
+      created        : ZonedDateTime,
+      expires        : Option[ZonedDateTime],
+      user           : RawUser,
+      impersonatedBy : Option[RawUserDetails] = None
     ) {
       def roleByCode(code: RoleCode)(using app: ApplicationCode): Option[RawRole] =
         for {

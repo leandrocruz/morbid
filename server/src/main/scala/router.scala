@@ -97,7 +97,7 @@ object router {
         case (_, Some(cookie)) => tokens.verify(cookie.content)
     }
 
-    private def applicationDetailsGiven(request: Request): Task[Response] = {
+    private def applicationDetailsGiven(request: Request): Task[Response] = ensureResponse {
       for {
         tk   <- tokenFrom(request)
         apps <- repo.exec(FindApplications(tk.user.details.accountCode))
@@ -355,16 +355,19 @@ object router {
 
     private def impersonate(request: Request): Task[Response] = ensureResponse {
       for {
-        req     <- request.body.parse[ImpersonationRequest]
-        same    =  req.magic.is(cfg.magic.password)
-        _       <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
-        user    <- repo.exec(FindUserByEmail(req.email))
-        token   <- user match {
-                  case Some(usr) => tokens.asToken(usr)
-                  case None      => ZIO.fail(ReturnResponseError(Response.notFound(s"user ${req.email} not found")))
-                }
-        encoded <- tokens.encode(token)
-      } yield loginResponse(token, encoded)
+        impersonator <- tokenFrom(request)
+        req          <- request.body.parse[ImpersonationRequest]
+        same         =  req.magic.is(cfg.magic.password)
+        _            <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
+        user         <- repo.exec(FindUserByEmail(req.email))
+        token        <- user match {
+                          case Some(usr) => tokens.asToken(usr)
+                          case None      => ZIO.fail(ReturnResponseError(Response.notFound(s"user ${req.email} not found")))
+                        }
+        _            <- ZIO.logInfo(s"User '${token.user.details.email}' impersonated by ${impersonator.user.details.email}")
+        impersonated = token.copy(impersonatedBy = Some(impersonator.user.details))
+        encoded      <- tokens.encode(impersonated)
+      } yield loginResponse(impersonated, encoded)
     }
 
     private def userCount(app: String, request: Request): Task[Response] = {
