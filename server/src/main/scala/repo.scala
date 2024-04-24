@@ -153,6 +153,7 @@ object repo {
     created : LocalDateTime,
     deleted : Option[LocalDateTime],
     app     : ApplicationId,
+    acc     : AccountId,
     code    : GroupCode,
     name    : GroupName
   )
@@ -493,7 +494,12 @@ object repo {
     private def create(request: CreateGroup): Task[RawGroup] = {
 
       def store = {
-        val row = request.group.into[GroupRow].withFieldConst(_.app, request.application.details.id).transform
+        val row = request
+          .group
+          .into[GroupRow]
+          .withFieldConst(_.app, request.application.details.id)
+          .withFieldConst(_.acc, request.account)
+          .transform
 
         inline def stmt = quote {
           groups.insertValue(lift(row)).returning(_.id)
@@ -568,7 +574,7 @@ object repo {
           acc <- accounts     .join(_.tenant == ten.id) if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
           a2a <- account2app  .join(_.acc == acc.id)    if a2a.deleted.isEmpty
           app <- applications .join(_.id == a2a.app)    if app.deleted.isEmpty && app.active && app.code == lift(request.app)
-          grp <- groups       .join(_.app == a2a.app)   if grp.deleted.isEmpty && (lift(request.filter.isEmpty) || liftQuery(request.filter).contains(grp.code))
+          grp <- groups       .join(_.app == a2a.app)   if grp.deleted.isEmpty && grp.acc == acc.id && (lift(request.filter.isEmpty) || liftQuery(request.filter).contains(grp.code))
         } yield grp
       }
 
@@ -616,7 +622,7 @@ object repo {
             acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
             a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
             app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
-            grp <- groups       .join(_.app    == app.id)  if grp.deleted.isEmpty && grp.code == lift(code)
+            grp <- groups       .join(_.app    == app.id)  if grp.deleted.isEmpty && grp.acc == acc.id && grp.code == lift(code)
             u2g <- user2group   .join(_.app    == app.id)  if u2g.deleted.isEmpty && u2g.grp  == grp.id
             usr <- users        .join(_.id     == u2g.usr) if usr.deleted.isEmpty && usr.active
           } yield usr

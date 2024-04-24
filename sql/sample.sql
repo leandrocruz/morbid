@@ -23,9 +23,9 @@ INSERT INTO account_to_app (created, acc, app) values (now(), 1 /* A1 */, 1 /* C
 INSERT INTO account_to_app (created, acc, app) values (now(), 1 /* A1 */, 2 /* Presto */  );
 INSERT INTO account_to_app (created, acc, app) values (now(), 2 /* A2 */, 3 /* APP */     );
 
-INSERT INTO groups (created, app, code, name) VALUES (now(), 1 /* Console */, 'g1', 'G1 - Console');
-INSERT INTO groups (created, app, code, name) VALUES (now(), 2 /* Presto */ , 'g1', 'G1 - Presto');
-INSERT INTO groups (created, app, code, name) VALUES (now(), 2 /* Presto */ , 'g2', 'G2 - Presto' );
+INSERT INTO groups (created, acc, app, code, name) VALUES (now(), 1, 1 /* Console */, 'g1', 'G1 - Console');
+INSERT INTO groups (created, acc, app, code, name) VALUES (now(), 1, 2 /* Presto */ , 'g1', 'G1 - Presto');
+INSERT INTO groups (created, acc, app, code, name) VALUES (now(), 1, 2 /* Presto */ , 'g2', 'G2 - Presto' );
 
 INSERT INTO user_to_group (created, usr, app, grp) VALUES (now(), 1, 1 /* Console */, 1 /* G1 - Console */);
 INSERT INTO user_to_group (created, usr, app, grp) VALUES (now(), 1, 2 /* Presto */,  2 /* G1 - Presto */);

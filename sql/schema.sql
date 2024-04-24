@@ -75,13 +75,14 @@ CREATE TABLE identity_providers (
 
 CREATE TABLE groups (
     id       SERIAL                                             ,
+    acc      BIGINT      NOT NULL REFERENCES accounts     (id)  ,
     app      BIGINT      NOT NULL REFERENCES applications (id)  ,
     created  TIMESTAMP   NOT NULL                               ,
     deleted  TIMESTAMP                                          ,
-    code     VARCHAR(16) NOT NULL                              ,
+    code     VARCHAR(16) NOT NULL                               ,
     name     VARCHAR(64) NOT NULL                               ,
-    UNIQUE      (app, code)                                     ,
-    UNIQUE      (app, name)                                     ,
+    UNIQUE      (acc, app, code)                                ,
+    UNIQUE      (acc, app, name)                                ,
     PRIMARY KEY (id)
 );
 
