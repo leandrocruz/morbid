@@ -214,7 +214,7 @@ object repo {
   private case class DatabaseRepo(ds: DataSource) extends Repo {
 
     private type ApplicationGroups = (ApplicationId, GroupRow)
-    private type AppMap[T]         = Map[ApplicationId, Seq[T]]
+    private type AppMap[T]         = Map[ApplicationCode, Seq[T]]
 
     import ctx._
     import extras._
@@ -366,31 +366,19 @@ object repo {
         }
       }
 
-      def groupsAndRoles(usr: RawUser): Task[Option[RawUser]] = {
-
-        val apps = usr.applications.map(_.details.id)
-        val uid  = usr.details.id
-
-        inline def groupQuery = quote {
-          for {
-            u2g <- user2group                   if u2g.deleted.isEmpty && u2g.usr == lift(uid) && liftQuery(apps).contains(u2g.app)
-            grp <- groups.join(_.id == u2g.grp) if grp.deleted.isEmpty
-          } yield (u2g.app, grp)
-        }
-
-        def splitGroups(groups: Seq[ApplicationGroups]): Task[AppMap[RawGroup]] = {
-          ZIO.attempt {
-            groups.groupBy(_._1).view.mapValues(_.map(_._2).map(_.into[RawGroup].withFieldConst(_.roles, Seq.empty).transform)).toMap //FIXME: add roles
-          }
-        }
+      def groupsFor(usr: RawUser): Task[Option[RawUser]] = {
 
         def updateApps(groupsByApp: AppMap[RawGroup]) = {
-          usr.applications.map { app => app.copy( groups = groupsByApp.getOrElse(app.details.id, Seq.empty)) }
+          usr.applications.map { app => app.copy( groups = groupsByApp.getOrElse(app.details.code, Seq.empty)) }
         }
 
+        val cmd = FindGroups(
+          account = usr.details.accountCode,
+          apps    = usr.applications.map(_.details.code)
+        )
+
         for {
-          myGroups    <- exec(run(groupQuery))
-          groupsByApp <- splitGroups(myGroups)
+          groupsByApp <- groupsGiven(cmd)
         } yield Some(usr.copy(applications = updateApps(groupsByApp)))
       }
 
@@ -399,7 +387,7 @@ object repo {
         maybe  <- asRawUser(rows)
         result <- maybe match
           case None      => ZIO.succeed(None)
-          case Some(usr) => groupsAndRoles(usr)
+          case Some(usr) => groupsFor(usr)
       } yield result
     }
 
@@ -533,24 +521,34 @@ object repo {
 
     }
 
-    private def groupsGiven(request: FindGroups): Task[Seq[RawGroup]] = {
+    private def groupsGiven(request: FindGroups): Task[Map[ApplicationCode, Seq[RawGroup]]] = {
 
-      def merge(rows: Seq[(GroupRow, Option[RoleRow], Option[PermissionRow])]): Seq[RawGroup] = {
+      def merge(rows: Seq[(ApplicationRow, (GroupRow, (Option[RoleRow], Option[PermissionRow])))]): Map[ApplicationCode, Seq[RawGroup]] = {
 
-        def toRoles(tuples: Seq[(Option[repo.RoleRow], Option[repo.PermissionRow])]): Seq[RawRole] = {
-          tuples.filter(_._1.isDefined).map(t => (t._1.get, t._2)).groupBy(_._1).view.mapValues(_.map(_._2)).map {
-            case (role, perms) =>
-              role.into[RawRole].withFieldConst(_.permissions, perms.filter(_.isDefined).map(_.get).map(_.transformInto[RawPermission])).transform
-          }.toSeq
+        def groupByFirstElement[A, B](seq: Seq[(A, B)]): Seq[(A, Seq[B])] = seq.groupBy(_._1).view.mapValues(_.map(_._2)).toSeq
+
+        def toGroup(group: GroupRow, roles: Seq[(Option[RoleRow], Option[PermissionRow])]): RawGroup = {
+
+          val groupRoles = groupByFirstElement {
+            roles.filter(_._1.isDefined).map(it => (it._1.get, it._2))
+          } map {
+            case (role, perms) => role.into[RawRole].withFieldConst(_.permissions, perms.filter(_.isDefined).map(_.get).map(_.transformInto[RawPermission])).transform
+          }
+
+          group
+            .into[RawGroup]
+            .withFieldConst(_.roles, groupRoles)
+            .transform
         }
 
-        rows.groupBy(_._1).view.mapValues(_.map(x => (x._2, x._3))).map {
-          case (group, rolesAndPerms: Seq[(Option[RoleRow], Option[PermissionRow])]) =>
-            group
-              .into[RawGroup]
-              .withFieldConst(_.roles, toRoles(rolesAndPerms))
-              .transform
-        }.toSeq
+        groupByFirstElement {
+          groupByFirstElement(rows).flatMap {
+            case (app: ApplicationRow, groups) => groupByFirstElement(groups).map {
+              case (group: GroupRow, roles) =>
+                (app.code, toGroup(group, roles))
+            }
+          }
+        }.toMap
       }
 
       inline def query = quote {
@@ -558,12 +556,12 @@ object repo {
           ten <- tenants                                                if ten.deleted.isEmpty && ten.active
           acc <- accounts     .join    (_.tenant == ten.id)             if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
           a2a <- account2app  .join    (_.acc == acc.id)                if a2a.deleted.isEmpty
-          app <- applications .join    (_.id == a2a.app)                if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+          app <- applications .join    (_.id == a2a.app)                if app.deleted.isEmpty && app.active && liftQuery(request.apps).contains(app.code)
           grp <- groups       .join    (_.app == a2a.app)               if grp.deleted.isEmpty && grp.acc == acc.id && (lift(request.filter.isEmpty) || liftQuery(request.filter).contains(grp.code))
           g2r <- group2role   .leftJoin(_.grp == grp.id)                if g2r.exists(_.deleted.isEmpty)
           rol <- roles        .leftJoin(r => g2r.exists(_.rid == r.id)) if rol.exists(_.deleted.isEmpty)
           per <- permissions  .leftJoin(p => rol.exists(_.id == p.rid)) if per.exists(_.deleted.isEmpty)
-        } yield (grp, rol, per)
+        } yield (app, (grp, (rol, per)))
       }
 
       for {
@@ -672,10 +670,10 @@ object repo {
 
       def appFrom(row: ApplicationRow): Task[Option[RawApplication]] = {
         for {
-          groups <- groupsGiven(FindGroups(request.account, request.application))
+          groups <- groupsGiven(FindGroups(request.account, Seq(request.application)))
         } yield Some(RawApplication(
           details = row.transformInto[RawApplicationDetails],
-          groups  = groups,
+          groups  = groups.getOrElse(request.application, Seq.empty),
         ))
 
       }

@@ -131,9 +131,9 @@ object commands {
 
   case class FindGroups(
     account : AccountCode,
-    app     : ApplicationCode,
+    apps    : Seq[ApplicationCode],
     filter  : Seq[GroupCode] = Seq.empty
-  ) extends Command[Seq[RawGroup]]
+  ) extends Command[Map[ApplicationCode, Seq[RawGroup]]]
 
   case class FindUsersInGroup(
     account : AccountCode,

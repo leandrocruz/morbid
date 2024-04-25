@@ -382,11 +382,16 @@ object router {
     private def groupUsers(app: String, group: String, request: Request) : Task[Response] = usersGiven(request, ApplicationCode.of(app), Some(GroupCode.of(group)))
 
     private def groupsGiven(app: String, request: Request): Task[Response] = ensureResponse {
+      val appCode = ApplicationCode.of(app)
       for {
         tk     <- tokenFrom(request)
         filter =  request.url.queryParams.getAll("code").getOrElse(Seq.empty).map(GroupCode.of)
-        seq    <- repo.exec(FindGroups(tk.user.details.accountCode, ApplicationCode.of(app), filter))
-      } yield Response.json(seq.toJson)
+        map    <- repo.exec(FindGroups(tk.user.details.accountCode, Seq(appCode), filter))
+      } yield map.get(appCode) match
+        case Some(groups) => Response.json(groups.toJson)
+        case None         => Response.notFound(s"Can't find groups for '$app'")
+
+
     }
 
     private def rolesGiven(app: String, request: Request): Task[Response] = ensureResponse {
