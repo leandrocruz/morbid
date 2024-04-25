@@ -571,19 +571,19 @@ object repo {
 
     private def rolesGiven(request: FindRoles): Task[Seq[RawRole]] = {
 
-      def toRole(role: RoleRow, data: Seq[(RoleRow, PermissionRow)]): RawRole = {
-        val perms = data.map(_._2).distinct.map(_.transformInto[RawPermission])
+      def toRole(role: RoleRow, data: Seq[(RoleRow, Option[PermissionRow])]): RawRole = {
+        val perms = data.map(_._2).filter(_.isDefined).map(_.get).distinct.map(_.transformInto[RawPermission])
         role.into[RawRole].withFieldConst(_.permissions, perms).transform
       }
 
-      inline def query: Quoted[Query[(RoleRow, PermissionRow)]] = quote {
+      inline def query = quote {
         for {
-          ten <- tenants                                if ten.deleted.isEmpty && ten.active
-          acc <- accounts     .join(_.tenant == ten.id) if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
-          a2a <- account2app  .join(_.acc == acc.id)    if a2a.deleted.isEmpty
-          app <- applications .join(_.id == a2a.app)    if app.deleted.isEmpty && app.active && app.code == lift(request.app)
-          rol <- roles        .join(_.app == app.id)    if rol.deleted.isEmpty
-          per <- permissions  .join(_.rid == rol.id)    if per.deleted.isEmpty
+          ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          a2a <- account2app  .join(_.acc == acc.id)     if a2a.deleted.isEmpty
+          app <- applications .join(_.id == a2a.app)     if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+          rol <- roles        .join(_.app == app.id)     if rol.deleted.isEmpty
+          per <- permissions  .leftJoin(_.rid == rol.id) if per.exists(_.deleted.isEmpty)
         } yield (rol, per)
       }
 
