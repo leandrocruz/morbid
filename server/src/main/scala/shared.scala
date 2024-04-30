@@ -10,7 +10,7 @@ object config {
   import Config.*
 
   case class JwtConfig(key: String, fake: Boolean)
-  case class IdentityConfig(key: String, database: String)
+  case class IdentityConfig(key: String, database: String, provisionSAMLUsers: Boolean)
   case class ClockConfig(timezone: String)
   case class MagicConfig(password: String)
   case class PinConfig(prefix: String)

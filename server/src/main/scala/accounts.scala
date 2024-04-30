@@ -4,6 +4,7 @@ import zio.*
 
 object accounts {
 
+  import morbid.config.MorbidConfig
   import morbid.commands.*
   import morbid.repo.Repo
   import morbid.types.*
@@ -20,11 +21,11 @@ object accounts {
     val layer = ZLayer.fromFunction(LocalAccountManager.apply _)
   }
 
-  case class LocalAccountManager(repo: Repo) extends AccountManager {
+  case class LocalAccountManager(config: MorbidConfig, repo: Repo) extends AccountManager {
 
     override def provision(identity: CloudIdentity): Task[RawUser] = {
 
-      def provisionSaml(id: ProviderCode): Task[RawUser] = {
+      def provisionSaml(id: ProviderCode): Task[RawUser] = { //TODO: call the old morbid
         for {
           account <- repo.exec(FindAccountByProvider(id)).orFail(s"Can't find account for provider '$identity'")
           _       <- ZIO.logInfo(s"Provisioning user :: tenant:${account.tenant} account:${account.id}, idp:$id, code:${identity.code}, email:${identity.email}")
@@ -34,8 +35,8 @@ object accounts {
       }
 
       (identity.tenant, identity.kind, identity.provider) match
-        case (None, ProviderKind.SAML, Some(id)) => provisionSaml(id)
-        case _                                   => ZIO.fail(new Exception(s"Can't create user for '${identity.email}' with '${identity.kind}' on '${identity.provider.getOrElse("NO PROVIDER")}'"))
+        case (None, ProviderKind.SAML, Some(id)) if config.identities.provisionSAMLUsers => provisionSaml(id)
+        case _ => ZIO.fail(new Exception(s"Can't create user for '${identity.email}' with '${identity.kind}' on '${identity.provider.getOrElse("NO PROVIDER")}'"))
     }
   }
 }
