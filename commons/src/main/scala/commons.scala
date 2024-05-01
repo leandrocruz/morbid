@@ -478,8 +478,8 @@ object domain {
   }
 
   object requests {
-    case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], application: ApplicationCode, name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
+    case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
 
-    given JsonDecoder[StoreGroupRequest] = DeriveJsonDecoder.gen
+    given JsonCodec[StoreGroupRequest] = DeriveJsonCodec.gen
   }
 }

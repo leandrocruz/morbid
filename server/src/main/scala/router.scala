@@ -211,7 +211,7 @@ object router {
       }
     }
 
-    private def storeGroup = role("group_adm") { (request, token) =>
+    private def storeGroup(app: String, request: Request): Task[Response] = role("group_adm") { (_, token) =>
 
       def build(req: StoreGroupRequest, app: RawApplication, code: GroupCode, now: LocalDateTime) = {
         val group = RawGroup(
@@ -234,16 +234,18 @@ object router {
 
       def uniqueCode: Task[GroupCode] = ZIO.attempt(GroupCode.of(Random.alphanumeric.take(16).mkString("")))
 
+      val application = ApplicationCode.of(app)
+
       (for
         now     <- Clock.localDateTime
         req     <- request.body.parse[StoreGroupRequest].mapError(err => ReturnResponseError(Response.badRequest(err.getMessage)))
-        app     <- repo.exec(FindApplication(token.user.details.accountCode, req.application)).orFail(s"Can't find application '${req.application}'")
+        app     <- repo.exec(FindApplication(token.user.details.accountCode, application)).orFail(s"Can't find application '${application}'")
         code    <- req.code.map(ZIO.succeed).getOrElse(uniqueCode)
         _       <- ZIO.logInfo(s"Storing group '${req.name} (${req.id}/$code)' in app '${app.details.code}' in account '${token.user.details.account}' in tenant '${token.user.details.tenant}'")
         create  =  build(req, app, code, now)
         created <- repo.exec(create)
       yield Response.json(created.toJson)).errorToResponse(Response.internalServerError("Error creating group"))
-    }
+    } (request)
 
     private def createUser = role("user_adm") { (request, token) =>
 
@@ -395,7 +397,6 @@ object router {
     private def regular = Routes(
       Method.GET  / "applications"                   -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
       Method.GET  / "application" / string("app")    -> handler(applicationGiven),
-      Method.POST / "group"                          -> Handler.fromFunctionZIO[Request](storeGroup),
       Method.POST / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProvider),
       Method.GET  / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
       Method.POST / "login"                          -> Handler.fromFunctionZIO[Request](login),
@@ -409,6 +410,7 @@ object router {
       Method.POST / "user" / "pin" / "validate"      -> Handler.fromFunctionZIO[Request](validateUserPin),
       Method.GET  / "app" / string("app") / "users"  -> handler(usersGiven),
       Method.GET  / "app" / string("app") / "groups" -> handler(groupsGiven),
+      Method.POST / "app" / string("app") / "group"  -> handler(storeGroup),
       Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
       Method.GET  / "app" / string("app") / "roles" -> handler(rolesGiven),
     ).sandbox.toHttpApp
