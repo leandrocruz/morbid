@@ -310,7 +310,7 @@ object repo {
 
     override def exec[R](command: Command[R]): Task[R] = {
       command match
-        case r: CreateGroup           => create(r)
+        case r: StoreGroup            => storeGroup(r)
         case r: CreateUser            => create(r)
         case r: DefineUserPin         => setUserPin(r)
         case r: GetUserPin            => getUserPin(r)
@@ -446,7 +446,7 @@ object repo {
 
     }
 
-    private def create(request: CreateGroup): Task[RawGroup] = {
+    private def storeGroup(request: StoreGroup): Task[RawGroup] = {
 
       def store = {
         val row = request
@@ -482,12 +482,11 @@ object repo {
         addRoles(LinkGroupToRoles (group.created, request.application.details.id, group.id, roles.map(_.id))).map(_ => roles)
       }
 
-
       for
         group    <- store                       .refineError(s"Error creating group '${request.group.name}'")
-        users    <- queryUsers                  .refineError("Error searching for group users"              )
+        users    <- queryUsers                  .refineError("Error searching for account users"            )
+        appRoles <- queryApplicationRoles       .refineError("Error searching for account roles"            )
         _        <- linkUsers(group, users)     .refineError("Error linking users to group"                 )
-        appRoles <- queryApplicationRoles       .refineError("Error searching for group roles"              )
         roles    <- linkRoles(group, appRoles)  .refineError("Error linking roles to group"                 )
       yield group.copy(roles = roles)
 

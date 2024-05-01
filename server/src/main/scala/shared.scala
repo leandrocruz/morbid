@@ -158,7 +158,7 @@ object commands {
     kind    : Option[UserKind] = None,
   ) extends Command[RawUser]
 
-  case class CreateGroup(
+  case class StoreGroup(
     account     : AccountId,
     accountCode : AccountCode,
     application : RawApplication,

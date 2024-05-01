@@ -222,7 +222,7 @@ object router {
           name    = req.name
         )
 
-        CreateGroup(
+        StoreGroup(
           account     = token.user.details.account,
           accountCode = token.user.details.accountCode,
           application = app,
