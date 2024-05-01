@@ -75,8 +75,6 @@ object proto {
   case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, applications: Seq[CreateUserApplication])
   case class SetUserPin     (pin: Pin)
   case class ValidateUserPin(pin: Pin)
-  case class CreateGroupRequest(application: ApplicationCode, name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
-
 
   given JsonDecoder[ImpersonationRequest]     = DeriveJsonDecoder.gen
   given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen
@@ -87,7 +85,6 @@ object proto {
   given JsonDecoder[CreateUserRequest]        = DeriveJsonDecoder.gen
   given JsonDecoder[SetUserPin]               = DeriveJsonDecoder.gen
   given JsonDecoder[ValidateUserPin]          = DeriveJsonDecoder.gen
-  given JsonDecoder[CreateGroupRequest]       = DeriveJsonDecoder.gen
 }
 
 object passwords {

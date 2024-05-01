@@ -1,46 +1,34 @@
 package morbid
 
-import types.*
-import config.MorbidConfig
+import accounts.AccountManager
 import billing.Billing
+import commands.*
+import config.MorbidConfig
 import domain.*
 import domain.raw.*
-import domain.simple.*
-import domain.mini.*
-import tokens.*
+import domain.requests.StoreGroupRequest
+import domain.token.Token
+import gip.*
+import passwords.PasswordGenerator
+import pins.PinManager
+import repo.Repo
 import proto.*
-import commands.*
-import utils.asJson
+import tokens.*
+import types.*
+import utils.{asJson, orFail, errorToResponse}
 import guara.utils.{ensureResponse, parse}
-import guara.domain.RequestId
 import guara.errors.*
 import guara.router.Router
 import guara.router.Echo
-import morbid.accounts.AccountManager
-import morbid.gip.*
-import morbid.repo.Repo
-import morbid.utils.errorToResponse
 import zio.*
-import zio.http.Cookie.SameSite
 import zio.json.*
-import zio.http.{Cookie, Handler, Header, HttpApp, Method, Path, Request, Response, Routes, handler}
-import zio.http.Middleware.CorsConfig
+import zio.http.Cookie.SameSite
+import zio.http.{Cookie, Handler, HttpApp, Method, Path, Request, Response, Routes, handler}
 import zio.http.Middleware.{CorsConfig, cors}
-import zio.http.Status
-import zio.http.Header.{AccessControlAllowMethods, AccessControlAllowOrigin, Origin}
-import zio.http.codec.PathCodec.{long, string}
-import zio.json.ast.{Json, JsonCursor}
-import zio.logging.LogFormat
-import zio.logging.backend.SLF4J
+import zio.http.codec.PathCodec.string
 import io.scalaland.chimney.dsl.*
-import morbid.domain.token.Token
-import morbid.passwords.PasswordGenerator
-import morbid.pins.PinManager
-import morbid.utils.orFail
-
 import scala.util.Random
-import java.time.{Instant, LocalDateTime}
-import java.util.Base64
+import java.time.LocalDateTime
 
 object cookies {
 
@@ -223,11 +211,11 @@ object router {
       }
     }
 
-    private def createGroup = role("group_adm") { (request, token) =>
+    private def storeGroup = role("group_adm") { (request, token) =>
 
-      def build(req: CreateGroupRequest, app: RawApplication, code: GroupCode, now: LocalDateTime) = {
+      def build(req: StoreGroupRequest, app: RawApplication, code: GroupCode, now: LocalDateTime) = {
         val group = RawGroup(
-          id      = GroupId.of(0),
+          id      = req.id.getOrElse(GroupId.of(0)),
           created = now,
           deleted = None,
           code    = code,
@@ -248,10 +236,10 @@ object router {
 
       (for
         now     <- Clock.localDateTime
-        req     <- request.body.parse[CreateGroupRequest].mapError(err => ReturnResponseError(Response.badRequest(err.getMessage)))
+        req     <- request.body.parse[StoreGroupRequest].mapError(err => ReturnResponseError(Response.badRequest(err.getMessage)))
         app     <- repo.exec(FindApplication(token.user.details.accountCode, req.application)).orFail(s"Can't find application '${req.application}'")
-        code    <- uniqueCode
-        _       <- ZIO.logInfo(s"Creating group '${req.name} ($code)' in app '${app.details.code}' in account '${token.user.details.account}' in tenant '${token.user.details.tenant}'")
+        code    <- req.code.map(ZIO.succeed).getOrElse(uniqueCode)
+        _       <- ZIO.logInfo(s"Storing group '${req.name} (${req.id}/$code)' in app '${app.details.code}' in account '${token.user.details.account}' in tenant '${token.user.details.tenant}'")
         create  =  build(req, app, code, now)
         created <- repo.exec(create)
       yield Response.json(created.toJson)).errorToResponse(Response.internalServerError("Error creating group"))
@@ -407,7 +395,7 @@ object router {
     private def regular = Routes(
       Method.GET  / "applications"                   -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
       Method.GET  / "application" / string("app")    -> handler(applicationGiven),
-      Method.POST / "group"                          -> Handler.fromFunctionZIO[Request](createGroup),
+      Method.POST / "group"                          -> Handler.fromFunctionZIO[Request](storeGroup),
       Method.POST / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProvider),
       Method.GET  / "login" / "provider"             -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
       Method.POST / "login"                          -> Handler.fromFunctionZIO[Request](login),

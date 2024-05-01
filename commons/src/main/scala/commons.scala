@@ -476,4 +476,10 @@ object domain {
     given JsonCodec[Token]          = DeriveJsonCodec.gen
     given JsonCodec[SingleAppToken] = DeriveJsonCodec.gen
   }
+
+  object requests {
+    case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], application: ApplicationCode, name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
+
+    given JsonDecoder[StoreGroupRequest] = DeriveJsonDecoder.gen
+  }
 }
