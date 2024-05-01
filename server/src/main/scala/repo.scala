@@ -8,6 +8,7 @@ object repo {
   import domain.*
   import domain.raw.*
   import commands.*
+  import utils.refineError
   import io.getquill.*
   import io.getquill.jdbczio.Quill
   import javax.sql.DataSource
@@ -321,7 +322,7 @@ object repo {
         case r: FindProviderByAccount => providerGiven(r)
         case r: FindProviderByDomain  => providerGiven(r)
         case r: FindRoles             => rolesGiven(r)
-        case r: FindUsersByCodes      => usersGiven(r)
+        case r: FindUsersByCode      => usersGiven(r)
         case r: FindUserByEmail       => userGiven(r)
         case r: FindUsersInGroup      => usersGiven(r)
         case r: LinkUsersToGroups     => addGroups(r)
@@ -464,11 +465,31 @@ object repo {
         yield request.group.copy(id = id)
       }
 
+      def queryUsers = {
+        usersGiven(FindUsersByCode(request.account, request.users))
+      }
+
+      def queryApplicationRoles = {
+        rolesGiven(FindRoles(request.accountCode, request.application.details.code))
+      }
+
+      def linkUsers(group: RawGroup, users: Seq[RawUserEntry]) = {
+        addGroups(LinkUsersToGroups(group.created, request.application.details.id, users.map(_.id), Seq(group.id)))
+      }
+
+      def linkRoles(group: RawGroup, appRoles: Seq[RawRole]): Task[Seq[RawRole]] = {
+        val roles = appRoles.filter(role => request.roles.contains(role.code))
+        addRoles(LinkGroupToRoles (group.created, request.application.details.id, group.id, roles.map(_.id))).map(_ => roles)
+      }
+
+
       for
-        group <- store
-        users <- usersGiven (FindUsersByCodes(request.account, request.users))
-        _     <- addGroups  (LinkUsersToGroups(request.application.details.id, users.map(_.id), Seq(group.id)))
-      yield group
+        group    <- store                       .refineError(s"Error creating group '${request.group.name}'")
+        users    <- queryUsers                  .refineError("Error searching for group users"              )
+        _        <- linkUsers(group, users)     .refineError("Error linking users to group"                 )
+        appRoles <- queryApplicationRoles       .refineError("Error searching for group roles"              )
+        roles    <- linkRoles(group, appRoles)  .refineError("Error linking roles to group"                 )
+      yield group.copy(roles = roles)
 
     }
 
@@ -702,32 +723,35 @@ object repo {
         liftQuery(rows).foreach(row => user2group.insertValue(row))
       }
 
-      def rows(now: LocalDateTime) = for
+      def rows = for
         user  <- cmd.users
         group <- cmd.groups
-      yield UserToGroupRow(usr = user, app = cmd.application, grp = group, created = now, deleted = None)
+      yield UserToGroupRow(
+        usr     = user,
+        app     = cmd.application,
+        grp     = group,
+        created = cmd.at,
+        deleted = None
+      )
 
-      for
-        now  <- Clock.localDateTime
-        _    <- exec(run(insertValues(rows(now))))
-      yield ()
+      exec(run(insertValues(rows))).map(_ => ())
     }
 
-    private def addRoles(request: LinkGroupToRoles): Task[Unit] = {
-//      def insertValues(rows: Seq[UserToRoleRow]) = quote {
-//        liftQuery(rows).foreach(row => user2role.insertValue(row))
-//      }
-//
-//      def rows(now: LocalDateTime) = for
-//        user <- request.users
-//        role <- request.roles
-//      yield UserToRoleRow(usr = user, app = request.app, rid = role, created = now, deleted = None)
-//
-//      for {
-//        now <- Clock.localDateTime
-//        _ <- exec(run(insertValues(rows(now))))
-//      } yield ()
-      ???
+    private def addRoles(cmd: LinkGroupToRoles): Task[Unit] = {
+      def insertValues(rows: Seq[GroupToRoleRow]) = quote {
+        liftQuery(rows).foreach(row => group2role.insertValue(row))
+      }
+
+      def rows = cmd.roles.map { rid =>
+        GroupToRoleRow(
+          grp     = cmd.group,
+          rid     = rid,
+          created = cmd.at,
+          deleted = None
+        )
+      }
+
+      exec(run(insertValues(rows))).map(_ => ())
     }
 
     private def setUserPin(request: DefineUserPin): Task[Unit] = {
@@ -782,7 +806,7 @@ object repo {
       }.toMap
     }
 
-    private def usersGiven(request: FindUsersByCodes): Task[Seq[RawUserEntry]] = {
+    private def usersGiven(request: FindUsersByCode): Task[Seq[RawUserEntry]] = {
       inline def query = {
         quote {
           for {

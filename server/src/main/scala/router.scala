@@ -19,6 +19,7 @@ import guara.router.Echo
 import morbid.accounts.AccountManager
 import morbid.gip.*
 import morbid.repo.Repo
+import morbid.utils.errorToResponse
 import zio.*
 import zio.http.Cookie.SameSite
 import zio.json.*
@@ -235,23 +236,25 @@ object router {
 
         CreateGroup(
           account     = token.user.details.account,
+          accountCode = token.user.details.accountCode,
           application = app,
           users       = req.users,
+          roles       = req.roles,
           group       = group
         )
       }
 
       def uniqueCode: Task[GroupCode] = ZIO.attempt(GroupCode.of(Random.alphanumeric.take(16).mkString("")))
 
-      for
+      (for
         now     <- Clock.localDateTime
-        req     <- request.body.parse[CreateGroupRequest]
+        req     <- request.body.parse[CreateGroupRequest].mapError(err => ReturnResponseError(Response.badRequest(err.getMessage)))
         app     <- repo.exec(FindApplication(token.user.details.accountCode, req.application)).orFail(s"Can't find application '${req.application}'")
         code    <- uniqueCode
         _       <- ZIO.logInfo(s"Creating group '${req.name} ($code)' in app '${app.details.code}' in account '${token.user.details.account}' in tenant '${token.user.details.tenant}'")
         create  =  build(req, app, code, now)
         created <- repo.exec(create)
-      yield Response.json(created.toJson)
+      yield Response.json(created.toJson)).errorToResponse(Response.internalServerError("Error creating group"))
     }
 
     private def createUser = role("user_adm") { (request, token) =>
@@ -271,7 +274,7 @@ object router {
           for {
             application <- repo.exec(FindApplication(user.details.accountCode, cua.application)).orFail(s"Can't find application '${cua.application}' for account '${user.details.accountCode}'")
             groupsToAdd <- ensureGroups(application)
-            _           <- repo.exec(LinkUsersToGroups(application.details.id, Seq(user.details.id), groupsToAdd.map(_.id))) .fork
+            _           <- repo.exec(LinkUsersToGroups(user.details.created, application.details.id, Seq(user.details.id), groupsToAdd.map(_.id))) .fork
           } yield ()
         }
 

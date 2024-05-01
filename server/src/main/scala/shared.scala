@@ -25,11 +25,13 @@ object config {
 
 object utils {
 
-  import zio.json.*
   import domain.raw.RawUser
   import domain.simple.*
   import domain.mini.*
   import types.ApplicationCode
+  import guara.errors.ReturnResponseWithExceptionError
+  import zio.json.*
+  import zio.http.Response
 
   val Morbid = ApplicationCode.of("morbid")
 
@@ -50,6 +52,10 @@ object utils {
       yield value
     }
 
+  extension [T](task: Task[T])
+    def refineError(message: String): Task[T] = task.mapError(Exception(message, _))
+    def errorToResponse(response: Response) = task.mapError(ReturnResponseWithExceptionError(_, response))
+
   extension [T](op: Option[T])
     def orFail(message: String): Task[T] = ZIO.fromOption(op).mapError(_ => Exception(message))
 }
@@ -69,7 +75,7 @@ object proto {
   case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, applications: Seq[CreateUserApplication])
   case class SetUserPin     (pin: Pin)
   case class ValidateUserPin(pin: Pin)
-  case class CreateGroupRequest(application: ApplicationCode, name: GroupName, users: Seq[UserCode])
+  case class CreateGroupRequest(application: ApplicationCode, name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
 
 
   given JsonDecoder[ImpersonationRequest]     = DeriveJsonDecoder.gen
@@ -113,6 +119,7 @@ object commands {
   import types.*
   import morbid.domain.*
   import morbid.domain.raw.*
+  import java.time.LocalDateTime
 
   sealed trait Command[R]
 
@@ -124,6 +131,7 @@ object commands {
   ) extends Command[Option[RawApplication]]
 
   case class LinkUsersToGroups(
+    at          : LocalDateTime,
     application : ApplicationId,
     users       : Seq[UserId],
     groups      : Seq[GroupId]
@@ -141,13 +149,8 @@ object commands {
     group   : Option[GroupCode] = None
   ) extends Command[Seq[RawUserEntry]]
 
-  case class FindUsersByCodes(
-    account: AccountId,
-    codes: Seq[UserCode]
-  ) extends Command[Seq[RawUserEntry]]
-
+  case class FindUsersByCode(account: AccountId, codes: Seq[UserCode]) extends Command[Seq[RawUserEntry]]
   case class FindUserByEmail(email: Email) extends Command[Option[RawUser]]
-
   case class GetUserPin(user: UserId) extends Command[Option[Sha256Hash]]
   case class DefineUserPin(user: UserId, pin: Sha256Hash) extends Command[Unit]
 
@@ -160,12 +163,15 @@ object commands {
 
   case class CreateGroup(
     account     : AccountId,
+    accountCode : AccountCode,
     application : RawApplication,
     group       : RawGroup,
-    users       : Seq[UserCode]
+    users       : Seq[UserCode],
+    roles       : Seq[RoleCode]
   ) extends Command[RawGroup]
 
   case class LinkGroupToRoles(
+    at    : LocalDateTime,
     app   : ApplicationId,
     group : GroupId,
     roles : Seq[RoleId]
