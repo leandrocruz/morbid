@@ -123,7 +123,6 @@ CREATE TABLE user_to_group (
     app     BIGINT    NOT NULL REFERENCES applications (id) ,
     grp     BIGINT    NOT NULL REFERENCES groups       (id) ,
     created TIMESTAMP NOT NULL                              ,
-    deleted TIMESTAMP                                       ,
     PRIMARY KEY (usr, app, grp)
 );
 
@@ -131,6 +130,5 @@ CREATE TABLE group_to_role (
     grp      BIGINT    NOT NULL REFERENCES groups (id) ,
     rid      BIGINT    NOT NULL REFERENCES roles  (id) ,
     created  TIMESTAMP NOT NULL                        ,
-    deleted  TIMESTAMP                                 ,
     PRIMARY KEY (grp, rid)
 );
