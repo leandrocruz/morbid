@@ -249,30 +249,6 @@ object router {
 
     private def createUser = role("user_adm") { (request, token) =>
 
-      def configureApplications(user: RawUser, req: CreateUserRequest): Task[Seq[Unit]] = {
-
-        def configureApplication(cua: CreateUserApplication): Task[Unit] = {
-
-          def ensureGroups(application: RawApplication): Task[Seq[RawGroup]] = {
-            val found = cua.groups.map(code => (code, application.groups.find(_.code == code)))
-            ZIO.foreach(found) {
-              case (code, None      ) => ZIO.fail(new Exception(s"Group '$code' is missing in application '${application.details.code}' for account '${user.details.accountCode}'"))
-              case (_   , Some(item)) => ZIO.succeed(item)
-            }
-          }
-
-          for {
-            application <- repo.exec(FindApplication(user.details.accountCode, cua.application)).orFail(s"Can't find application '${cua.application}' for account '${user.details.accountCode}'")
-            groupsToAdd <- ensureGroups(application)
-            _           <- repo.exec(LinkUsersToGroups(user.details.created, application.details.id, Seq(user.details.id), groupsToAdd.map(_.id))) .fork
-          } yield ()
-        }
-
-        ZIO.foreachPar(req.applications) {
-          configureApplication
-        }
-      }
-
       def uniqueCode(email: Email): Task[UserCode] = {
 
         def attemptUnique(user: EmailUser, count: Int): Task[UserCode] = {
@@ -307,8 +283,8 @@ object router {
         create  = buildRequest(req, acc, code)
         _      <- ZIO.logInfo(s"Creating user '${create.email}' in account '${create.account}' in tenant '${create.account.tenantCode}'")
         user   <- repo.exec(create)
-        _      <- ZIO.logInfo(s"User '${user.details.email}' created. Configuring applications: ${req.applications.map(_.application).mkString(", ")}")
-        _      <- configureApplications(user, req) <&> identities.createUser(create, pwd)
+        _      <- ZIO.logInfo(s"User '${user.details.email}' created")
+        _      <- identities.createUser(create, pwd)
         _      <- ZIO.logInfo(s"Creation for user '${create.email}' successful")
       yield Response.json(user.toJson)
     }
