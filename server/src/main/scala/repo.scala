@@ -163,15 +163,13 @@ object repo {
     usr     : UserId,
     app     : ApplicationId,
     grp     : GroupId,
-    created : LocalDateTime,
-    deleted : Option[LocalDateTime],
+    created : LocalDateTime
   )
 
   private case class GroupToRoleRow(
-    grp: GroupId,
-    rid: RoleId,
-    created: LocalDateTime,
-    deleted: Option[LocalDateTime],
+    grp     : GroupId,
+    rid     : RoleId,
+    created : LocalDateTime
   )
 
   private case class RoleRow(
@@ -322,11 +320,13 @@ object repo {
         case r: FindProviderByAccount => providerGiven(r)
         case r: FindProviderByDomain  => providerGiven(r)
         case r: FindRoles             => rolesGiven(r)
-        case r: FindUsersByCode      => usersGiven(r)
+        case r: FindUsersByCode       => usersGiven(r)
         case r: FindUserByEmail       => userGiven(r)
         case r: FindUsersInGroup      => usersGiven(r)
-        case r: LinkUsersToGroups     => addGroups(r)
+        case r: LinkUsersToGroup      => addGroups(r)
+        case r: UnlinkUsersFromGroup  => ZIO.fail(Exception("TODO"))
         case r: LinkGroupToRoles      => ZIO.fail(Exception("TODO"))
+        case r: UnlinkGroupFromRoles  => ZIO.fail(Exception("TODO"))
         case r: ReportUsersByAccount  => usersByAccount(r)
         case r: UserExists            => userExists(r)
     }
@@ -448,48 +448,96 @@ object repo {
 
     private def storeGroup(request: StoreGroup): Task[RawGroup] = {
 
-      def store = {
-        val row = request
-          .group
-          .into[GroupRow]
-          .withFieldConst(_.app, request.application.details.id)
-          .withFieldConst(_.acc, request.account)
-          .transform
+      val accId   = request.account
+      val accCode = request.accountCode
+      val appId   = request.application.details.id
+      val appCode = request.application.details.code
 
-        inline def stmt = quote {
-          groups.insertValue(lift(row)).returning(_.id)
+      def findExistingGroup: Task[Option[RawGroup]] = {
+        if (GroupId.value(request.group.id) > 0) groupsGiven(FindGroups(accCode, Seq(appCode), Seq(request.group.code))).map(_.getOrElse(appCode, Seq.empty).headOption)
+        else                                     ZIO.succeed(None)
+      }
+
+      def store(existing: Option[RawGroup]): Task[RawGroup] = {
+
+        def create = {
+
+          val row = request
+            .group
+            .into[GroupRow]
+            .withFieldConst(_.app, appId)
+            .withFieldConst(_.acc, accId)
+            .transform
+
+          inline def stmt = quote {
+            groups.insertValue(lift(row)).returning(_.id)
+          }
+
+          for
+            id <- exec(run(stmt))
+          yield request.group.copy(id = id)
+        }
+
+        def update(group: RawGroup) = {
+
+          inline def stmt = quote {
+            groups.filter(_.id == lift(group.id)).update(_.name -> lift(request.group.name))
+          }
+
+          for
+            _ <- exec(run(stmt))
+          yield group.copy(name = request.group.name)
+        }
+
+        existing match
+          case None        => create
+          case Some(group) => update(group)
+      }
+
+      def queryUsers = usersGiven(FindUsersByCode(accId, request.users))
+      def queryRoles = rolesGiven(FindRoles(accCode, appCode))
+
+      def handleUsers(group: RawGroup, existing: Option[RawGroup], all: Seq[RawUserEntry]): Task[Unit] = {
+
+        def retrieveCurrent: Task[Seq[RawUserEntry]] = {
+          existing match
+            case None      => ZIO.succeed(Seq.empty)
+            case Some(old) => usersGiven(FindUsersInGroup(accCode, appCode, Some(old.code)))
         }
 
         for
-          id <- exec(run(stmt))
-        yield request.group.copy(id = id)
+          current   <- retrieveCurrent
+          wanted    =  all.filter(user => request.users.contains(user.code))
+          intersect =  wanted.intersect(current)
+          toAdd     =  wanted.diff(intersect)
+          toRemove  =  current.diff(intersect)
+          _         <- ZIO.when(toAdd.nonEmpty)    { addGroups (LinkUsersToGroup    (appId, group.id, toAdd   .map(_.id))) }
+          _         <- ZIO.when(toRemove.nonEmpty) { delGroups (UnlinkUsersFromGroup(appId, group.id, toRemove.map(_.id))) }
+        yield ()
       }
 
-      def queryUsers = {
-        usersGiven(FindUsersByCode(request.account, request.users))
-      }
+      def handleRoles(group: RawGroup, existing: Option[RawGroup], all: Seq[RawRole]): Task[Seq[RawRole]] = {
 
-      def queryApplicationRoles = {
-        rolesGiven(FindRoles(request.accountCode, request.application.details.code))
-      }
+        val current   = existing.map(_.roles).getOrElse(Seq.empty)
+        val wanted    = all.filter(role => request.roles.contains(role.code))
+        val intersect = wanted.intersect(current)
+        val toAdd     = wanted.diff(intersect)
+        val toRemove  = current.diff(intersect)
 
-      def linkUsers(group: RawGroup, users: Seq[RawUserEntry]) = {
-        addGroups(LinkUsersToGroups(group.created, request.application.details.id, users.map(_.id), Seq(group.id)))
-      }
-
-      def linkRoles(group: RawGroup, appRoles: Seq[RawRole]): Task[Seq[RawRole]] = {
-        val roles = appRoles.filter(role => request.roles.contains(role.code))
-        addRoles(LinkGroupToRoles (group.created, request.application.details.id, group.id, roles.map(_.id))).map(_ => roles)
+        for
+          _ <- ZIO.when(toAdd.nonEmpty)    { addRoles (LinkGroupToRoles    (group.id, toAdd   .map(_.id))) }
+          _ <- ZIO.when(toRemove.nonEmpty) { delRoles (UnlinkGroupFromRoles(group.id, toRemove.map(_.id))) }
+        yield wanted
       }
 
       for
-        group    <- store                       .refineError(s"Error creating group '${request.group.name}'")
-        users    <- queryUsers                  .refineError("Error searching for account users"            )
-        appRoles <- queryApplicationRoles       .refineError("Error searching for account roles"            )
-        _        <- linkUsers(group, users)     .refineError("Error linking users to group"                 )
-        roles    <- linkRoles(group, appRoles)  .refineError("Error linking roles to group"                 )
+        existing <- findExistingGroup
+        group    <- store(existing)                           .refineError(s"Error storing group '${request.group.name}' (${request.group.id}/${request.group.code})")
+        users    <- queryUsers                                .refineError("Error searching for account users")
+        appRoles <- queryRoles                                .refineError("Error searching for account roles")
+        _        <- handleUsers   (group, existing, users)    .refineError("Error linking users to group"     )
+        roles    <- handleRoles   (group, existing, appRoles) .refineError("Error linking roles to group"     )
       yield group.copy(roles = roles)
-
     }
 
     private def accountByProvider(request: FindAccountByProvider): Task[Option[RawAccount]] = {
@@ -578,7 +626,7 @@ object repo {
           a2a <- account2app  .join    (_.acc == acc.id)                if a2a.deleted.isEmpty
           app <- applications .join    (_.id == a2a.app)                if app.deleted.isEmpty && app.active && liftQuery(request.apps).contains(app.code)
           grp <- groups       .join    (_.app == a2a.app)               if grp.deleted.isEmpty && grp.acc == acc.id && (lift(request.filter.isEmpty) || liftQuery(request.filter).contains(grp.code))
-          g2r <- group2role   .leftJoin(_.grp == grp.id)                if g2r.exists(_.deleted.isEmpty)
+          g2r <- group2role   .leftJoin(_.grp == grp.id)
           rol <- roles        .leftJoin(r => g2r.exists(_.rid == r.id)) if rol.exists(_.deleted.isEmpty)
           per <- permissions  .leftJoin(p => rol.exists(_.id == p.rid)) if per.exists(_.deleted.isEmpty)
         } yield (app, (grp, (rol, per)))
@@ -629,7 +677,7 @@ object repo {
             a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
             app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
             grp <- groups       .join(_.app    == app.id)  if grp.deleted.isEmpty && grp.acc == acc.id && grp.code == lift(code)
-            u2g <- user2group   .join(_.app    == app.id)  if u2g.deleted.isEmpty && u2g.grp  == grp.id
+            u2g <- user2group   .join(_.app    == app.id)  if                        u2g.grp  == grp.id
             usr <- users        .join(_.id     == u2g.usr) if usr.deleted.isEmpty && usr.active
           } yield usr
         }
@@ -650,7 +698,7 @@ object repo {
         case None       => appUsers
 
       for {
-        _    <- printQuery(query)
+        //_    <- printQuery(query)
         rows <- exec(run(query))
       } yield rows.map(_.transformInto[RawUserEntry])
     }
@@ -716,24 +764,38 @@ object repo {
       } yield result
     }
 
-    private def addGroups(cmd: LinkUsersToGroups): Task[Unit] = {
+    private def addGroups(cmd: LinkUsersToGroup): Task[Unit] = {
 
       inline def insertValues(rows: Seq[UserToGroupRow]) = quote {
         liftQuery(rows).foreach(row => user2group.insertValue(row))
       }
 
-      def rows = for
-        user  <- cmd.users
-        group <- cmd.groups
-      yield UserToGroupRow(
-        usr     = user,
-        app     = cmd.application,
-        grp     = group,
-        created = cmd.at,
-        deleted = None
-      )
+      def rows(now: LocalDateTime) = cmd.users.map { user =>
+          UserToGroupRow(
+          usr     = user,
+          app     = cmd.application,
+          grp     = cmd.group,
+          created = now,
+        )
+      }
 
-      exec(run(insertValues(rows))).map(_ => ())
+      for
+        now   <- Clock.localDateTime
+        _     <- exec(run(insertValues(rows(now))))
+      yield ()
+    }
+
+    private def delGroups(cmd: UnlinkUsersFromGroup): Task[Long] = {
+
+      inline def stmt = quote {
+        user2group.filter { u2g =>
+          u2g.app == lift(cmd.application) &&
+          u2g.grp == lift(cmd.group)       &&
+          liftQuery(cmd.users).contains(u2g.usr)
+        }.delete
+      }
+
+      exec(run(stmt))
     }
 
     private def addRoles(cmd: LinkGroupToRoles): Task[Unit] = {
@@ -741,16 +803,29 @@ object repo {
         liftQuery(rows).foreach(row => group2role.insertValue(row))
       }
 
-      def rows = cmd.roles.map { rid =>
-        GroupToRoleRow(
-          grp     = cmd.group,
-          rid     = rid,
-          created = cmd.at,
-          deleted = None
-        )
+      def rows(now: LocalDateTime) = {
+        cmd.roles.map { rid =>
+          GroupToRoleRow(
+            grp     = cmd.group,
+            rid     = rid,
+            created = now,
+          )
+        }
       }
 
-      exec(run(insertValues(rows))).map(_ => ())
+      for
+        now <- Clock.localDateTime
+        _ <- exec(run(insertValues(rows(now))))
+      yield ()
+    }
+
+    private def delRoles(cmd: UnlinkGroupFromRoles): Task[Long] = {
+
+      inline def stmt = quote {
+        group2role.filter { g2r => g2r.grp == lift(cmd.group) && liftQuery(cmd.roles).contains(g2r.rid) }.delete
+      }
+
+      exec(run(stmt))
     }
 
     private def setUserPin(request: DefineUserPin): Task[Unit] = {

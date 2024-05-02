@@ -71,8 +71,7 @@ object proto {
   case class ImpersonationRequest(email: Email, magic: Magic)
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
-  case class CreateUserApplication(application: ApplicationCode, groups: Seq[GroupCode])
-  case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, tenant: Option[TenantCode] = None, kind: Option[UserKind] = None, applications: Seq[CreateUserApplication])
+  case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, kind: Option[UserKind] = None, tenant: Option[TenantCode] = None)
   case class SetUserPin     (pin: Pin)
   case class ValidateUserPin(pin: Pin)
 
@@ -81,7 +80,6 @@ object proto {
   given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[SetClaimsRequest]         = DeriveJsonDecoder.gen
   given JsonDecoder[GetLoginMode]             = DeriveJsonDecoder.gen
-  given JsonDecoder[CreateUserApplication]    = DeriveJsonDecoder.gen
   given JsonDecoder[CreateUserRequest]        = DeriveJsonDecoder.gen
   given JsonDecoder[SetUserPin]               = DeriveJsonDecoder.gen
   given JsonDecoder[ValidateUserPin]          = DeriveJsonDecoder.gen
@@ -127,11 +125,16 @@ object commands {
     application : ApplicationCode
   ) extends Command[Option[RawApplication]]
 
-  case class LinkUsersToGroups(
-    at          : LocalDateTime,
+  case class LinkUsersToGroup(
     application : ApplicationId,
-    users       : Seq[UserId],
-    groups      : Seq[GroupId]
+    group       : GroupId,
+    users       : Seq[UserId]
+  ) extends Command[Unit]
+
+  case class UnlinkUsersFromGroup(
+    application: ApplicationId,
+    group      : GroupId,
+    users      : Seq[UserId]
   ) extends Command[Unit]
 
   case class FindGroups(
@@ -168,8 +171,11 @@ object commands {
   ) extends Command[RawGroup]
 
   case class LinkGroupToRoles(
-    at    : LocalDateTime,
-    app   : ApplicationId,
+    group : GroupId,
+    roles : Seq[RoleId]
+  ) extends Command[Unit]
+
+  case class UnlinkGroupFromRoles(
     group : GroupId,
     roles : Seq[RoleId]
   ) extends Command[Unit]
