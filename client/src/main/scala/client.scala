@@ -11,6 +11,7 @@ object client {
   import morbid.domain.requests.StoreGroupRequest
   import morbid.domain.requests.given
   import guara.utils.parse
+  import guara.errors.{ReturnResponseWithExceptionError, ReturnResponseError}
   import zio.http.*
   import zio.json.*
 
@@ -63,10 +64,21 @@ object client {
     }
 
     private def exec[T](req: Request)(using token: RawToken, dec: JsonDecoder[T]): Task[T] = {
+
+      def badGateway(message: String, cause: Option[Throwable] = None) = {
+        val resp = Response.error(Status.BadGateway, message)
+        cause match
+          case Some(error) => ReturnResponseWithExceptionError(error, resp)
+          case None        => ReturnResponseError(resp)
+      }
+
+      def warnings(response: Response) = response.headers.get("warning")
+
       for {
         _      <- ZIO.log(s"Calling '${req.url.encode}'")
-        res    <- perform(req.copy(headers = req.headers ++ morbidToken(token)))
-        result <- res.body.parse[T]
+        res    <- perform(req.copy(headers = req.headers ++ morbidToken(token))).mapError(e => badGateway(s"Error calling Morbid: ${e.getMessage}"))
+        _      <- if(res.status.code == 200) ZIO.unit else ZIO.fail(badGateway(s"Response is not 200 (${res.status.code}: ${warnings(res).getOrElse("_")})"))
+        result <- res.body.parse[T].mapError(e => badGateway(s"Error parsing response body: ${e.getMessage}"))
       } yield result
     }
 
