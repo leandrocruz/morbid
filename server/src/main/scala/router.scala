@@ -15,7 +15,7 @@ import repo.Repo
 import proto.*
 import tokens.*
 import types.*
-import utils.{asJson, orFail, errorToResponse}
+import utils.{asJson, errorToResponse, orFail}
 import guara.utils.{ensureResponse, parse}
 import guara.errors.*
 import guara.router.Router
@@ -27,6 +27,7 @@ import zio.http.{Cookie, Handler, HttpApp, Method, Path, Request, Response, Rout
 import zio.http.Middleware.{CorsConfig, cors}
 import zio.http.codec.PathCodec.string
 import io.scalaland.chimney.dsl.*
+
 import scala.util.Random
 import java.time.LocalDateTime
 
@@ -79,7 +80,31 @@ object router {
     tokens       : TokenGenerator
   ) extends Router {
 
-    private given ApplicationCode = utils.Morbid
+    private type AppRoute = ApplicationCode ?=> Request => Task[Response]
+
+    private def appRoute(r: AppRoute)(app: String, request: Request): Task[Response] = {
+      given ApplicationCode = ApplicationCode.of(app)
+      r(request)
+    }
+
+    private def role(role: Role)(fn: (Request, Token) => Task[Response])(request: Request)(using application: ApplicationCode): Task[Response] = {
+      ensureResponse {
+
+        def test(token: Token): Task[Unit] = {
+          if (role.isSatisfiedBy(token)) ZIO.unit
+          else                           ZIO.fail(ReturnResponseError(Response.forbidden(s"Required role '$role' is missing from user token (app: ${application})")))
+        }
+
+        for {
+          token  <- tokenFrom(request)
+          _      <- test(token)
+          result <- fn(request, token)
+        } yield result
+      }
+    }
+
+    val test: AppRoute = role("") { (_, _) => ZIO.succeed(Response.ok) }
+    val x: (String, Request) => Task[Response] = appRoute { test }
 
     private def tokenFrom(request: Request): Task[Token] = {
       (request.headers.get("X-MorbidToken"), request.cookie("morbid-token")) match
@@ -177,14 +202,6 @@ object router {
       }
     }
 
-    private def test(request: Request): Task[Response] = {
-      ZIO.succeed {
-        request.cookie("morbid-token") match
-          case Some(value) => Response.ok
-          case None        => Response.forbidden
-      }
-    }
-
     private def userByEmail(request: Request): Task[Response] = {
       for {
         email     <- request.url.queryParams.get("email").orFail("email not provided")
@@ -194,17 +211,7 @@ object router {
         case Some(user) => Response.json(user.asJson(request.url.queryParams.get("format")))
     }
 
-    private def role(role: Role)(fn: (Request, Token) => Task[Response])(request: Request): Task[Response] = {
-      ensureResponse {
-        for {
-          token  <- tokenFrom(request)
-          _      <- if(role.isSatisfiedBy(token)) ZIO.unit else ZIO.fail(ReturnResponseError(Response.forbidden(s"Required role $role is missing from (${token.roles})")))
-          result <- fn(request, token)
-        } yield result
-      }
-    }
-
-    private def storeGroup(app: String, request: Request): Task[Response] = role("adm" or "group_adm") { (_, token) =>
+    private def storeGroup: AppRoute = role("adm" or "group_adm") { (request, token) =>
 
       def build(req: StoreGroupRequest, app: RawApplication, code: GroupCode, now: LocalDateTime) = {
         val group = RawGroup(
@@ -227,7 +234,7 @@ object router {
 
       def uniqueCode: Task[GroupCode] = ZIO.attempt(GroupCode.of(Random.alphanumeric.take(16).mkString("")))
 
-      val application = ApplicationCode.of(app)
+      val application = summon[ApplicationCode]
 
       (for
         now     <- Clock.localDateTime
@@ -238,9 +245,9 @@ object router {
         create  =  build(req, app, code, now)
         created <- repo.exec(create)
       yield Response.json(created.toJson)).errorToResponse(Response.internalServerError("Error creating group"))
-    } (request)
+    }
 
-    private def createUser = role("adm" or "user_adm") { (request, token) =>
+    private def createUser: AppRoute = role("adm" or "user_adm") { (request, token) =>
 
       def uniqueCode(email: Email): Task[UserCode] = {
 
@@ -280,6 +287,11 @@ object router {
         _      <- identities.createUser(create, pwd)
         _      <- ZIO.logInfo(s"Creation for user '${create.email}' successful")
       yield Response.json(user.toJson)
+    }
+
+    private def usersGiven: AppRoute = role("adm" or "user_adm") { (request, token) =>
+      val application = summon[ApplicationCode]
+      usersGiven(request, application)
     }
 
     private def setUserPin(request: Request): Task[Response] = ensureResponse {
@@ -322,15 +334,6 @@ object router {
       } yield loginResponse(impersonated, encoded)
     }
 
-    private def userCount(app: String, request: Request) = role("adm") { (_, _) =>
-      for {
-        data   <- billing.usersByAccount(ApplicationCode.of(app))
-        result = data.map {
-                   case (acc, count) => (s"${acc.name} (id:${acc.id}, code:${acc.code})", count)
-                 }
-      } yield Response.json(result.toJson)
-    } (request)
-
     private def usersGiven(request: Request, application: ApplicationCode, group: Option[GroupCode] = None): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
@@ -338,7 +341,6 @@ object router {
       } yield Response.json(seq.toJson)
     }
 
-    private def usersGiven(app: String, request: Request)                : Task[Response] = usersGiven(request, ApplicationCode.of(app))
     private def groupUsers(app: String, group: String, request: Request) : Task[Response] = usersGiven(request, ApplicationCode.of(app), Some(GroupCode.of(group)))
 
     private def groupsGiven(app: String, request: Request): Task[Response] = ensureResponse {
@@ -370,14 +372,13 @@ object router {
       Method.POST / "logoff"                         -> Handler.fromFunctionZIO[Request](logoff),
       Method.POST / "verify"                         -> Handler.fromFunctionZIO[Request](verify),
       Method.POST / "impersonate"                    -> Handler.fromFunctionZIO[Request](impersonate),
-      Method.GET  / "test"                           -> Handler.fromFunctionZIO[Request](test),
       Method.GET  / "user"                           -> Handler.fromFunctionZIO[Request](userByEmail),
-      Method.POST / "user"                           -> Handler.fromFunctionZIO[Request](createUser),
       Method.POST / "user" / "pin"                   -> Handler.fromFunctionZIO[Request](setUserPin),
       Method.POST / "user" / "pin" / "validate"      -> Handler.fromFunctionZIO[Request](validateUserPin),
-      Method.GET  / "app" / string("app") / "users"  -> handler(usersGiven),
+      Method.GET  / "app" / string("app") / "users"  -> handler(appRoute(usersGiven)),
+      Method.POST / "app" / string("app") / "user"   -> handler(appRoute(createUser)),
       Method.GET  / "app" / string("app") / "groups" -> handler(groupsGiven),
-      Method.POST / "app" / string("app") / "group"  -> handler(storeGroup),
+      Method.POST / "app" / string("app") / "group"  -> handler(appRoute(storeGroup)),
       Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
       Method.GET  / "app" / string("app") / "roles" -> handler(rolesGiven),
     ).sandbox.toHttpApp
@@ -397,22 +398,22 @@ object roles {
     def and (code: String) : Role = and(SingleRole(RoleCode.of(code)))
     def and (code: Role)   : Role = AndRole(this, code)
 
-    def isSatisfiedBy(token: Token)(using app: ApplicationCode): Boolean
+    def isSatisfiedBy(token: Token)(using ApplicationCode): Boolean
   }
 
   private case class SingleRole(code: RoleCode) extends Role {
     override def toString = RoleCode.value(code)
-    override def isSatisfiedBy(token: Token)(using app: ApplicationCode): Boolean = token.hasRole(code)
+    override def isSatisfiedBy(token: Token)(using ApplicationCode): Boolean = token.hasRole(code)
   }
 
   private case class OrRole(r1: Role, r2: Role) extends Role {
     override def toString = s"($r1 || $r2)"
-    override def isSatisfiedBy(tk: Token)(using app: ApplicationCode): Boolean = r1.isSatisfiedBy(tk) || r2.isSatisfiedBy(tk)
+    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = r1.isSatisfiedBy(tk) || r2.isSatisfiedBy(tk)
 
   }
 
   private case class AndRole(r1: Role, r2: Role) extends Role {
     override def toString = s"($r1 && $r2)"
-    override def isSatisfiedBy(tk: Token)(using app: ApplicationCode): Boolean = r1.isSatisfiedBy(tk) && r2.isSatisfiedBy(tk)
+    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = r1.isSatisfiedBy(tk) && r2.isSatisfiedBy(tk)
   }
 }

@@ -449,7 +449,7 @@ object domain {
           r <- a.groups.flatMap(_.roles).find(_.code == code)
         } yield r
 
-      def hasRole(code: RoleCode)(using app: ApplicationCode) =
+      def hasRole(code: RoleCode)(using ApplicationCode) =
         roleByCode(code).isDefined
 
       def groups(using app: ApplicationCode): Seq[RawGroup] =

@@ -28,12 +28,9 @@ object utils {
   import domain.raw.RawUser
   import domain.simple.*
   import domain.mini.*
-  import types.ApplicationCode
   import guara.errors.ReturnResponseWithExceptionError
   import zio.json.*
   import zio.http.Response
-
-  val Morbid = ApplicationCode.of("morbid")
 
   extension (user: RawUser)
     def asJson(format: Option[String]): String = {
