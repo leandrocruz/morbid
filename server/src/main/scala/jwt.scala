@@ -9,7 +9,7 @@ object tokens {
   import domain.token.Token
   import morbid.config.MorbidConfig
   import better.files._
-  import guara.errors.ReturnResponseError
+  import guara.errors.*
   import zio.json.*
   import zio.http.Response
   import io.jsonwebtoken.{Jwts, Jws}
@@ -186,7 +186,7 @@ object tokens {
         token   <- asToken(new String(str))
         now     <- Clock.localDateTime
         expired =  isExpired(token, now.atZone(zone))
-        _       <- ZIO.when(expired) { ZIO.fail(ReturnResponseError(Response.forbidden("Token is expired"))) }
+        _       <- ZIO.when(expired) { ZIO.fail(Exception("Token is expired")) }
       } yield token
     }
   }
