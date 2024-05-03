@@ -198,26 +198,7 @@ object router {
       ensureResponse {
         for {
           token  <- tokenFrom(request)
-          _      <- if(role.isSatisfiedBy(token)) ZIO.unit else ZIO.fail(ReturnResponseError(Response.forbidden(s"Required role $role is missing")))
-          result <- fn(request, token)
-        } yield result
-      }
-    }
-
-    private def role(code: String, codes: String*)(fn: (Request, Token) => Task[Response])(request: Request): Task[Response] = {
-
-      def hasRole(token: Token)(role: RoleCode): Task[RawRole] = {
-
-        ZIO
-          .fromOption(token.roleByCode(role))
-          .mapError(_ => ReturnResponseError(Response.forbidden(s"Required role $role is missing")))
-      }
-
-      val roles = codes.toList.prepended(code).map(name => RoleCode.of(name))
-      ensureResponse {
-        for {
-          token  <- tokenFrom(request)
-          _      <- ZIO.foreach(roles) { hasRole(token) }
+          _      <- if(role.isSatisfiedBy(token)) ZIO.unit else ZIO.fail(ReturnResponseError(Response.forbidden(s"Required role $role is missing from (${token.roles})")))
           result <- fn(request, token)
         } yield result
       }
