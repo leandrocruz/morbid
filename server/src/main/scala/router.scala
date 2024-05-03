@@ -57,6 +57,8 @@ object cookies {
 object router {
 
   import cookies.*
+  import roles.*
+  import roles.given
 
   private val corsConfig =  CorsConfig()
 
@@ -82,8 +84,8 @@ object router {
     private def tokenFrom(request: Request): Task[Token] = {
       (request.headers.get("X-MorbidToken"), request.cookie("morbid-token")) match
         case (None, None     ) => GuaraError.fail(Response.unauthorized("Authorization cookie or header is missing"))
-        case (Some(header), _) => tokens.verify(header)
-        case (_, Some(cookie)) => tokens.verify(cookie.content)
+        case (Some(header), _) => tokens.verify(header)         .mapError(GuaraError.of(Response.unauthorized("Error verifying token")))
+        case (_, Some(cookie)) => tokens.verify(cookie.content) .mapError(GuaraError.of(Response.unauthorized("Error verifying token")))
     }
 
     private def applicationDetailsGiven(request: Request): Task[Response] = ensureResponse {
@@ -192,6 +194,16 @@ object router {
         case Some(user) => Response.json(user.asJson(request.url.queryParams.get("format")))
     }
 
+    private def role(role: Role)(fn: (Request, Token) => Task[Response])(request: Request): Task[Response] = {
+      ensureResponse {
+        for {
+          token  <- tokenFrom(request)
+          _      <- if(role.isSatisfiedBy(token)) ZIO.unit else ZIO.fail(ReturnResponseError(Response.forbidden(s"Required role $role is missing")))
+          result <- fn(request, token)
+        } yield result
+      }
+    }
+
     private def role(code: String, codes: String*)(fn: (Request, Token) => Task[Response])(request: Request): Task[Response] = {
 
       def hasRole(token: Token)(role: RoleCode): Task[RawRole] = {
@@ -204,14 +216,14 @@ object router {
       val roles = codes.toList.prepended(code).map(name => RoleCode.of(name))
       ensureResponse {
         for {
-          token  <- tokenFrom(request).debug
+          token  <- tokenFrom(request)
           _      <- ZIO.foreach(roles) { hasRole(token) }
           result <- fn(request, token)
         } yield result
       }
     }
 
-    private def storeGroup(app: String, request: Request): Task[Response] = role("group_adm") { (_, token) =>
+    private def storeGroup(app: String, request: Request): Task[Response] = role("adm" or "group_adm") { (_, token) =>
 
       def build(req: StoreGroupRequest, app: RawApplication, code: GroupCode, now: LocalDateTime) = {
         val group = RawGroup(
@@ -247,7 +259,7 @@ object router {
       yield Response.json(created.toJson)).errorToResponse(Response.internalServerError("Error creating group"))
     } (request)
 
-    private def createUser = role("user_adm") { (request, token) =>
+    private def createUser = role("adm" or "user_adm") { (request, token) =>
 
       def uniqueCode(email: Email): Task[UserCode] = {
 
@@ -329,16 +341,14 @@ object router {
       } yield loginResponse(impersonated, encoded)
     }
 
-    private def userCount(app: String, request: Request): Task[Response] = {
-      role("adm") { (_, _) =>
-        for {
-          data   <- billing.usersByAccount(ApplicationCode.of(app))
-          result = data.map {
-                     case (acc, count) => (s"${acc.name} (id:${acc.id}, code:${acc.code})", count)
-                   }
-        } yield Response.json(result.toJson)
-      } (request)
-    }
+    private def userCount(app: String, request: Request) = role("adm") { (_, _) =>
+      for {
+        data   <- billing.usersByAccount(ApplicationCode.of(app))
+        result = data.map {
+                   case (acc, count) => (s"${acc.name} (id:${acc.id}, code:${acc.code})", count)
+                 }
+      } yield Response.json(result.toJson)
+    } (request)
 
     private def usersGiven(request: Request, application: ApplicationCode, group: Option[GroupCode] = None): Task[Response] = ensureResponse {
       for {
@@ -392,5 +402,32 @@ object router {
     ).sandbox.toHttpApp
 
     override def routes: HttpApp[Any] = Echo.routes ++ regular @@ cors(corsConfig)
+  }
+}
+
+object roles {
+
+  given Conversion[String, Role] with
+    def apply(code: String): Role = SingleRole(RoleCode.of(code))
+
+  sealed trait Role {
+    def or  (code: String) : Role = or(SingleRole(RoleCode.of(code)))
+    def or  (code: Role)   : Role = OrRole(this, code)
+    def and (code: String) : Role = and(SingleRole(RoleCode.of(code)))
+    def and (code: Role)   : Role = AndRole(this, code)
+
+    def isSatisfiedBy(token: Token)(using app: ApplicationCode): Boolean
+  }
+
+  private case class SingleRole(code: RoleCode) extends Role {
+    override def isSatisfiedBy(token: Token)(using app: ApplicationCode): Boolean = token.hasRole(code)
+  }
+
+  private case class OrRole(r1: Role, r2: Role) extends Role {
+    override def isSatisfiedBy(tk: Token)(using app: ApplicationCode): Boolean = r1.isSatisfiedBy(tk) || r2.isSatisfiedBy(tk)
+  }
+
+  private case class AndRole(r1: Role, r2: Role) extends Role {
+    override def isSatisfiedBy(tk: Token)(using app: ApplicationCode): Boolean = r1.isSatisfiedBy(tk) && r2.isSatisfiedBy(tk)
   }
 }
