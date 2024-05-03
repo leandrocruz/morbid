@@ -25,7 +25,7 @@ object JsonSpec extends ZIOSpecDefault {
       test("whitespace code decode") { assert(safeCode(10).decodeJson("\"c ode\""))     { isLeft  (equalTo("('c ode' has invalid chars)")) } },
 
       test("encode/decode") {
-        val obj = CodeAndName("code".as[RoleCode], "My Name is Tanaka".as[RoleName])
+        val obj = CodeAndName(RoleCode.of("code"), RoleName.of("My Name is Tanaka"))
         assert(obj.toJson.fromJson[CodeAndName]) { isRight(equalTo(obj)) }
       }
     )
