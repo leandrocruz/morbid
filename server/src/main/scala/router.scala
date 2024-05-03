@@ -420,14 +420,18 @@ object roles {
   }
 
   private case class SingleRole(code: RoleCode) extends Role {
+    override def toString = RoleCode.value(code)
     override def isSatisfiedBy(token: Token)(using app: ApplicationCode): Boolean = token.hasRole(code)
   }
 
   private case class OrRole(r1: Role, r2: Role) extends Role {
+    override def toString = s"($r1 || $r2)"
     override def isSatisfiedBy(tk: Token)(using app: ApplicationCode): Boolean = r1.isSatisfiedBy(tk) || r2.isSatisfiedBy(tk)
+
   }
 
   private case class AndRole(r1: Role, r2: Role) extends Role {
+    override def toString = s"($r1 && $r2)"
     override def isSatisfiedBy(tk: Token)(using app: ApplicationCode): Boolean = r1.isSatisfiedBy(tk) && r2.isSatisfiedBy(tk)
   }
 }
