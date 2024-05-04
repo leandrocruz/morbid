@@ -47,6 +47,7 @@ object types {
   given JsonCodec[RoleId]        = JsonCodec.long
   given JsonCodec[PermissionId]  = JsonCodec.long
   given JsonCodec[ProviderId]    = JsonCodec.long
+  given JsonCodec[Password]      = JsonCodec.string
 
   // w = [a-zA-Z_0-9]
 
@@ -95,7 +96,6 @@ object types {
   given JsonDecoder      [Email]           = safeDecode(email, 256)
   given JsonDecoder      [Domain]          = safeDecode(domain, 256)
   given JsonDecoder      [Magic]           = JsonDecoder.string
-  given JsonDecoder      [Password]        = JsonDecoder.string
   given JsonDecoder      [Pin]             = JsonDecoder.string
 
   given JsonFieldEncoder[ApplicationName] = JsonFieldEncoder.string
@@ -479,7 +479,9 @@ object domain {
 
   object requests {
     case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
+    case class StoreUserRequest(id: Option[UserId], code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], update: Boolean)
 
     given JsonCodec[StoreGroupRequest] = DeriveJsonCodec.gen
+    given JsonCodec[StoreUserRequest]  = DeriveJsonCodec.gen
   }
 }

@@ -8,7 +8,7 @@ object client {
   import morbid.domain.*
   import morbid.domain.raw.*
   import morbid.domain.token.{Token, RawToken}
-  import morbid.domain.requests.StoreGroupRequest
+  import morbid.domain.requests.{StoreGroupRequest, StoreUserRequest}
   import morbid.domain.requests.given
   import guara.utils.parse
   import guara.errors.{ReturnResponseWithExceptionError, ReturnResponseError}
@@ -18,13 +18,14 @@ object client {
   trait MorbidClient {
     def proxy(request: Request): Task[Response]
     def tokenFrom(token: RawToken): Task[Token]
-    def groups                                    (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
-    def groupsByCode      (groups: Seq[GroupCode])(using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
-    def groupByCode       (group: GroupCode)      (using token: RawToken, app: ApplicationCode): Task[Option[RawGroup]]
-    def usersByGroupByCode(group: GroupCode)      (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
-    def users                                     (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
-    def roles                                     (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]
-    def storeGroup(request: StoreGroupRequest)    (using token: RawToken, app: ApplicationCode): Task[RawGroup]
+    def groups                                     (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
+    def groupsByCode      (groups: Seq[GroupCode]) (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
+    def groupByCode       (group: GroupCode)       (using token: RawToken, app: ApplicationCode): Task[Option[RawGroup]]
+    def usersByGroupByCode(group: GroupCode)       (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
+    def users                                      (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
+    def roles                                      (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]
+    def storeGroup(request: StoreGroupRequest)     (using token: RawToken, app: ApplicationCode): Task[RawGroup]
+    def storeUser (request: StoreUserRequest)      (using token: RawToken, app: ApplicationCode): Task[RawUser]
   }
 
   case class MorbidClientConfig(url: String)
@@ -90,6 +91,7 @@ object client {
     override def groups                                     (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]     = get[Seq[RawGroup]]                (base / "app" / ApplicationCode.value(app) / "groups")
     override def groupsByCode      (groups: Seq[GroupCode]) (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]     = get[Seq[RawGroup]]               ((base / "app" / ApplicationCode.value(app) / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
     override def usersByGroupByCode(group: GroupCode)       (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]] = get[Seq[RawUserEntry]]            (base / "app" / ApplicationCode.value(app) / "group" / GroupCode.value(group) / "users")
+    override def storeUser(request: StoreUserRequest)       (using token: RawToken, app: ApplicationCode): Task[RawUser]           = post[StoreUserRequest, RawUser]   (base / "app" / ApplicationCode.value(app) / "user", request)
     override def users                                      (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]] = get[Seq[RawUserEntry]]            (base / "app" / ApplicationCode.value(app) / "users")
     override def roles                                      (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]      = get[Seq[RawRole]]                 (base / "app" / ApplicationCode.value(app) / "roles")
   }

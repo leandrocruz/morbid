@@ -136,10 +136,10 @@ object gip {
     //See https://firebase.google.com/docs/auth/admin/manage-users
     override def createUser(request: CreateUser, password: Password): Task[Unit] = {
       val req = new CreateRequest()
-        .setEmail(Email.value(request.email))
-        .setUid(UserCode.value(request.code))
-        .setPassword(Password.value(password))
-        .setDisabled(false)
+        .setEmail    (Email.value(request.email)  )
+        .setUid      (UserCode.value(request.code))
+        .setPassword (Password.value(password)    )
+        .setDisabled (false)
 
       ZIO.attempt { authGiven(Some(request.account.tenantCode)).createUser(req) }
     }

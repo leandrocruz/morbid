@@ -6,7 +6,7 @@ import commands.*
 import config.MorbidConfig
 import domain.*
 import domain.raw.*
-import domain.requests.StoreGroupRequest
+import domain.requests.{StoreGroupRequest, StoreUserRequest}
 import domain.token.Token
 import gip.*
 import passwords.PasswordGenerator
@@ -15,7 +15,7 @@ import repo.Repo
 import proto.*
 import tokens.*
 import types.*
-import utils.{asJson, errorToResponse, orFail}
+import utils.{asJson, errorToResponse, orFail, refineError}
 import guara.utils.{ensureResponse, parse}
 import guara.errors.*
 import guara.router.Router
@@ -247,7 +247,7 @@ object router {
       yield Response.json(created.toJson)).errorToResponse(Response.internalServerError("Error creating group"))
     }
 
-    private def createUser: AppRoute = role("adm" or "user_adm") { (request, token) =>
+    private def storeUser: AppRoute = role("adm" or "user_adm") { (request, token) =>
 
       def uniqueCode(email: Email): Task[UserCode] = {
 
@@ -268,7 +268,7 @@ object router {
           case Some(user) => attemptUnique(user, 0)
       }
 
-      def buildRequest(req: CreateUserRequest, account: RawAccount, code: UserCode) =
+      def buildRequest(req: StoreUserRequest, account: RawAccount, code: UserCode) =
         req
           .into[CreateUser]
           .withFieldConst(_.account, account)
@@ -276,16 +276,15 @@ object router {
           .transform
 
       for
-        req    <- request.body.parse[CreateUserRequest]
+        req    <- request.body.parse[StoreUserRequest]
         pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate)
         code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
         acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
         create  = buildRequest(req, acc, code)
-        _      <- ZIO.logInfo(s"Creating user '${create.email}' in account '${create.account}' in tenant '${create.account.tenantCode}'")
-        user   <- repo.exec(create)
-        _      <- ZIO.logInfo(s"User '${user.details.email}' created")
-        _      <- identities.createUser(create, pwd)
-        _      <- ZIO.logInfo(s"Creation for user '${create.email}' successful")
+        _      <- ZIO.logInfo(s"Storing user '${create.email}/${create.id.getOrElse("_")}' in account '${create.account}' in tenant '${create.account.tenantCode}' (update ? ${req.update})")
+        user   <- repo.exec(create).refineError(s"Error storing user '${create.email}'")
+        _      <- ZIO.logInfo(s"User '${user.details.email}' stored")
+        _      <- identities.createUser(create, pwd).refineError("Error storing user identity")
       yield Response.json(user.toJson)
     }
 
@@ -376,7 +375,7 @@ object router {
       Method.POST / "user" / "pin"                   -> Handler.fromFunctionZIO[Request](setUserPin),
       Method.POST / "user" / "pin" / "validate"      -> Handler.fromFunctionZIO[Request](validateUserPin),
       Method.GET  / "app" / string("app") / "users"  -> handler(appRoute(usersGiven)),
-      Method.POST / "app" / string("app") / "user"   -> handler(appRoute(createUser)),
+      Method.POST / "app" / string("app") / "user"   -> handler(appRoute(storeUser)),
       Method.GET  / "app" / string("app") / "groups" -> handler(groupsGiven),
       Method.POST / "app" / string("app") / "group"  -> handler(appRoute(storeGroup)),
       Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),

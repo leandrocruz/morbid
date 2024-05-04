@@ -29,7 +29,7 @@ object accounts {
         for {
           account <- repo.exec(FindAccountByProvider(id)).orFail(s"Can't find account for provider '$identity'")
           _       <- ZIO.logInfo(s"Provisioning user :: tenant:${account.tenant} account:${account.id}, idp:$id, code:${identity.code}, email:${identity.email}")
-          user    <- repo.exec(CreateUser(identity.email, identity.code, account))
+          user    <- repo.exec(CreateUser(None, identity.email, identity.code, account))
           result  <- repo.exec(FindUserByEmail(user.details.email)).orFail(s"Error reading newly created user, email:${user.details.email}") // load applications, groups, etc
         } yield result
       }

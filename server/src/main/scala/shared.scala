@@ -68,7 +68,6 @@ object proto {
   case class ImpersonationRequest(email: Email, magic: Magic)
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
-  case class CreateUserRequest(email: Email, code: Option[UserCode] = None, password: Option[Password] = None, kind: Option[UserKind] = None, tenant: Option[TenantCode] = None)
   case class SetUserPin     (pin: Pin)
   case class ValidateUserPin(pin: Pin)
 
@@ -77,7 +76,6 @@ object proto {
   given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[SetClaimsRequest]         = DeriveJsonDecoder.gen
   given JsonDecoder[GetLoginMode]             = DeriveJsonDecoder.gen
-  given JsonDecoder[CreateUserRequest]        = DeriveJsonDecoder.gen
   given JsonDecoder[SetUserPin]               = DeriveJsonDecoder.gen
   given JsonDecoder[ValidateUserPin]          = DeriveJsonDecoder.gen
 }
@@ -152,6 +150,7 @@ object commands {
   case class DefineUserPin(user: UserId, pin: Sha256Hash) extends Command[Unit]
 
   case class CreateUser(
+    id      : Option[UserId],
     email   : Email,
     code    : UserCode,
     account : RawAccount,
