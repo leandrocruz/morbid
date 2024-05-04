@@ -138,7 +138,9 @@ object types {
   object RoleId          extends OpaqueOps[Long, RoleId]
   object RoleName        extends OpaqueOps[String, RoleName]
   object Sha256Hash      extends OpaqueOps[String, Sha256Hash]
-  object TenantCode      extends OpaqueOps[String, TenantCode]
+  object TenantCode      extends OpaqueOps[String, TenantCode] {
+    val DEFAULT = TenantCode.of("DEFAULT")
+  }
   object TenantId        extends OpaqueOps[Long, TenantId]
   object TenantName      extends OpaqueOps[String, TenantName]
   object UserCode        extends OpaqueOps[String, UserCode]

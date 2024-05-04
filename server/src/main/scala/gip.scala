@@ -129,8 +129,8 @@ object gip {
 
     private def authGiven(code: Option[TenantCode]) = {
       code match
-        case Some(value) => auth.getTenantManager.getAuthForTenant(TenantCode.value(value))
-        case None        => auth
+        case None | Some(TenantCode.DEFAULT) => auth
+        case Some(value)                     => auth.getTenantManager.getAuthForTenant(TenantCode.value(value))
     }
 
     //See https://firebase.google.com/docs/auth/admin/manage-users

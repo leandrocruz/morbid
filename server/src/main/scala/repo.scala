@@ -585,7 +585,7 @@ object repo {
 
     private def providerGiven(request: FindProviderByDomain): Task[Option[RawIdentityProvider]] = {
 
-      val code = request.code.getOrElse(TenantCode.of("DEFAULT"))
+      val code = request.code.getOrElse(TenantCode.DEFAULT)
 
       inline def query = quote {
         for {
