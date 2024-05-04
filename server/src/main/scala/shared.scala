@@ -145,12 +145,13 @@ object commands {
   ) extends Command[Seq[RawUserEntry]]
 
   case class FindUsersByCode(account: AccountId, codes: Seq[UserCode]) extends Command[Seq[RawUserEntry]]
+  case class FindUserById(id: UserId) extends Command[Option[RawUser]]
   case class FindUserByEmail(email: Email) extends Command[Option[RawUser]]
   case class GetUserPin(user: UserId) extends Command[Option[Sha256Hash]]
   case class DefineUserPin(user: UserId, pin: Sha256Hash) extends Command[Unit]
 
-  case class CreateUser(
-    id      : Option[UserId],
+  case class StoreUser(
+    id      : UserId, // maybe 0
     email   : Email,
     code    : UserCode,
     account : RawAccount,

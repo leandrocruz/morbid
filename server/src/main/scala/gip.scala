@@ -29,7 +29,7 @@ object gip {
     def providerGiven(account: AccountId)                       : Task[Option[RawIdentityProvider]]
     def verify     (req: VerifyGoogleTokenRequest)              : Task[CloudIdentity]
     def claims     (req: SetClaimsRequest)                      : Task[Unit]
-    def createUser (req: CreateUser, password: Password)        : Task[Unit]
+    def createUser (req: StoreUser, password: Password)        : Task[Unit]
   }
 
   case class CloudIdentity(
@@ -134,7 +134,7 @@ object gip {
     }
 
     //See https://firebase.google.com/docs/auth/admin/manage-users
-    override def createUser(request: CreateUser, password: Password): Task[Unit] = {
+    override def createUser(request: StoreUser, password: Password): Task[Unit] = {
       val req = new CreateRequest()
         .setEmail    (Email.value(request.email)  )
         .setUid      (UserCode.value(request.code))

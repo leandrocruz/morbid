@@ -309,7 +309,7 @@ object repo {
     override def exec[R](command: Command[R]): Task[R] = {
       command match
         case r: StoreGroup            => storeGroup(r)
-        case r: CreateUser            => create(r)
+        case r: StoreUser             => storeUser(r)
         case r: DefineUserPin         => setUserPin(r)
         case r: GetUserPin            => getUserPin(r)
         case r: FindAccountByCode     => accountByCode(r)
@@ -322,6 +322,7 @@ object repo {
         case r: FindRoles             => rolesGiven(r)
         case r: FindUsersByCode       => usersGiven(r)
         case r: FindUserByEmail       => userGiven(r)
+        case r: FindUserById          => userGiven(r)
         case r: FindUsersInGroup      => usersGiven(r)
         case r: LinkUsersToGroup      => addGroups(r)
         case r: UnlinkUsersFromGroup  => ZIO.fail(Exception("TODO"))
@@ -331,11 +332,15 @@ object repo {
         case r: UserExists            => userExists(r)
     }
 
-    private def userGiven(request: FindUserByEmail): Task[Option[RawUser]] = {
+    private def userGiven(request: FindUserByEmail | FindUserById): Task[Option[RawUser]] = {
+
+      def filterUser = request match
+        case FindUserById(id)       => quote { users.filter { usr => usr.active && usr.deleted.isEmpty && usr.id    == lift(id)    } }
+        case FindUserByEmail(email) => quote { users.filter { usr => usr.active && usr.deleted.isEmpty && usr.email == lift(email) } }
 
       inline def appQuery = quote {
         for {
-          usr <- users                                   if usr.active && usr.deleted.isEmpty && usr.email == lift(request.email)
+          usr <- filterUser
           acc <- accounts     .join(_.id == usr.account) if acc.active && acc.deleted.isEmpty
           ten <- tenants      .join(_.id == acc.tenant)  if ten.active && ten.deleted.isEmpty
           a2a <- account2app  .join(_.acc == acc.id)     if a2a.deleted.isEmpty
@@ -384,6 +389,7 @@ object repo {
       }
 
       for {
+        _      <- printQuery(appQuery)
         rows   <- exec(run(appQuery))
         maybe  <- asRawUser(rows)
         result <- maybe match
@@ -406,7 +412,7 @@ object repo {
       } yield rows.length == 1
     }
 
-    private def create(req: CreateUser): Task[RawUser] = {
+    private def storeUser(req: StoreUser): Task[RawUser] = {
 
       def build(created: LocalDateTime) = {
         RawUser(details = RawUserDetails(
@@ -438,10 +444,16 @@ object repo {
         } yield result
       }
 
+      def findExistingUser = {
+        if (UserId.value(req.id) > 0) userGiven(FindUserById(req.id))
+        else                          ZIO.succeed(None)
+      }
+
       for {
-        now <- Clock.localDateTime
-        raw =  build(now)
-        usr <- store(raw)
+        now      <- Clock.localDateTime
+        raw      =  build(now)
+        existing <- findExistingUser
+        usr      <- store(raw)
       } yield usr
 
     }
@@ -873,7 +885,6 @@ object repo {
       }
 
       for {
-        _    <- printQuery(query)
         rows <- exec(run(query))
       } yield rows.map {
         case (account, count) => account.into[RawAccount].withFieldConst(_.tenantCode, TenantCode.of("")).transform -> count.toInt

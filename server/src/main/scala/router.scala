@@ -25,7 +25,7 @@ import zio.json.*
 import zio.http.Cookie.SameSite
 import zio.http.{Cookie, Handler, HttpApp, Method, Path, Request, Response, Routes, handler}
 import zio.http.Middleware.{CorsConfig, cors}
-import zio.http.codec.PathCodec.string
+import zio.http.codec.PathCodec.{string, long}
 import io.scalaland.chimney.dsl.*
 
 import scala.util.Random
@@ -202,20 +202,31 @@ object router {
       }
     }
 
-    private def userByEmail(request: Request): Task[Response] = {
-      for {
-        email     <- request.url.queryParams.get("email").orFail("email not provided")
-        maybeUser <- repo.exec(FindUserByEmail(Email.of(email)))
-      } yield maybeUser match
-        case None       => Response.notFound
-        case Some(user) => Response.json(user.asJson(request.url.queryParams.get("format")))
+    private def userBy(request: Request): Task[Response] = {
+
+      val email = request.url.queryParams.get("email").map(Email.of)
+      val id    = request.url.queryParams.get("id").map(_.toLong).map(UserId.of)
+
+      def get(cmd: Command[Option[RawUser]]) = {
+        for
+          user <- repo.exec(cmd).mapError(Exception(s"Error searching for user (id:${id.getOrElse("_")}, email:${email.getOrElse("_")})", _))
+        yield user match
+          case Some(usr) => Response.json(usr.toJson)
+          case None      => Response.notFound
+      }
+
+      (email, id) match
+        case ( None, Some(id)    ) => get(FindUserById(id))
+        case ( Some(email), None ) => get(FindUserByEmail(email))
+        case ( Some(_), Some(_)  ) => ZIO.succeed(Response.badRequest("Please provider an ID or EMAIL. Not both"))
+        case ( None, None        ) => ZIO.succeed(Response.badRequest("Please provider an ID or EMAIL"))
     }
 
     private def storeGroup: AppRoute = role("adm" or "group_adm") { (request, token) =>
 
       def build(req: StoreGroupRequest, app: RawApplication, code: GroupCode, now: LocalDateTime) = {
         val group = RawGroup(
-          id      = req.id.getOrElse(GroupId.of(0)),
+          id      = req.id,
           created = now,
           deleted = None,
           code    = code,
@@ -253,7 +264,7 @@ object router {
 
         def attemptUnique(user: EmailUser, count: Int): Task[UserCode] = {
 
-          def gen: Task[UserCode] = ZIO.attempt(UserCode.of(Random.alphanumeric.take(128).mkString("")))
+          def gen: Task[UserCode] = ZIO.attempt(UserCode.of(Random.alphanumeric.take(16).mkString("")))
 
           for {
             _      <- ZIO.when(count > 10) { ZIO.fail(new Exception("Can't generate user code. Too many attempts")) }
@@ -270,7 +281,7 @@ object router {
 
       def buildRequest(req: StoreUserRequest, account: RawAccount, code: UserCode) =
         req
-          .into[CreateUser]
+          .into[StoreUser]
           .withFieldConst(_.account, account)
           .withFieldConst(_.code, code)
           .transform
@@ -281,7 +292,7 @@ object router {
         code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
         acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
         create  = buildRequest(req, acc, code)
-        _      <- ZIO.logInfo(s"Storing user '${create.email}/${create.id.getOrElse("_")}' in account '${create.account}' in tenant '${create.account.tenantCode}' (update ? ${req.update})")
+        _      <- ZIO.logInfo(s"Storing user '${create.email}/${create.id}' in account '${create.account}' in tenant '${create.account.tenantCode}' (update ? ${req.update})")
         user   <- repo.exec(create).refineError(s"Error storing user '${create.email}'")
         _      <- ZIO.logInfo(s"User '${user.details.email}' stored")
         _      <- identities.createUser(create, pwd).refineError("Error storing user identity")
@@ -290,7 +301,7 @@ object router {
 
     private def usersGiven: AppRoute = role("adm" or "user_adm") { (request, token) =>
       val application = summon[ApplicationCode]
-      usersGiven(request, application)
+      usersGiven(request, application, None)
     }
 
     private def setUserPin(request: Request): Task[Response] = ensureResponse {
@@ -340,7 +351,7 @@ object router {
       } yield Response.json(seq.toJson)
     }
 
-    private def groupUsers(app: String, group: String, request: Request) : Task[Response] = usersGiven(request, ApplicationCode.of(app), Some(GroupCode.of(group)))
+    private def groupUsers(app: String, group: String, request: Request): Task[Response] = usersGiven(request, ApplicationCode.of(app), Some(GroupCode.of(group)))
 
     private def groupsGiven(app: String, request: Request): Task[Response] = ensureResponse {
       val appCode = ApplicationCode.of(app)
@@ -371,7 +382,7 @@ object router {
       Method.POST / "logoff"                         -> Handler.fromFunctionZIO[Request](logoff),
       Method.POST / "verify"                         -> Handler.fromFunctionZIO[Request](verify),
       Method.POST / "impersonate"                    -> Handler.fromFunctionZIO[Request](impersonate),
-      Method.GET  / "user"                           -> Handler.fromFunctionZIO[Request](userByEmail),
+      Method.GET  / "user"                           -> Handler.fromFunctionZIO[Request](userBy),
       Method.POST / "user" / "pin"                   -> Handler.fromFunctionZIO[Request](setUserPin),
       Method.POST / "user" / "pin" / "validate"      -> Handler.fromFunctionZIO[Request](validateUserPin),
       Method.GET  / "app" / string("app") / "users"  -> handler(appRoute(usersGiven)),
