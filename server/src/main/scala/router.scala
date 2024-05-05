@@ -295,7 +295,7 @@ object router {
         store  = buildRequest(req, acc, code)
         _      <- ZIO.logInfo(s"Storing user '${store.email}/${store.id}' in account '${store.account.id}' in tenant '${store.account.tenantCode}' (update ? ${store.update})")
         user   <- repo.exec(store).refineError(s"Error storing user '${store.email}'")
-        _      <- ZIO.logInfo(s"User '${user.details.email}' stored")
+        _      <- ZIO.logInfo(s"User '${user.email}/${user.id}' stored")
         _      <- identities.createUser(store, pwd).refineError("Error storing user identity")
       yield Response.json(user.toJson)
     }

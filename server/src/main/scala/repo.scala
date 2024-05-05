@@ -412,35 +412,34 @@ object repo {
       } yield rows.length == 1
     }
 
-    private def storeUser(req: StoreUser): Task[RawUser] = {
+    private def storeUser(req: StoreUser): Task[RawUserEntry] = {
 
       def build(created: LocalDateTime) = {
-        RawUser(details = RawUserDetails(
-          id          = req.id,
-          tenant      = req.account.tenant,
-          tenantCode  = req.account.tenantCode,
-          account     = req.account.id,
-          accountCode = req.account.code,
-          created     = created,
-          active      = true,
-          code        = req.code,
-          email       = req.email,
-          kind        = req.kind
-        ))
+        RawUserEntry(
+          id      = req.id,
+          created = created,
+          deleted = None,
+          account = req.account.id,
+          kind    = req.kind,
+          code    = req.code,
+          active  = true,
+          email   = req.email,
+        )
       }
 
-      def store(raw: RawUser): Task[RawUser] = {
-        val row = raw.details.transformInto[UserRow]
+      def store(raw: RawUserEntry): Task[RawUserEntry] = {
+        val row = raw.transformInto[UserRow]
 
         def insertWithoutId = {
+          
           inline given InsertMeta[UserRow] = insertMeta[UserRow](_.id)
           inline def stmt = quote { users.insertValue(lift(row)).returning(_.id) }
-          val optic = userDetailsLens >>> idLens
+          
           for {
-            _      <- ZIO.log(s"Creating new user '${row.email}'")
-            id     <- exec(run(stmt))
-            result <- ZIO.fromEither(optic.set(id)(raw))
-          } yield result
+            _  <- ZIO.log(s"Creating new user '${row.email}'")
+            id <- exec(run(stmt))
+            
+          } yield raw.copy(id = id)
         }
 
         def insertWithId = {

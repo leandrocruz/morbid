@@ -157,7 +157,7 @@ object commands {
     account : RawAccount,
     kind    : Option[UserKind] = None,
     update  : Boolean, //TODO: remove this as soon as we migrate all users from legacy
-  ) extends Command[RawUser]
+  ) extends Command[RawUserEntry]
 
   case class StoreGroup(
     account     : AccountId,
