@@ -481,7 +481,7 @@ object domain {
 
   object requests {
     case class StoreGroupRequest(id: GroupId, code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
-    case class StoreUserRequest(id: UserId, code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], update: Option[Boolean] /* TODO: remove this ASAP */)
+    case class StoreUserRequest(id: UserId, code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], update: Option[Boolean] /* TODO: remove this as soon as we migrate all users from legacy */)
 
     given JsonCodec[StoreGroupRequest] = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]  = DeriveJsonCodec.gen

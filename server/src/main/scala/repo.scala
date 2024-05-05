@@ -432,28 +432,23 @@ object repo {
       def store(raw: RawUser) = {
         val row = raw.details.transformInto[UserRow]
 
-        inline def stmt = quote {
-          users.insertValue(lift(row)).returning(_.id)
+        inline def stmt = {
+          if(req.update) quote { users.filter(_.id == lift(row.id)).update(_.email -> row.email, _.deleted -> row.deleted, _.active -> row.active) }
+          else           quote { users.insertValue(lift(row)).returning(_.id) }
         }
 
         val optic = userDetailsLens >>> idLens
 
         for {
           id     <- exec(run(stmt))
-          result <- ZIO.fromEither(optic.set(id)(raw))
+          result <- ZIO.fromEither(optic.set(UserId.of(id))(raw))
         } yield result
       }
 
-      def findExistingUser = {
-        if (UserId.value(req.id) > 0) userGiven(FindUserById(req.id))
-        else                          ZIO.succeed(None)
-      }
-
       for {
-        now      <- Clock.localDateTime
-        raw      =  build(now)
-        existing <- findExistingUser
-        usr      <- store(raw)
+        now <- Clock.localDateTime
+        raw =  build(now)
+        usr <- store(raw)
       } yield usr
 
     }

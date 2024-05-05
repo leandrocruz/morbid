@@ -96,7 +96,7 @@ object router {
         }
 
         for {
-          token  <- tokenFrom(request)
+          token  <- tokenFrom(request) //.debug("TOKEN")
           _      <- test(token)
           result <- fn(request, token)
         } yield result
@@ -284,6 +284,7 @@ object router {
           .into[StoreUser]
           .withFieldConst(_.account, account)
           .withFieldConst(_.code, code)
+          .withFieldConst(_.update, req.update.getOrElse(false))
           .transform
 
       for
@@ -291,11 +292,11 @@ object router {
         pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate)
         code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
         acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
-        create  = buildRequest(req, acc, code)
-        _      <- ZIO.logInfo(s"Storing user '${create.email}/${create.id}' in account '${create.account}' in tenant '${create.account.tenantCode}' (update ? ${req.update})")
-        user   <- repo.exec(create).refineError(s"Error storing user '${create.email}'")
+        store  = buildRequest(req, acc, code)
+        _      <- ZIO.logInfo(s"Storing user '${store.email}/${store.id}' in account '${store.account}' in tenant '${store.account.tenantCode}' (update ? ${req.update})")
+        user   <- repo.exec(store).refineError(s"Error storing user '${store.email}'")
         _      <- ZIO.logInfo(s"User '${user.details.email}' stored")
-        _      <- identities.createUser(create, pwd).refineError("Error storing user identity")
+        _      <- identities.createUser(store, pwd).refineError("Error storing user identity")
       yield Response.json(user.toJson)
     }
 
