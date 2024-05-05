@@ -222,7 +222,7 @@ object repo {
 
     private inline given InsertMeta[TenantRow]           = insertMeta[TenantRow]           (_.id)
     private inline given InsertMeta[AccountRow]          = insertMeta[AccountRow]          (_.id)
-    private inline given InsertMeta[UserRow]             = insertMeta[UserRow]             (_.id)
+    //private inline given InsertMeta[UserRow]             = insertMeta[UserRow]             (_.id)
     private inline given InsertMeta[PinRow]              = insertMeta[PinRow]              (_.id)
     private inline given InsertMeta[ApplicationRow]      = insertMeta[ApplicationRow]      (_.id)
     private inline given InsertMeta[GroupRow]            = insertMeta[GroupRow]            (_.id)
@@ -416,7 +416,7 @@ object repo {
 
       def build(created: LocalDateTime) = {
         RawUser(details = RawUserDetails(
-          id          = UserId.of(0),
+          id          = req.id,
           tenant      = req.account.tenant,
           tenantCode  = req.account.tenantCode,
           account     = req.account.id,
@@ -429,21 +429,43 @@ object repo {
         ))
       }
 
-      def store(raw: RawUser) = {
+      def store(raw: RawUser): Task[RawUser] = {
         val row = raw.details.transformInto[UserRow]
 
-        inline def stmt = {
-          if(req.update) quote { users.filter(_.id == lift(row.id)).update(_.email -> row.email, _.deleted -> row.deleted, _.active -> row.active) }
-          else           quote { users.insertValue(lift(row)).returning(_.id) }
+        def insertWithoutId = {
+          inline given InsertMeta[UserRow] = insertMeta[UserRow](_.id)
+          inline def stmt = quote { users.insertValue(lift(row)).returning(_.id) }
+          val optic = userDetailsLens >>> idLens
+          for {
+            _      <- ZIO.log(s"Creating new user '${row.email}'")
+            id     <- exec(run(stmt))
+            result <- ZIO.fromEither(optic.set(id)(raw))
+          } yield result
         }
 
-        val optic = userDetailsLens >>> idLens
+        def insertWithId = {
+          inline def stmt = quote { users.insertValue(lift(row)) }
+          for
+            _ <- ZIO.log(s"Creating new user '${row.email}' with id ${row.id}")
+            _ <- exec(run(stmt))
+          yield raw
+        }
 
-        for {
-          id     <- exec(run(stmt))
-          result <- ZIO.fromEither(optic.set(UserId.of(id))(raw))
-        } yield result
-      }
+        def update = {
+          inline def stmt = quote {
+            users.filter(_.id == lift(row.id)).update(_.email -> lift(row.email), _.deleted -> lift(row.deleted), _.active -> lift(row.active))
+          }
+          for
+            _ <- ZIO.log(s"Updating user '${row.email}' id ${row.id}")
+            _ <- exec(run(stmt))
+          yield raw
+        }
+
+        (req.update, UserId.value(req.id) == 0) match
+          case (true, _ ) => update
+          case (_, false) => insertWithId
+          case (_, true ) => insertWithoutId
+       }
 
       for {
         now <- Clock.localDateTime
