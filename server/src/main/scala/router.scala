@@ -288,12 +288,12 @@ object router {
           .transform
 
       for
-        req    <- request.body.parse[StoreUserRequest]
-        pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate)
+        req    <- request.body.parse[StoreUserRequest].mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate).errorToResponse(Response.internalServerError("Error generating user code"))
         code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
         acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
         store  = buildRequest(req, acc, code)
-        _      <- ZIO.logInfo(s"Storing user '${store.email}/${store.id}' in account '${store.account}' in tenant '${store.account.tenantCode}' (update ? ${req.update})")
+        _      <- ZIO.logInfo(s"Storing user '${store.email}/${store.id}' in account '${store.account.id}' in tenant '${store.account.tenantCode}' (update ? ${store.update})")
         user   <- repo.exec(store).refineError(s"Error storing user '${store.email}'")
         _      <- ZIO.logInfo(s"User '${user.details.email}' stored")
         _      <- identities.createUser(store, pwd).refineError("Error storing user identity")
