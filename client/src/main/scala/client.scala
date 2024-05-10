@@ -8,6 +8,7 @@ object client {
   import morbid.domain.*
   import morbid.domain.raw.*
   import morbid.domain.token.{Token, RawToken}
+  import morbid.domain.token.given
   import morbid.domain.requests.{StoreGroupRequest, StoreUserRequest}
   import morbid.domain.requests.given
   import guara.utils.parse
@@ -43,6 +44,10 @@ object client {
 
   case class RemoteMorbidClient(base: URL, client: Client, scope: Scope) extends MorbidClient {
 
+    case class SimpleToken(token: RawToken)
+
+    given JsonEncoder[SimpleToken] = DeriveJsonEncoder.gen
+
     private val applicationJson = Headers(Chunk(Header.ContentType(MediaType("application", "json"))))
     private def morbidToken(token: RawToken) = Headers(Chunk(Header.Custom("X-MorbidToken", token.string)))
 
@@ -56,13 +61,7 @@ object client {
       } yield resp
     }
 
-    override def tokenFrom(token: RawToken): Task[Token] = {
-      val req = Request.post(base / "verify", Body.fromString(s"""{"token":"$token"}""")).copy(headers = applicationJson)
-      for {
-        res    <- perform(req)
-        result <- res.body.parse[Token]
-      } yield result
-    }
+    override def tokenFrom(token: RawToken): Task[Token] = post[SimpleToken, Token](base / "verify", SimpleToken(token))(using token)
 
     private def exec[T](req: Request)(using token: RawToken, dec: JsonDecoder[T]): Task[T] = {
 
@@ -78,7 +77,7 @@ object client {
       for {
         _      <- ZIO.log(s"Calling '${req.url.encode}'")
         res    <- perform(req.copy(headers = req.headers ++ morbidToken(token))).mapError(e => badGateway(s"Error calling Morbid '${req.url.encode}': ${e.getMessage}"))
-        _      <- if (res.status.code == 200) ZIO.unit else ZIO.fail(ReturnResponseError(res))
+        _      <- ZIO.when(res.status.code != 200) { ZIO.fail(ReturnResponseError(res)) }
         result <- res.body.parse[T].mapError(_ => ReturnResponseError(res))
       } yield result
     }

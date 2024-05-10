@@ -61,7 +61,6 @@ object proto {
 
   import zio.json.*
   import types.*
-  import domain.UserKind
 
   case class VerifyGoogleTokenRequest(token: String)
   case class VerifyMorbidTokenRequest(token: String)

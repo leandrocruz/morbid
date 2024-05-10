@@ -433,8 +433,10 @@ object domain {
 
     opaque type RawToken = String
 
-    object RawToken:
+    object RawToken {
       def of(value: String): RawToken = value
+      given JsonCodec[RawToken] = JsonCodec.string
+    }
 
     extension (it: RawToken)
       def string: String = it

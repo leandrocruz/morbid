@@ -325,8 +325,8 @@ object router {
 
     private def verify(request: Request): Task[Response] = ensureResponse {
       for {
-        req   <- request.body.parse[VerifyMorbidTokenRequest]
-        token <- tokens.verify(req.token).mapError(forbidden)
+        req   <- request.body.parse[VerifyMorbidTokenRequest].mapError(forbidden)
+        token <- tokens.verify(req.token)                    .mapError(forbidden)
       } yield Response.json(token.toJson)
     }
 
