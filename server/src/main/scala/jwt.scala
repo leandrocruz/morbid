@@ -186,7 +186,7 @@ object tokens {
         token   <- asToken(new String(str))
         now     <- Clock.localDateTime
         expired =  isExpired(token, now.atZone(zone))
-        _       <- ZIO.when(expired) { ZIO.fail(Exception("Token is expired")) }
+        _       <- ZIO.when(expired) { ZIO.fail(Exception(s"Token is expired since '${token.expires.getOrElse("???")}'")) }
       } yield token
     }
   }

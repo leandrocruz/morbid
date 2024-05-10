@@ -106,11 +106,13 @@ object router {
     val test: AppRoute = role("") { (_, _) => ZIO.succeed(Response.ok) }
     val x: (String, Request) => Task[Response] = appRoute { test }
 
+    private def forbidden(cause: Throwable) = ReturnResponseError(Response.forbidden(s"Error verifying token: ${cause.getMessage}"))
+
     private def tokenFrom(request: Request): Task[Token] = {
       (request.headers.get("X-MorbidToken"), request.cookie("morbid-token")) match
-        case (None, None     ) => GuaraError.fail(Response.unauthorized("Authorization cookie or header is missing"))
-        case (Some(header), _) => tokens.verify(header)         .mapError(GuaraError.of(Response.unauthorized("Error verifying token")))
-        case (_, Some(cookie)) => tokens.verify(cookie.content) .mapError(GuaraError.of(Response.unauthorized("Error verifying token")))
+        case (None, None     ) => ZIO.fail(Exception("Authorization cookie or header is missing"))
+        case (Some(header), _) => tokens.verify(header)         .mapError(forbidden)
+        case (_, Some(cookie)) => tokens.verify(cookie.content) .mapError(forbidden)
     }
 
     private def applicationDetailsGiven(request: Request): Task[Response] = ensureResponse {
@@ -324,7 +326,7 @@ object router {
     private def verify(request: Request): Task[Response] = ensureResponse {
       for {
         req   <- request.body.parse[VerifyMorbidTokenRequest]
-        token <- tokens.verify(req.token)
+        token <- tokens.verify(req.token).mapError(forbidden)
       } yield Response.json(token.toJson)
     }
 
