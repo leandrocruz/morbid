@@ -77,9 +77,9 @@ object client {
 
       for {
         _      <- ZIO.log(s"Calling '${req.url.encode}'")
-        res    <- perform(req.copy(headers = req.headers ++ morbidToken(token))).mapError(e => badGateway(s"Error calling Morbid: ${e.getMessage}"))
-        _      <- if(res.status.code == 200) ZIO.unit else ZIO.fail(badGateway(s"Response is not 200 (${res.status.code}: ${warnings(res).getOrElse("_")})"))
-        result <- res.body.parse[T].mapError(e => badGateway(s"Error parsing response body: ${e.getMessage}"))
+        res    <- perform(req.copy(headers = req.headers ++ morbidToken(token))).mapError(e => badGateway(s"Error calling Morbid '${req.url.encode}': ${e.getMessage}"))
+        _      <- if (res.status.code == 200) ZIO.unit else ZIO.fail(ReturnResponseError(res))
+        result <- res.body.parse[T].mapError(_ => ReturnResponseError(res))
       } yield result
     }
 
