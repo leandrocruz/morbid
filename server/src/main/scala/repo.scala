@@ -346,6 +346,7 @@ object repo {
           a2a <- account2app  .join(_.acc == acc.id)      if a2a.deleted.isEmpty
           app <- applications .join(_.id  == a2a.app)     if app.active && app.deleted.isEmpty
           grp <- groups       .join(_.app == app.id)      if grp.deleted.isEmpty && grp.acc == acc.id
+          u2g <- user2group   .join(_.grp == grp.id)      if u2g.usr == usr.id
         } yield (ten, acc, usr, app, grp)
       }
 
@@ -361,7 +362,7 @@ object repo {
                            .withFieldConst(_.accountCode, account.code)
                            .transform
                        }
-            apps    <- ZIO.attempt { rows.map(_._4).map(_.transformInto[RawApplicationDetails]).map(RawApplication(_)) }
+            apps    <- ZIO.attempt { rows.map(_._4).distinct.map(_.transformInto[RawApplicationDetails]).map(RawApplication(_)) }
           } yield Some {
             RawUser(details = details, applications = apps)
           }
@@ -386,6 +387,7 @@ object repo {
         )
 
         for {
+          _           <- ZIO.log(s"Looking for user groups: ${codes.mkString(", ")}")
           groupsByApp <- groupsGiven(cmd)
         } yield Some(usr.copy(applications = updateApps(groupsByApp)))
       }
