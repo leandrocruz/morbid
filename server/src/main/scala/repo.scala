@@ -341,14 +341,15 @@ object repo {
       inline def appQuery = quote {
         for {
           usr <- filterUser
-          acc <- accounts     .join(_.id == usr.account) if acc.active && acc.deleted.isEmpty
-          ten <- tenants      .join(_.id == acc.tenant)  if ten.active && ten.deleted.isEmpty
-          a2a <- account2app  .join(_.acc == acc.id)     if a2a.deleted.isEmpty
-          app <- applications .join(_.id == a2a.app)     if app.active && app.deleted.isEmpty
-        } yield (ten, acc, usr, app)
+          acc <- accounts     .join(_.id  == usr.account) if acc.active && acc.deleted.isEmpty
+          ten <- tenants      .join(_.id  == acc.tenant)  if ten.active && ten.deleted.isEmpty
+          a2a <- account2app  .join(_.acc == acc.id)      if a2a.deleted.isEmpty
+          app <- applications .join(_.id  == a2a.app)     if app.active && app.deleted.isEmpty
+          grp <- groups       .join(_.app == app.id)      if grp.deleted.isEmpty && grp.acc == acc.id
+        } yield (ten, acc, usr, app, grp)
       }
 
-      def asRawUser(rows: Seq[(TenantRow, AccountRow, UserRow, ApplicationRow)]): Task[Option[RawUser]] = {
+      def asRawUser(rows: Seq[(TenantRow, AccountRow, UserRow, ApplicationRow, GroupRow)]): Task[Option[RawUser]] = {
 
         def build(tenant: TenantRow, account: AccountRow, user: UserRow): Task[Option[RawUser]] = {
           for {
@@ -367,12 +368,12 @@ object repo {
         }
 
         rows.headOption match {
-          case None                     => ZIO.succeed(None)
-          case Some((tenant, account, user, _)) => build(tenant, account, user)
+          case None                                => ZIO.succeed(None)
+          case Some((tenant, account, user, _, _)) => build(tenant, account, user)
         }
       }
 
-      def groupsFor(usr: RawUser): Task[Option[RawUser]] = {
+      def groupsFor(usr: RawUser, codes: Seq[GroupCode]): Task[Option[RawUser]] = {
 
         def updateApps(groupsByApp: AppMap[RawGroup]) = {
           usr.applications.map { app => app.copy( groups = groupsByApp.getOrElse(app.details.code, Seq.empty)) }
@@ -380,7 +381,8 @@ object repo {
 
         val cmd = FindGroups(
           account = usr.details.accountCode,
-          apps    = usr.applications.map(_.details.code)
+          apps    = usr.applications.map(_.details.code),
+          filter  = codes.distinct
         )
 
         for {
@@ -391,10 +393,11 @@ object repo {
       for {
         _      <- printQuery(appQuery)
         rows   <- exec(run(appQuery))
+        codes  =  rows.map(_._5).map(_.code)
         maybe  <- asRawUser(rows)
         result <- maybe match
           case None      => ZIO.succeed(None)
-          case Some(usr) => groupsFor(usr)
+          case Some(usr) => groupsFor(usr, codes)
       } yield result
     }
 
@@ -661,6 +664,7 @@ object repo {
       }
 
       for {
+        _    <- printQuery(query)
         rows <- exec(run(query))
       } yield merge(rows)
     }
