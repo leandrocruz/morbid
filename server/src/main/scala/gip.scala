@@ -25,11 +25,12 @@ object gip {
   import com.google.firebase.auth.UserRecord.CreateRequest
 
   sealed trait Identities {
+    def passwordResetLink(email: Email)                         : Task[String]
     def providerGiven(email: Email, tenant: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
     def providerGiven(account: AccountId)                       : Task[Option[RawIdentityProvider]]
     def verify     (req: VerifyGoogleTokenRequest)              : Task[CloudIdentity]
     def claims     (req: SetClaimsRequest)                      : Task[Unit]
-    def createUser (req: StoreUser, password: Password)        : Task[Unit]
+    def createUser (req: StoreUser, password: Password)         : Task[Unit]
   }
 
   case class CloudIdentity(
@@ -142,6 +143,12 @@ object gip {
         .setDisabled (false)
 
       ZIO.attempt { authGiven(Some(request.account.tenantCode)).createUser(req) }
+    }
+
+    override def passwordResetLink(email: Email): Task[String] = {
+      ZIO.attempt {
+        auth.generatePasswordResetLink(Email.value(email))
+      }
     }
   }
 }

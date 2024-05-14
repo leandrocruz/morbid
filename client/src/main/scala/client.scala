@@ -9,7 +9,7 @@ object client {
   import morbid.domain.raw.*
   import morbid.domain.token.{Token, RawToken}
   import morbid.domain.token.given
-  import morbid.domain.requests.{StoreGroupRequest, StoreUserRequest}
+  import morbid.domain.requests.{StoreGroupRequest, StoreUserRequest, PasswordResetLink}
   import morbid.domain.requests.given
   import guara.utils.parse
   import guara.errors.{ReturnResponseWithExceptionError, ReturnResponseError}
@@ -27,6 +27,7 @@ object client {
     def roles                                      (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]
     def storeGroup(request: StoreGroupRequest)     (using token: RawToken, app: ApplicationCode): Task[RawGroup]
     def storeUser (request: StoreUserRequest)      (using token: RawToken, app: ApplicationCode): Task[RawUserEntry]
+    def passwordResetLink (email: Email)           (using token: RawToken, app: ApplicationCode): Task[PasswordResetLink]
   }
 
   case class MorbidClientConfig(url: String)
@@ -93,5 +94,6 @@ object client {
     override def storeUser(request: StoreUserRequest)       (using token: RawToken, app: ApplicationCode) = post[StoreUserRequest, RawUserEntry] (base / "app" / ApplicationCode.value(app) / "user", request)
     override def users                                      (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]               (base / "app" / ApplicationCode.value(app) / "users")
     override def roles                                      (using token: RawToken, app: ApplicationCode) = get[Seq[RawRole]]                    (base / "app" / ApplicationCode.value(app) / "roles")
+    override def passwordResetLink(email: Email)            (using token: RawToken, app: ApplicationCode) = get[PasswordResetLink]              ((base / "password" / "reset" / "link").queryParams("email" -> Chunk(Email.value(email))))
   }
 }

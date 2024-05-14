@@ -6,7 +6,7 @@ import commands.*
 import config.MorbidConfig
 import domain.*
 import domain.raw.*
-import domain.requests.{StoreGroupRequest, StoreUserRequest}
+import domain.requests.{StoreGroupRequest, StoreUserRequest, PasswordResetLink}
 import domain.token.Token
 import gip.*
 import passwords.PasswordGenerator
@@ -365,8 +365,6 @@ object router {
       } yield map.get(appCode) match
         case Some(groups) => Response.json(groups.toJson)
         case None         => Response.notFound(s"Can't find groups for '$app'")
-
-
     }
 
     private def rolesGiven(app: String, request: Request): Task[Response] = ensureResponse {
@@ -374,6 +372,17 @@ object router {
         tk  <- tokenFrom(request)
         seq <- repo.exec(FindRoles(tk.user.details.accountCode, ApplicationCode.of(app)))
       } yield Response.json(seq.toJson)
+    }
+
+    private def passwordResetLink(request: Request): Task[Response] = {
+      for
+        email <- ZIO.fromOption(request.url.queryParams.get("email")).map(Email.of).mapError(_ => Exception("Email not provided"))
+        maybe <- repo.exec(FindUserByEmail(email))
+        user  <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find user '$email'"))
+        token <- tokenFrom(request)
+        _     <- ZIO.when(user.details.account != token.user.details.account) { ZIO.fail(Exception("Reset only works for users using the same account as you")) }
+        link  <- identities.passwordResetLink(email)
+      yield Response.json(PasswordResetLink(link).toJson)
     }
 
     private def regular = Routes(
@@ -388,6 +397,7 @@ object router {
       Method.GET  / "user"                           -> Handler.fromFunctionZIO[Request](userBy),
       Method.POST / "user" / "pin"                   -> Handler.fromFunctionZIO[Request](setUserPin),
       Method.POST / "user" / "pin" / "validate"      -> Handler.fromFunctionZIO[Request](validateUserPin),
+      Method.GET  / "password" / "reset" / "link"    -> Handler.fromFunctionZIO[Request](passwordResetLink),
       Method.GET  / "app" / string("app") / "users"  -> handler(appRoute(usersGiven)),
       Method.POST / "app" / string("app") / "user"   -> handler(appRoute(storeUser)),
       Method.GET  / "app" / string("app") / "groups" -> handler(groupsGiven),
