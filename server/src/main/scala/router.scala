@@ -394,8 +394,19 @@ object router {
       } yield Response.json(result.toJson)
     }
 
-    private def setUserPin        : AppRoute = sameUserOr[SetUserPin, Boolean]                           ("adm" or "user_adm") { (user, req) => pins.set(user.details.id, req.pin)     .map(_ => true)               }
-    private def passwordResetLink : AppRoute = sameUserOr[RequestPasswordRequestLink, PasswordResetLink] ("adm" or "user_adm") { (user, req) => identities.passwordResetLink(req.email).map(PasswordResetLink.apply) }
+    private def setUserPin: AppRoute = sameUserOr[SetUserPin, Boolean]("adm" or "user_adm") { (user, req) =>
+      for {
+        _ <- ZIO.logInfo(s"Setting pin for '${user.details.email}'")
+        _ <- pins.set(user.details.id, req.pin)
+      } yield true
+    }
+
+    private def passwordResetLink: AppRoute = sameUserOr[RequestPasswordRequestLink, PasswordResetLink]("adm" or "user_adm") { (user, req) =>
+      for
+        _    <- ZIO.logInfo(s"Generating password reset link for '${req.email}'")
+        link <- identities.passwordResetLink(req.email).map(PasswordResetLink.apply)
+      yield link
+    }
 
     private def setUserPinToBeRemoved(request: Request)(using application: ApplicationCode): Task[Response] = ensureResponse {
 
