@@ -6,7 +6,7 @@ import commands.*
 import config.MorbidConfig
 import domain.*
 import domain.raw.*
-import domain.requests.{StoreGroupRequest, StoreUserRequest, PasswordResetLink}
+import domain.requests.*
 import domain.token.Token
 import gip.*
 import passwords.PasswordGenerator
@@ -103,8 +103,10 @@ object router {
       }
     }
 
-    val test: AppRoute = role("") { (_, _) => ZIO.succeed(Response.ok) }
-    val x: (String, Request) => Task[Response] = appRoute { test }
+    def sample(request: Request)(using ApplicationCode): Task[Response] = ???
+
+    val test  : AppRoute = role("") { (_, _) => ZIO.succeed(Response.ok) }
+    val x     : (String, Request) => Task[Response] = appRoute { sample }
 
     private def forbidden(cause: Throwable) = ReturnResponseError(Response.forbidden(s"Error verifying token: ${cause.getMessage}"))
 
@@ -307,14 +309,6 @@ object router {
       usersGiven(request, application, None)
     }
 
-    private def setUserPin(request: Request): Task[Response] = ensureResponse {
-      for {
-        req   <- request.body.parse[SetUserPin]
-        token <- tokenFrom(request)
-        _     <- pins.set(token.user.details.id, req.pin)
-      } yield Response.ok
-    }
-
     private def validateUserPin(request: Request): Task[Response] = ensureResponse {
       for {
         req   <- request.body.parse[SetUserPin]
@@ -374,15 +368,90 @@ object router {
       } yield Response.json(seq.toJson)
     }
 
-    private def passwordResetLink(request: Request): Task[Response] = {
-      for
-        email <- ZIO.fromOption(request.url.queryParams.get("email")).map(Email.of).mapError(_ => Exception("Email not provided"))
-        maybe <- repo.exec(FindUserByEmail(email))
-        user  <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find user '$email'"))
+    private def sameUserOr[T <: HasEmail, R](role: Role)(fn: (RawUser, T) => Task[R])(request: Request)(using application: ApplicationCode)(using JsonDecoder[T], JsonEncoder[R]): Task[Response] = ensureResponse {
+
+      def ifAdmLoadUserSameAccount(token: Token, req: T): Task[RawUser] = {
+
+        def badRequest(reason: String) = ZIO.fail(ReturnResponseError(Response.badRequest(s"Can't find user '${req.email}' ($reason)")))
+
+        val isAdm = role.isSatisfiedBy(token)
+
+        for
+          _           <- ZIO.when( !isAdm ) { badRequest("not admin") }
+          maybe       <- repo.exec(FindUserByEmail(req.email))
+          user        <- ZIO.fromOption(maybe).mapError(_ => ReturnResponseError(Response.notFound(s"Can't find user '${req.email}'")))
+          sameAccount = token.user.details.account == user.details.account
+          _           <- ZIO.when( !sameAccount ) { badRequest("other account") }
+        yield user
+      }
+
+      for {
+        req    <- request.body.parse[T]
+        token  <- tokenFrom(request)
+        me     =  token.user.details.email == req.email
+        user   <- if (me) ZIO.succeed(token.user) else ifAdmLoadUserSameAccount(token, req)
+        result <- fn(user, req)
+      } yield Response.json(result.toJson)
+    }
+
+    private def setUserPin        : AppRoute = sameUserOr[SetUserPin, Boolean]                           ("adm" or "user_adm") { (user, req) => pins.set(user.details.id, req.pin)     .map(_ => true)               }
+    private def passwordResetLink : AppRoute = sameUserOr[RequestPasswordRequestLink, PasswordResetLink] ("adm" or "user_adm") { (user, req) => identities.passwordResetLink(req.email).map(PasswordResetLink.apply) }
+
+    private def setUserPinToBeRemoved(request: Request)(using application: ApplicationCode): Task[Response] = ensureResponse {
+
+      def changeMyPin(token: Token): Task[UserId] = ZIO.succeed(token.user.details.id)
+
+      def changeSomebodyElse(token: Token, req: SetUserPin): Task[UserId] = {
+
+        def badRequest(reason: String) = ZIO.fail(ReturnResponseError(Response.badRequest(s"Can't reset PIN for '${req.email}' ($reason)")))
+
+        val isAdm =  ("adm" or "user_adm").isSatisfiedBy(token)
+
+        for
+          _           <- ZIO.when( !isAdm ) { badRequest("not admin") }
+          maybe       <- repo.exec(FindUserByEmail(req.email))
+          user        <- ZIO.fromOption(maybe).mapError(_ => ReturnResponseError(Response.notFound(s"Can't find user '${req.email}'")))
+          sameAccount = token.user.details.account == user.details.account
+          _           <- ZIO.when( !sameAccount ) { badRequest("other account") }
+        yield user.details.id
+      }
+
+      for {
+        req   <- request.body.parse[SetUserPin]
         token <- tokenFrom(request)
-        _     <- ZIO.when(user.details.account != token.user.details.account) { ZIO.fail(Exception("Reset only works for users using the same account as you")) }
+        me    =  token.user.details.email == req.email
+        id    <- if (me) changeMyPin(token) else changeSomebodyElse(token, req)
+        _     <- pins.set(id, req.pin)
+      } yield Response.json(true.toJson)
+    }
+
+    private def passwordResetLinkToBeRemoved(request: Request)(using application: ApplicationCode): Task[Response] = ensureResponse {
+
+      def changeMyPassword(token: Token, req: RequestPasswordRequestLink): Task[Email] = ZIO.succeed(token.user.details.email)
+
+      def changeSomebodyElse(token: Token, req: RequestPasswordRequestLink): Task[Email] = {
+
+        def badRequest(reason: String) = ZIO.fail(ReturnResponseError(Response.badRequest(s"Can't reset password for '${req.email}' ($reason)")))
+
+        val isAdm =  ("adm" or "user_adm").isSatisfiedBy(token)
+
+        for
+          _           <- ZIO.when( !isAdm ) { badRequest("not admin") }
+          maybe       <- repo.exec(FindUserByEmail(req.email))
+          user        <- ZIO.fromOption(maybe).mapError(_ => ReturnResponseError(Response.notFound(s"Can't find user '${req.email}'")))
+          sameAccount = token.user.details.account == user.details.account
+          _           <- ZIO.when( !sameAccount ) { badRequest("other account") }
+        yield req.email
+      }
+
+      for
+        token <- tokenFrom(request)
+        req   <- request.body.parse[RequestPasswordRequestLink]
+        me    =  token.user.details.email == req.email
+        email <- if (me) changeMyPassword(token, req) else changeSomebodyElse(token, req)
         link  <- identities.passwordResetLink(email)
       yield Response.json(PasswordResetLink(link).toJson)
+
     }
 
     private def regular = Routes(
@@ -395,9 +464,9 @@ object router {
       Method.POST / "verify"                         -> Handler.fromFunctionZIO[Request](verify),
       Method.POST / "impersonate"                    -> Handler.fromFunctionZIO[Request](impersonate),
       Method.GET  / "user"                           -> Handler.fromFunctionZIO[Request](userBy),
-      Method.POST / "user" / "pin"                   -> Handler.fromFunctionZIO[Request](setUserPin),
       Method.POST / "user" / "pin" / "validate"      -> Handler.fromFunctionZIO[Request](validateUserPin),
-      Method.GET  / "password" / "reset" / "link"    -> Handler.fromFunctionZIO[Request](passwordResetLink),
+      Method.POST / "app" / string("app") / "user" / "pin"       -> handler(appRoute(setUserPin)),
+      Method.POST / "app" / string("app") / "password" / "reset" -> handler(appRoute(passwordResetLink)),
       Method.GET  / "app" / string("app") / "users"  -> handler(appRoute(usersGiven)),
       Method.POST / "app" / string("app") / "user"   -> handler(appRoute(storeUser)),
       Method.GET  / "app" / string("app") / "groups" -> handler(groupsGiven),

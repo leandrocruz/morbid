@@ -174,6 +174,10 @@ object domain {
   import zio.json.internal.Write
   import java.time.{LocalDateTime, ZonedDateTime}
 
+  trait HasEmail {
+    def email: Email
+  }
+
   enum UserKind {
     case RE /* Regular */ ,
          SA /* Service Account */
@@ -484,10 +488,14 @@ object domain {
   object requests {
     case class StoreGroupRequest(id: GroupId, code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
     case class StoreUserRequest(id: UserId, code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], update: Option[Boolean] /* TODO: remove this as soon as we migrate all users from legacy */)
+    case class RequestPasswordRequestLink(email: Email) extends HasEmail
     case class PasswordResetLink(link: String)
+    case class SetUserPin(email: Email, pin: Pin) extends HasEmail
 
-    given JsonCodec[StoreGroupRequest] = DeriveJsonCodec.gen
-    given JsonCodec[StoreUserRequest]  = DeriveJsonCodec.gen
-    given JsonCodec[PasswordResetLink] = DeriveJsonCodec.gen
+    given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
+    given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
+    given JsonCodec[RequestPasswordRequestLink] = DeriveJsonCodec.gen
+    given JsonCodec[PasswordResetLink]          = DeriveJsonCodec.gen
+    given JsonCodec[SetUserPin]                 = DeriveJsonCodec.gen
   }
 }
