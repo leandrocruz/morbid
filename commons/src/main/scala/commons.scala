@@ -491,11 +491,13 @@ object domain {
     case class RequestPasswordRequestLink(email: Email) extends HasEmail
     case class PasswordResetLink(link: String)
     case class SetUserPin(email: Email, pin: Pin) extends HasEmail
+    case class ValidateUserPin(pin: Pin)
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
     given JsonCodec[RequestPasswordRequestLink] = DeriveJsonCodec.gen
     given JsonCodec[PasswordResetLink]          = DeriveJsonCodec.gen
     given JsonCodec[SetUserPin]                 = DeriveJsonCodec.gen
+    given JsonCodec[ValidateUserPin]            = DeriveJsonCodec.gen
   }
 }

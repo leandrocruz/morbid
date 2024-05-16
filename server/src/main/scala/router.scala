@@ -311,7 +311,7 @@ object router {
 
     private def validateUserPin(request: Request): Task[Response] = ensureResponse {
       for {
-        req   <- request.body.parse[SetUserPin]
+        req   <- request.body.parse[ValidateUserPin]
         token <- tokenFrom(request)
         valid <- pins.validate(token.user.details.id, req.pin)
       } yield if(valid) Response.ok else Response.forbidden

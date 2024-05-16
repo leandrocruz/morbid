@@ -67,14 +67,12 @@ object proto {
   case class ImpersonationRequest(email: Email, magic: Magic)
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
-  case class ValidateUserPin(pin: Pin)
 
   given JsonDecoder[ImpersonationRequest]     = DeriveJsonDecoder.gen
   given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[SetClaimsRequest]         = DeriveJsonDecoder.gen
   given JsonDecoder[GetLoginMode]             = DeriveJsonDecoder.gen
-  given JsonDecoder[ValidateUserPin]          = DeriveJsonDecoder.gen
 }
 
 object passwords {
