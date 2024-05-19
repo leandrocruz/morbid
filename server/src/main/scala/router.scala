@@ -1,5 +1,6 @@
 package morbid
 
+import secure.{AppRoute, role, appRoute}
 import accounts.AccountManager
 import billing.Billing
 import commands.*
@@ -7,7 +8,7 @@ import config.MorbidConfig
 import domain.*
 import domain.raw.*
 import domain.requests.*
-import domain.token.Token
+import domain.token.{Token, SingleAppToken}
 import gip.*
 import passwords.PasswordGenerator
 import pins.PinManager
@@ -15,7 +16,7 @@ import repo.Repo
 import proto.*
 import tokens.*
 import types.*
-import utils.{asJson, errorToResponse, orFail, refineError}
+import utils.{errorToResponse, orFail, refineError}
 import guara.utils.{ensureResponse, parse}
 import guara.errors.*
 import guara.router.Router
@@ -25,7 +26,7 @@ import zio.json.*
 import zio.http.Cookie.SameSite
 import zio.http.{Cookie, Handler, HttpApp, Method, Path, Request, Response, Routes, handler}
 import zio.http.Middleware.{CorsConfig, cors}
-import zio.http.codec.PathCodec.{string, long}
+import zio.http.codec.PathCodec.{long, string}
 import io.scalaland.chimney.dsl.*
 
 import scala.util.Random
@@ -80,33 +81,9 @@ object router {
     tokens       : TokenGenerator
   ) extends Router {
 
-    private type AppRoute = ApplicationCode ?=> Request => Task[Response]
-
-    private def appRoute(r: AppRoute)(app: String, request: Request): Task[Response] = {
-      given ApplicationCode = ApplicationCode.of(app)
-      r(request)
+    private def protect(r: AppRoute)(app: String, request: Request): Task[Response] = {
+      appRoute(ApplicationCode.of(app), tokenFrom)(r)(request)
     }
-
-    private def role(role: Role)(fn: (Request, Token) => Task[Response])(request: Request)(using application: ApplicationCode): Task[Response] = {
-      ensureResponse {
-
-        def test(token: Token): Task[Unit] = {
-          if (role.isSatisfiedBy(token)) ZIO.unit
-          else                           ZIO.fail(ReturnResponseError(Response.forbidden(s"Required role '$role' is missing from user token (app: ${application})")))
-        }
-
-        for {
-          token  <- tokenFrom(request) //.debug("TOKEN")
-          _      <- test(token)
-          result <- fn(request, token)
-        } yield result
-      }
-    }
-
-    def sample(request: Request)(using ApplicationCode): Task[Response] = ???
-
-    val test  : AppRoute = role("") { (_, _) => ZIO.succeed(Response.ok) }
-    val x     : (String, Request) => Task[Response] = appRoute { sample }
 
     private def forbidden(cause: Throwable) = ReturnResponseError(Response.forbidden(s"Error verifying token: ${cause.getMessage}"))
 
@@ -226,7 +203,10 @@ object router {
         case ( None, None        ) => ZIO.succeed(Response.badRequest("Please provider an ID or EMAIL"))
     }
 
-    private def storeGroup: AppRoute = role("adm" or "group_adm") { (request, token) =>
+    private def storeGroup: AppRoute = role("adm" or "group_adm") { request =>
+
+      val token       = summon[SingleAppToken]
+      val application = token.user.application.details.code
 
       def build(req: StoreGroupRequest, app: RawApplication, code: GroupCode, now: LocalDateTime) = {
         val group = RawGroup(
@@ -249,8 +229,6 @@ object router {
 
       def uniqueCode: Task[GroupCode] = ZIO.attempt(GroupCode.of(Random.alphanumeric.take(16).mkString("")))
 
-      val application = summon[ApplicationCode]
-
       (for
         now     <- Clock.localDateTime
         req     <- request.body.parse[StoreGroupRequest].mapError(err => ReturnResponseError(Response.badRequest(err.getMessage)))
@@ -262,7 +240,10 @@ object router {
       yield Response.json(created.toJson)).errorToResponse(Response.internalServerError("Error creating group"))
     }
 
-    private def storeUser: AppRoute = role("adm" or "user_adm") { (request, token) =>
+    private def storeUser: AppRoute = role("adm" or "user_adm") { request =>
+
+      val token       = summon[SingleAppToken]
+      val application = token.user.application.details.code
 
       def uniqueCode(email: Email): Task[UserCode] = {
 
@@ -304,8 +285,9 @@ object router {
       yield Response.json(user.toJson)
     }
 
-    private def usersGiven: AppRoute = role("adm" or "user_adm") { (request, token) =>
-      val application = summon[ApplicationCode]
+    private def usersGiven: AppRoute = role("adm" or "user_adm") { request =>
+      val token       = summon[SingleAppToken]
+      val application = token.user.application.details.code
       usersGiven(request, application, None)
     }
 
@@ -368,26 +350,27 @@ object router {
       } yield Response.json(seq.toJson)
     }
 
-    private def sameUserOr[T <: HasEmail, R](role: Role)(fn: (RawUser, T) => Task[R])(request: Request)(using application: ApplicationCode)(using JsonDecoder[T], JsonEncoder[R]): Task[Response] = ensureResponse {
+    private def sameUserOr[T <: HasEmail, R](role: Role)(fn: (SingleAppRawUser, T) => Task[R])(request: Request)(using token: SingleAppToken)(using JsonDecoder[T], JsonEncoder[R]): Task[Response] = ensureResponse {
 
-      def ifAdmLoadUserSameAccount(token: Token, req: T): Task[RawUser] = {
+      def ifAdmLoadUserSameAccount(token: SingleAppToken, req: T): Task[SingleAppRawUser] = {
 
         def badRequest(reason: String) = ZIO.fail(ReturnResponseError(Response.badRequest(s"Can't find user '${req.email}' ($reason)")))
 
-        val isAdm = role.isSatisfiedBy(token)
+        val application = token.user.application.details.code
+        val isAdm       = role.isSatisfiedBy(token)
 
         for
           _           <- ZIO.when( !isAdm ) { badRequest("not admin") }
           maybe       <- repo.exec(FindUserByEmail(req.email))
           user        <- ZIO.fromOption(maybe).mapError(_ => ReturnResponseError(Response.notFound(s"Can't find user '${req.email}'")))
+          narrowed    <- ZIO.fromOption(user.narrowTo(application)).mapError(_ => ReturnResponseError(Response.forbidden(s"User '${req.email}' has no access to application '${application}'")))
           sameAccount = token.user.details.account == user.details.account
           _           <- ZIO.when( !sameAccount ) { badRequest("other account") }
-        yield user
+        yield narrowed
       }
 
       for {
         req    <- request.body.parse[T]
-        token  <- tokenFrom(request)
         me     =  token.user.details.email == req.email
         user   <- if (me) ZIO.succeed(token.user) else ifAdmLoadUserSameAccount(token, req)
         result <- fn(user, req)
@@ -476,47 +459,16 @@ object router {
       Method.POST / "impersonate"                    -> Handler.fromFunctionZIO[Request](impersonate),
       Method.GET  / "user"                           -> Handler.fromFunctionZIO[Request](userBy),
       Method.POST / "user" / "pin" / "validate"      -> Handler.fromFunctionZIO[Request](validateUserPin),
-      Method.POST / "app" / string("app") / "user" / "pin"       -> handler(appRoute(setUserPin)),
-      Method.POST / "app" / string("app") / "password" / "reset" -> handler(appRoute(passwordResetLink)),
-      Method.GET  / "app" / string("app") / "users"  -> handler(appRoute(usersGiven)),
-      Method.POST / "app" / string("app") / "user"   -> handler(appRoute(storeUser)),
+      Method.POST / "app" / string("app") / "user" / "pin"       -> handler(protect(setUserPin)),
+      Method.POST / "app" / string("app") / "password" / "reset" -> handler(protect(passwordResetLink)),
+      Method.GET  / "app" / string("app") / "users"  -> handler(protect(usersGiven)),
+      Method.POST / "app" / string("app") / "user"   -> handler(protect(storeUser)),
       Method.GET  / "app" / string("app") / "groups" -> handler(groupsGiven),
-      Method.POST / "app" / string("app") / "group"  -> handler(appRoute(storeGroup)),
+      Method.POST / "app" / string("app") / "group"  -> handler(protect(storeGroup)),
       Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
       Method.GET  / "app" / string("app") / "roles" -> handler(rolesGiven),
     ).sandbox.toHttpApp
 
     override def routes: HttpApp[Any] = Echo.routes ++ regular @@ cors(corsConfig)
-  }
-}
-
-object roles {
-
-  given Conversion[String, Role] with
-    def apply(code: String): Role = SingleRole(RoleCode.of(code))
-
-  sealed trait Role {
-    def or  (code: String) : Role = or(SingleRole(RoleCode.of(code)))
-    def or  (code: Role)   : Role = OrRole(this, code)
-    def and (code: String) : Role = and(SingleRole(RoleCode.of(code)))
-    def and (code: Role)   : Role = AndRole(this, code)
-
-    def isSatisfiedBy(token: Token)(using ApplicationCode): Boolean
-  }
-
-  private case class SingleRole(code: RoleCode) extends Role {
-    override def toString = RoleCode.value(code)
-    override def isSatisfiedBy(token: Token)(using ApplicationCode): Boolean = token.hasRole(code)
-  }
-
-  private case class OrRole(r1: Role, r2: Role) extends Role {
-    override def toString = s"($r1 || $r2)"
-    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = r1.isSatisfiedBy(tk) || r2.isSatisfiedBy(tk)
-
-  }
-
-  private case class AndRole(r1: Role, r2: Role) extends Role {
-    override def toString = s"($r1 && $r2)"
-    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = r1.isSatisfiedBy(tk) && r2.isSatisfiedBy(tk)
   }
 }

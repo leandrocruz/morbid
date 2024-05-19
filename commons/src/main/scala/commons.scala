@@ -168,6 +168,7 @@ object types {
 
 object domain {
 
+  import token.{HasRoles, SingleAppToken}
   import types.*
   import zio.json.*
   import zio.optics.Lens
@@ -221,7 +222,13 @@ object domain {
     case class RawUser(
       details      : RawUserDetails,
       applications : Seq[RawApplication] = Seq.empty
-    )
+    ) {
+      def narrowTo(application: ApplicationCode): Option[SingleAppRawUser] = {
+        applications
+          .find(_.details.code == application)
+          .map(SingleAppRawUser(details, _))
+      }
+    }
 
     case class SingleAppRawUser(
       details     : RawUserDetails,
@@ -445,6 +452,10 @@ object domain {
     extension (it: RawToken)
       def string: String = it
 
+    trait HasRoles {
+      def hasRole(code: RoleCode): Boolean
+    }
+
     case class Token(
       created        : ZonedDateTime,
       expires        : Option[ZonedDateTime],
@@ -476,10 +487,12 @@ object domain {
     }
 
     case class SingleAppToken(
-      created : ZonedDateTime,
-      expires : Option[ZonedDateTime],
-      user    : SingleAppRawUser
-    )
+      created     : ZonedDateTime,
+      expires     : Option[ZonedDateTime],
+      user        : SingleAppRawUser
+    ) {
+      def hasRole(code: RoleCode): Boolean = user.application.groups.flatMap(_.roles).exists(_.code == code)
+    }
 
     given JsonCodec[Token]          = DeriveJsonCodec.gen
     given JsonCodec[SingleAppToken] = DeriveJsonCodec.gen
@@ -500,4 +513,90 @@ object domain {
     given JsonCodec[SetUserPin]                 = DeriveJsonCodec.gen
     given JsonCodec[ValidateUserPin]            = DeriveJsonCodec.gen
   }
+}
+
+object roles {
+
+  import types.{ApplicationCode, RoleCode}
+  import domain.token.{Token, SingleAppToken, HasRoles}
+
+  given Conversion[String, Role] with
+    def apply(code: String): Role = SingleRole(RoleCode.of(code))
+
+  sealed trait Role {
+    def or  (code: String) : Role = or(SingleRole(RoleCode.of(code)))
+    def or  (code: Role)   : Role = OrRole(this, code)
+    def and (code: String) : Role = and(SingleRole(RoleCode.of(code)))
+    def and (code: Role)   : Role = AndRole(this, code)
+
+    def isSatisfiedBy(token: Token)(using ApplicationCode): Boolean
+    def isSatisfiedBy(token: SingleAppToken): Boolean
+  }
+
+  private case class SingleRole(code: RoleCode) extends Role {
+    override def toString = RoleCode.value(code)
+    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = tk.hasRole(code)
+    override def isSatisfiedBy(tk: SingleAppToken)              : Boolean = tk.hasRole(code)
+  }
+
+  private case class OrRole(r1: Role, r2: Role) extends Role {
+    override def toString = s"($r1 || $r2)"
+    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = r1.isSatisfiedBy(tk) || r2.isSatisfiedBy(tk)
+    override def isSatisfiedBy(tk: SingleAppToken)              : Boolean = r1.isSatisfiedBy(tk) || r2.isSatisfiedBy(tk)
+  }
+
+  private case class AndRole(r1: Role, r2: Role) extends Role {
+    override def toString = s"($r1 && $r2)"
+    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = r1.isSatisfiedBy(tk) && r2.isSatisfiedBy(tk)
+    override def isSatisfiedBy(tk: SingleAppToken)              : Boolean = r1.isSatisfiedBy(tk) && r2.isSatisfiedBy(tk)
+  }
+}
+
+object secure {
+
+  import types.ApplicationCode
+  import domain.token.{SingleAppToken, Token}
+  import roles.Role
+  import guara.utils.ensureResponse
+  import guara.errors.*
+  import zio.http.*
+  import zio.*
+
+  type AppRoute = SingleAppToken ?=> Request => Task[Response]
+
+  def role(role: Role)(fn: Request => Task[Response])(request: Request)(using token: SingleAppToken): Task[Response] = {
+    def test(token: SingleAppToken): Task[Unit] = {
+      if (role.isSatisfiedBy(token)) ZIO.unit
+      else                           ZIO.fail(ReturnResponseError(Response.forbidden(s"Required role '$role' is missing from user token (application: ${token.user.application.details.code})")))
+    }
+
+    for {
+      _      <- test(token)
+      result <- fn(request)
+    } yield result
+  }
+
+  def appRoute(application: ApplicationCode, tokenFrom: Request => Task[Token])(route: AppRoute)(request: Request): Task[Response] = {
+
+    def execute(token: SingleAppToken) = {
+      given SingleAppToken = token
+      route(request)
+    }
+
+    ensureResponse {
+      for
+        _     <- ZIO.logInfo(s"Executing app route for app '${application}'")
+        token <- tokenFrom(request)                         //.mapError(e => ReturnResponseError(Response.forbidden(s"Error extracting token from request: ${e.getMessage}")))
+        _     <- ZIO.logInfo(s"Token extracted ${token.user.details.email}")
+        sat   <- ZIO.fromOption(token.narrowTo(application)).mapError(_ => ReturnResponseError(Response.forbidden(s"User has no access to application '$application'")))
+        _     <- ZIO.logInfo(s"Token narrowed. Executing")
+        res   <- execute(sat)
+      yield res
+    }
+  }
+
+  private def sample(request: Request)(using SingleAppToken): Task[Response] = ???
+  val test: AppRoute = role("") { _ => ZIO.succeed(Response.ok) }
+  def tk(r: Request): Task[Token] = ???
+  val x: (Request) => Task[Response] = appRoute(ApplicationCode.of(""), tk) { sample }
 }
