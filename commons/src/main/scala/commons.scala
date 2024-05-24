@@ -231,8 +231,9 @@ object domain {
     }
 
     case class SingleAppRawUser(
-      details     : RawUserDetails,
-      application : RawApplication
+      details        : RawUserDetails,
+      application    : RawApplication,
+      impersonatedBy : Option[RawUserDetails] = None
     )
 
     case class RawUserDetails(
@@ -482,7 +483,11 @@ object domain {
           .applications
           .find(_.details.code == application)
           .map { found =>
-            SingleAppToken(created, expires, SingleAppRawUser(details = user.details, application = found))
+            SingleAppToken(
+              created,
+              expires,
+              SingleAppRawUser(details = user.details, application = found, impersonatedBy = impersonatedBy)
+            )
           }
     }
 
