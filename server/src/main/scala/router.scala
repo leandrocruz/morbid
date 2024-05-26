@@ -210,7 +210,7 @@ object router {
 
       def build(req: StoreGroupRequest, app: RawApplication, code: GroupCode, now: LocalDateTime) = {
         val group = RawGroup(
-          id      = req.id,
+          id      = req.id.getOrElse(GroupId.of(0)),
           created = now,
           deleted = None,
           code    = code,
@@ -267,6 +267,7 @@ object router {
       def buildRequest(req: StoreUserRequest, account: RawAccount, code: UserCode) =
         req
           .into[StoreUser]
+          .withFieldConst(_.id, req.id.getOrElse(UserId.of(0)))
           .withFieldConst(_.account, account)
           .withFieldConst(_.code, code)
           .withFieldConst(_.update, req.update.getOrElse(false))
