@@ -2,7 +2,7 @@ package morbid
 
 object types {
 
-  import guara.utils.{safeCode, safeName, safeDecode}
+  import guara.utils.{safeCode, safeLatinName, safeDecode}
   import zio.json.JsonCodec
   import zio.json.{JsonEncoder, JsonDecoder, JsonFieldEncoder, JsonFieldDecoder}
   import scala.annotation.targetName
@@ -76,13 +76,13 @@ object types {
   given JsonEncoder      [Magic]           = JsonEncoder.string
   given JsonEncoder      [Pin]             = JsonEncoder.string
 
-  given JsonDecoder      [TenantName]      = safeName(128)
-  given JsonDecoder      [AccountName]     = safeName(64)
-  given JsonDecoder      [ApplicationName] = safeName(256)
-  given JsonDecoder      [GroupName]       = safeName(64)
-  given JsonDecoder      [RoleName]        = safeName(32)
-  given JsonDecoder      [PermissionName]  = safeName(128)
-  given JsonDecoder      [ProviderName]    = safeName(256)
+  given JsonDecoder      [TenantName]      = safeLatinName(128)
+  given JsonDecoder      [AccountName]     = safeLatinName(64)
+  given JsonDecoder      [ApplicationName] = safeLatinName(256)
+  given JsonDecoder      [GroupName]       = safeLatinName(64)
+  given JsonDecoder      [RoleName]        = safeLatinName(32)
+  given JsonDecoder      [PermissionName]  = safeLatinName(128)
+  given JsonDecoder      [ProviderName]    = safeLatinName(256)
 
   given JsonDecoder      [TenantCode]      = safeCode(64)
   given JsonDecoder      [AccountCode]     = safeCode(16)

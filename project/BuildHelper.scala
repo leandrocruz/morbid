@@ -11,7 +11,7 @@ object BuildHelper {
     val betterFiles     = "com.github.pathikrit" %% "better-files"      % "3.9.2"
     val commonsCodec    = "commons-codec"        %  "commons-codec"     % "1.16.0"
     val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.2.0"
-    val guara           = "guara"                %% "guara-framework"   % "v0.0.2-SNAPSHOT" changing()
+    val guara           = "guara"                %% "guara-framework"   % "v0.0.4-SNAPSHOT" changing()
     val jjwtApi         = "io.jsonwebtoken"      % "jjwt-api"           % "0.12.3"
     val jjwtImpl        = "io.jsonwebtoken"      % "jjwt-impl"          % "0.12.3"
     val jjwtJackson     = "io.jsonwebtoken"      % "jjwt-jackson"       % "0.12.3"
