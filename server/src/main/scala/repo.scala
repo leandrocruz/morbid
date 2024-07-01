@@ -324,10 +324,13 @@ object repo {
         case r: FindUserByEmail       => userGiven(r)
         case r: FindUserById          => userGiven(r)
         case r: FindUsersInGroup      => usersGiven(r)
-        case r: LinkUsersToGroup      => addGroups(r)
+        case r: LinkUsersToGroup      => linkGroups(r)
         case r: UnlinkUsersFromGroup  => ZIO.fail(Exception("TODO"))
         case r: LinkGroupToRoles      => ZIO.fail(Exception("TODO"))
         case r: UnlinkGroupFromRoles  => ZIO.fail(Exception("TODO"))
+        case r: RemoveAccount         => ZIO.fail(Exception("TODO"))
+        case r: RemoveGroup           => removeGroup(r)
+        case r: RemoveUser            => removeUser(r)
         case r: ReportUsersByAccount  => usersByAccount(r)
         case r: UserExists            => userExists(r)
     }
@@ -479,6 +482,27 @@ object repo {
 
     }
 
+    private def removeUser(request: RemoveUser): Task[Long] = {
+
+      def remove(now: Option[LocalDateTime]) = {
+        inline def stmt = quote {
+          users.filter(u => u.account == lift(request.acc) && u.code == lift(request.code)).update(_.deleted -> lift(now))
+        }
+
+        for
+          _     <- ZIO.log(s"Removing user '${request.code}' from account '${request.acc}'")
+          count <- exec(run(stmt))
+          _     <- ZIO.when(count != 1) { ZIO.fail(Exception(s"Error removing user '${request.code}' (count: $count)"))}
+        yield count
+      }
+
+      for {
+        now    <- Clock.localDateTime
+        result <- remove(Some(now))
+      } yield result
+
+    }
+
     private def storeGroup(request: StoreGroup): Task[RawGroup] = {
 
       val accId   = request.account
@@ -544,8 +568,8 @@ object repo {
           intersect =  wanted.intersect(current)
           toAdd     =  wanted.diff(intersect)
           toRemove  =  current.diff(intersect)
-          _         <- ZIO.when(toAdd.nonEmpty)    { addGroups (LinkUsersToGroup    (appId, group.id, toAdd   .map(_.id))) }
-          _         <- ZIO.when(toRemove.nonEmpty) { delGroups (UnlinkUsersFromGroup(appId, group.id, toRemove.map(_.id))) }
+          _         <- ZIO.when(toAdd.nonEmpty)    { linkGroups   (LinkUsersToGroup    (appId, group.id, toAdd   .map(_.id))) }
+          _         <- ZIO.when(toRemove.nonEmpty) { unlinkGroups (UnlinkUsersFromGroup(appId, group.id, toRemove.map(_.id))) }
         yield ()
       }
 
@@ -571,6 +595,27 @@ object repo {
         _        <- handleUsers   (group, existing, users)    .refineError("Error linking users to group"     )
         roles    <- handleRoles   (group, existing, appRoles) .refineError("Error linking roles to group"     )
       yield group.copy(roles = roles)
+    }
+
+    private def removeGroup(request: RemoveGroup): Task[Long] = {
+
+      def remove(now: Option[LocalDateTime]) = {
+        inline def stmt = quote {
+          groups.filter(g => g.acc == lift(request.acc) && g.app == lift(request.app) && g.code == lift(request.code)).update(_.deleted -> lift(now))
+        }
+
+        for
+          _     <- ZIO.log(s"Removing group '${request.code}' from application '${request.app}' from account '${request.acc}'")
+          count <- exec(run(stmt))
+          _     <- ZIO.when(count != 1) { ZIO.fail(Exception(s"Error removing group '${request.code}' (count: $count)"))}
+        yield count
+      }
+
+      for {
+        now    <- Clock.localDateTime
+        result <- remove(Some(now))
+      } yield result
+
     }
 
     private def accountByProvider(request: FindAccountByProvider): Task[Option[RawAccount]] = {
@@ -798,7 +843,7 @@ object repo {
       } yield result
     }
 
-    private def addGroups(cmd: LinkUsersToGroup): Task[Unit] = {
+    private def linkGroups(cmd: LinkUsersToGroup): Task[Unit] = {
 
       inline def insertValues(rows: Seq[UserToGroupRow]) = quote {
         liftQuery(rows).foreach(row => user2group.insertValue(row))
@@ -819,7 +864,7 @@ object repo {
       yield ()
     }
 
-    private def delGroups(cmd: UnlinkUsersFromGroup): Task[Long] = {
+    private def unlinkGroups(cmd: UnlinkUsersFromGroup): Task[Long] = {
 
       inline def stmt = quote {
         user2group.filter { u2g =>
