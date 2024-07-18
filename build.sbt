@@ -2,7 +2,7 @@ lazy val commons = (project in file("commons"))
   .withId("morbid-commons")
   .settings(
     BuildHelper.stdSettings,
-    libraryDependencies := BuildHelper.allDependencies
+    libraryDependencies := BuildHelper.commonsDependencies
   )
 
 lazy val client = (project in file("client"))
@@ -10,7 +10,7 @@ lazy val client = (project in file("client"))
   .dependsOn(commons)
   .settings(
     BuildHelper.stdSettings,
-    libraryDependencies := BuildHelper.allDependencies
+    libraryDependencies := BuildHelper.clientDependencies
   )
 
 lazy val root = (project in file("server"))

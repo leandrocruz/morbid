@@ -31,7 +31,12 @@ object BuildHelper {
     dependencies.zio,
     dependencies.zioJson,
     dependencies.zioOptics,
-    //guara
+    dependencies.guara
+  )
+
+  lazy val clientDependencies = Seq(
+    dependencies.zio,
+    dependencies.zioJson,
   )
 
   lazy val allDependencies = Seq(
