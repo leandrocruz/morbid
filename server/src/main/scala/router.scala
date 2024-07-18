@@ -319,7 +319,8 @@ object router {
       for {
         req   <- request.body.parse[ValidateUserPin]
         token <- tokenFrom(request)
-        valid <- pins.validate(token.user.details.id, req.pin)
+        uid   =  token.impersonatedBy.map(_.id).getOrElse(token.user.details.id)
+        valid <- pins.validate(uid, req.pin)
       } yield if(valid) Response.ok else Response.forbidden
     }
 
