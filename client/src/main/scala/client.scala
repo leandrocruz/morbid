@@ -11,7 +11,7 @@ object client {
   import morbid.domain.token.given
   import morbid.domain.requests.*
   import morbid.domain.requests.given
-  import guara.utils.parse
+  import guara.utils.{parse, queryParams}
   import guara.errors.{ReturnResponseWithExceptionError, ReturnResponseError}
   import zio.http.*
   import zio.json.*

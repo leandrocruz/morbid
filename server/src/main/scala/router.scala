@@ -61,6 +61,7 @@ object router {
   import cookies.*
   import roles.*
   import roles.given
+  import guara.utils.get
 
   private val corsConfig =  CorsConfig()
 
@@ -361,7 +362,7 @@ object router {
       val appCode = ApplicationCode.of(app)
       for {
         tk     <- tokenFrom(request)
-        filter =  request.url.queryParams.getAll("code").getOrElse(Seq.empty).map(GroupCode.of)
+        filter =  request.url.queryParams.getAll("code").map(GroupCode.of)
         map    <- repo.exec(FindGroups(tk.user.details.accountCode, Seq(appCode), filter))
       } yield map.get(appCode) match
         case Some(groups) => Response.json(groups.toJson)
@@ -494,8 +495,8 @@ object router {
       Method.POST   / "app" / string("app") / "group" / "delete"   -> handler(protect(removeGroup)),
       Method.GET    / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
       Method.GET    / "app" / string("app") / "roles" -> handler(rolesGiven),
-    ).sandbox.toHttpApp
+    ).sandbox
 
-    override def routes: HttpApp[Any] = Echo.routes ++ regular @@ cors(corsConfig)
+    override def routes = Echo.routes ++ regular @@ cors(corsConfig)
   }
 }
