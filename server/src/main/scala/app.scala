@@ -24,7 +24,7 @@ object MorbidServer extends GuaraApp {
 
   override val run = startGuara.provide(
     MorbidConfig.layer,
-    MorbidConfig.legacyClient,
+    MorbidConfig.legacy,
     Client.default,
     Scope.default,
     LegacyMorbid.layer,

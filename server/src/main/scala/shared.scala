@@ -16,14 +16,18 @@ object config {
   case class ClockConfig(timezone: String)
   case class MagicConfig(password: String)
   case class PinConfig(prefix: String)
-  case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig, magic: MagicConfig, pin: PinConfig)
+  case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig, magic: MagicConfig, pin: PinConfig, legacy: LegacyClientConfig)
 
   object MorbidConfig {
+
     val layer = ZLayer {
       TypesafeConfigProvider.fromResourcePath(enableCommaSeparatedValueAsList = true).load(deriveConfig[MorbidConfig])
     }
-    val legacyClient = ZLayer {
-      TypesafeConfigProvider.fromResourcePath(enableCommaSeparatedValueAsList = true).load(deriveConfig[LegacyClientConfig])
+
+    val legacy = ZLayer {
+      for {
+        cfg <- ZIO.service[MorbidConfig]
+      } yield cfg.legacy
     }
   }
 }
