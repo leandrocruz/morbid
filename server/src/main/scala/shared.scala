@@ -4,6 +4,8 @@ import zio.*
 
 object config {
 
+  import morbid.legacy.LegacyClientConfig
+
   import zio.config.*
   import zio.config.magnolia.*
   import zio.config.typesafe.*
@@ -19,6 +21,9 @@ object config {
   object MorbidConfig {
     val layer = ZLayer {
       TypesafeConfigProvider.fromResourcePath(enableCommaSeparatedValueAsList = true).load(deriveConfig[MorbidConfig])
+    }
+    val legacyClient = ZLayer {
+      TypesafeConfigProvider.fromResourcePath(enableCommaSeparatedValueAsList = true).load(deriveConfig[LegacyClientConfig])
     }
   }
 }

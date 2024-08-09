@@ -13,9 +13,17 @@ lazy val client = (project in file("client"))
     libraryDependencies := BuildHelper.clientDependencies
   )
 
+lazy val legacy = (project in file("legacy"))
+  .withId("morbid-legacy-client")
+  .dependsOn(commons)
+  .settings(
+    BuildHelper.stdSettings,
+    libraryDependencies := BuildHelper.clientDependencies
+  )
+
 lazy val root = (project in file("server"))
   .withId("morbid-server")
-  .dependsOn(commons)
+  .dependsOn(commons, legacy)
   .enablePlugins(JavaAppPackaging)
   .settings(
     BuildHelper.stdSettings,
