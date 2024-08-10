@@ -13,6 +13,7 @@ object accounts {
   import morbid.gip.*
   import morbid.utils.*
   import morbid.legacy.*
+  import morbid.pins.PinManager
 
   trait AccountManager {
     def provision(identity: CloudIdentity) : Task[RawUser]
@@ -22,14 +23,14 @@ object accounts {
     val layer = ZLayer.fromFunction(LocalAccountManager.apply _)
   }
 
-  case class LocalAccountManager(config: MorbidConfig, repo: Repo, legacyMorbid: LegacyMorbid) extends AccountManager {
+  case class LocalAccountManager(config: MorbidConfig, repo: Repo, legacyMorbid: LegacyMorbid, pins: PinManager) extends AccountManager {
 
     private val Zero = UserId.of(0)
     private val DefaultGroup = GroupCode.of("all")
 
     override def provision(identity: CloudIdentity): Task[RawUser] = {
 
-      def addUserToGroups(account: RawAccount, user: RawUserEntry): Task[Unit] = {
+      def setup(account: RawAccount, user: RawUserEntry): Task[Unit] = {
 
         def link(groupsByApp: Map[ApplicationCode, Seq[RawGroup]])(app: RawApplicationDetails): Task[Unit] = {
 
@@ -50,6 +51,7 @@ object accounts {
         }
 
         for {
+          _      <- pins.set(user.id, Pin.of(config.pin.default)).mapError(err => Exception(s"Error setting default user PIN: ${err.getMessage}", err))
           apps   <- repo.exec(FindApplications(account.code))                                 //all apps
           groups <- repo.exec(FindGroups(account.code, apps.map(_.code), Seq(DefaultGroup)))  //all groups for these apps
           _      <- ZIO.foreach(apps) { link(groups) }                                        //add the user to the the 'all' group on each app
@@ -63,14 +65,14 @@ object accounts {
           uid     =  legacy.map(_.id).getOrElse(Zero)
           _       <- ZIO.logInfo(s"Provisioning user :: tenant:${account.tenant} account:${account.id}, uid:$uid, idp:$id, code:${identity.code}, email:${identity.email}")
           user    <- repo.exec(StoreUser(uid, identity.email, identity.code, account, kind = None, update = false))
-          _       <- addUserToGroups(account, user)
+          _       <- setup(account, user)
           result  <- repo.exec(FindUserByEmail(user.email)).orFail(s"Error reading newly created user, email:${user.email}") // load applications, groups, etc
         } yield result
       }
 
       (identity.tenant, identity.kind, identity.provider) match
         case (None, ProviderKind.SAML, Some(id)) if config.identities.provisionSAMLUsers => provisionSaml(id)
-        case _ => ZIO.fail(new Exception(s"Can't create user for '${identity.email}' with '${identity.kind}' on '${identity.provider.getOrElse("NO PROVIDER")}'"))
+        case _ => ZIO.fail(new Exception(s"Can't provision user for '${identity.email}' with '${identity.kind}' on '${identity.provider.getOrElse("NO PROVIDER")}'"))
     }
   }
 }

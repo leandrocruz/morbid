@@ -162,7 +162,7 @@ object router {
       def ensureUser(identity: CloudIdentity, maybeUser: Option[RawUser]): Task[RawUser] = {
         maybeUser match {
           case Some(user) => ZIO.succeed(user)
-          case None       => accounts.provision(identity)
+          case None       => accounts.provision(identity).mapError(err => Exception(s"Error provisioning user account for '${identity.email}': ${err.getMessage}", err))
         }
       }
 

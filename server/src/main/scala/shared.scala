@@ -15,7 +15,7 @@ object config {
   case class IdentityConfig(key: String, database: String, provisionSAMLUsers: Boolean)
   case class ClockConfig(timezone: String)
   case class MagicConfig(password: String)
-  case class PinConfig(prefix: String)
+  case class PinConfig(prefix: String, default: String)
   case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig, magic: MagicConfig, pin: PinConfig, legacy: LegacyClientConfig)
 
   object MorbidConfig {
