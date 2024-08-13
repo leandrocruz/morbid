@@ -35,6 +35,8 @@ object legacy {
 
   case class LegacyMorbidImpl(url: URL, client: Client, scope: Scope) extends LegacyMorbid {
 
+    private val headers = Headers(Header.ContentType(MediaType.application.json))
+
     override def userBy(email: Email): Task[Option[LegacyUser]] = {
 
       val result = for {
@@ -53,7 +55,7 @@ object legacy {
 
       val result = for {
         body     <- ZIO.attempt(Body.fromString(request.toJson))
-        response <- client.url(url).post("/user")(body).provideSome(ZLayer.succeed(scope))
+        response <- client.url(url).addHeaders(headers).post("/user")(body).provideSome(ZLayer.succeed(scope))
         user     <- response.status.code match {
           case 200  => response.body.parse[LegacyUser].mapError(err => Exception("Error parsing LegacyUser from body", err))
           case code => ZIO.fail(Exception(s"Result code from legacy is $code"))
