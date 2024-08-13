@@ -8,6 +8,7 @@ object repo {
   import domain.*
   import domain.raw.*
   import commands.*
+  import morbid.config.MorbidConfig
   import utils.refineError
   import io.getquill.*
   import io.getquill.jdbczio.Quill
@@ -207,10 +208,18 @@ object repo {
   }
 
   object Repo {
-    val layer: ZLayer[Any, Throwable, Repo] = Quill.DataSource.fromPrefix("database") >>> ZLayer.fromFunction(DatabaseRepo.apply _)
+
+    val datasource: ZLayer[Any, Throwable, DataSource] = Quill.DataSource.fromPrefix("database")
+
+    val layer: ZLayer[MorbidConfig & DataSource, Throwable, Repo] = ZLayer.fromZIO {
+      for {
+        cfg <- ZIO.service[MorbidConfig]
+        ds  <- ZIO.service[DataSource]
+      } yield DatabaseRepo(cfg, ds)
+    }
   }
 
-  private case class DatabaseRepo(ds: DataSource) extends Repo {
+  private case class DatabaseRepo(config: MorbidConfig, ds: DataSource) extends Repo {
 
     private type ApplicationGroups = (ApplicationId, GroupRow)
     private type AppMap[T]         = Map[ApplicationCode, Seq[T]]
@@ -740,10 +749,12 @@ object repo {
     }
 
     private inline def printQuery[T](inline quoted: Quoted[Query[T]]): Task[Unit] = {
-      for {
-        str <- exec(ctx.translate(quoted, prettyPrint = false))
-        _   <- ZIO.log(str)
-      } yield ()
+      if(config.printQueries) {
+        for {
+          str <- exec(ctx.translate(quoted, prettyPrint = false))
+          _   <- ZIO.log(str)
+        } yield ()
+      } else ZIO.unit
     }
 
     private def usersGiven(request: FindUsersInGroup): Task[Seq[RawUserEntry]] = {

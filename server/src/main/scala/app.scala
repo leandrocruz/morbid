@@ -35,6 +35,7 @@ object MorbidServer extends GuaraApp {
     PasswordGenerator.layer,
     PinManager.layer,
     Processor.drop,
+    Repo.datasource,
     Repo.layer,
     TokenGenerator.layer
   )
