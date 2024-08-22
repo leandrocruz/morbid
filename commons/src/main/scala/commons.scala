@@ -38,6 +38,7 @@ object types {
   opaque type Password        = String
   opaque type Domain          = String
   opaque type Magic           = String
+  opaque type Link            = String
 
   given JsonCodec[TenantId]      = JsonCodec.long
   given JsonCodec[AccountId]     = JsonCodec.long
@@ -75,6 +76,7 @@ object types {
   given JsonEncoder      [Domain]          = JsonEncoder.string
   given JsonEncoder      [Magic]           = JsonEncoder.string
   given JsonEncoder      [Pin]             = JsonEncoder.string
+  given JsonEncoder      [Link]             = JsonEncoder.string
 
   given JsonDecoder      [TenantName]      = safeLatinName(128)
   given JsonDecoder      [AccountName]     = safeLatinName(64)
@@ -97,6 +99,7 @@ object types {
   given JsonDecoder      [Domain]          = safeDecode(domain, 256)
   given JsonDecoder      [Magic]           = JsonDecoder.string
   given JsonDecoder      [Pin]             = JsonDecoder.string
+  given JsonDecoder      [Link]            = JsonDecoder.string
 
   given JsonFieldEncoder[ApplicationName] = JsonFieldEncoder.string
   given JsonFieldDecoder[ApplicationName] = JsonFieldDecoder.string
@@ -125,6 +128,7 @@ object types {
   object GroupCode       extends OpaqueOps[String, GroupCode]
   object GroupId         extends OpaqueOps[Long, GroupId]
   object GroupName       extends OpaqueOps[String, GroupName]
+  object Link            extends OpaqueOps[String, Link]
   object Password        extends OpaqueOps[String, Password]
   object PinId           extends OpaqueOps[Long, PinId]
   object Pin             extends OpaqueOps[String, Pin]
@@ -507,11 +511,13 @@ object domain {
     case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
     case class StoreUserRequest(id: Option[UserId], code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], update: Option[Boolean] /* TODO: remove this as soon as we migrate all users from legacy */)
     case class RequestPasswordRequestLink(email: Email) extends HasEmail
-    case class PasswordResetLink(link: String)
+    case class PasswordResetLink(link: Link)
     case class SetUserPin(email: Email, pin: Pin) extends HasEmail
     case class ValidateUserPin(pin: Pin)
     case class RemoveUserRequest(code: UserCode)
     case class RemoveGroupRequest(code: GroupCode)
+    case class LoginViaEmailLinkRequest(email: Email, url: String)
+    case class LoginViaEmailLinkResponse(link: Link)
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
@@ -521,6 +527,8 @@ object domain {
     given JsonCodec[ValidateUserPin]            = DeriveJsonCodec.gen
     given JsonCodec[RemoveUserRequest]          = DeriveJsonCodec.gen
     given JsonCodec[RemoveGroupRequest]         = DeriveJsonCodec.gen
+    given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
+    given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
   }
 }
 

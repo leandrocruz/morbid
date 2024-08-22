@@ -31,6 +31,7 @@ object client {
     def removeUser        (request: RemoveUserRequest)         (using token: RawToken, app: ApplicationCode): Task[Long]
     def passwordResetLink (request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode): Task[PasswordResetLink]
     def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode): Task[Boolean]
+    def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode): Task[LoginViaEmailLinkResponse]
   }
 
   case class MorbidClientConfig(url: String)
@@ -65,9 +66,9 @@ object client {
       } yield resp
     }
 
-    override def tokenFrom(token: RawToken): Task[Token] = post[SimpleToken, Token](base / "verify", SimpleToken(token))(using token)
+    override def tokenFrom(token: RawToken): Task[Token] = post[SimpleToken, Token](Some(token), base / "verify", SimpleToken(token))
 
-    private def exec[T](req: Request)(using token: RawToken, dec: JsonDecoder[T]): Task[T] = {
+    private def exec[T](token: Option[RawToken], req: Request)(using dec: JsonDecoder[T]): Task[T] = {
 
       def badGateway(message: String, cause: Option[Throwable] = None) = {
         val resp = Response.error(Status.BadGateway, message)
@@ -80,26 +81,28 @@ object client {
 
       for {
         _      <- ZIO.log(s"Calling '${req.url.encode}'")
-        res    <- perform(req.copy(headers = req.headers ++ morbidToken(token))).mapError(e => badGateway(s"Error calling Morbid '${req.url.encode}': ${e.getMessage}"))
+        res    <- perform(req.copy(headers = req.headers ++ token.map(morbidToken).getOrElse(Headers.empty))).mapError(e => badGateway(s"Error calling Morbid '${req.url.encode}': ${e.getMessage}"))
         _      <- ZIO.when(res.status.code != 200) { ZIO.fail(ReturnResponseError(res)) }
         result <- res.body.parse[T].mapError(_ => ReturnResponseError(res))
       } yield result
     }
 
-    private def get   [T]   (url: URL)        (using token: RawToken, dec: JsonDecoder[T])                     : Task[T] = exec(Request.get(url))
-    private def post  [R, T](url: URL, req: R)(using token: RawToken, dec: JsonDecoder[T], enc: JsonEncoder[R]): Task[T] = exec(Request.post(url, Body.fromString(req.toJson)).copy(headers = applicationJson))
+    private def get   [T]   (token: Option[RawToken],url: URL)         (using dec: JsonDecoder[T])                     : Task[T] = exec(token, Request.get(url))
+    private def post  [R, T](token: Option[RawToken], url: URL, req: R)(using dec: JsonDecoder[T], enc: JsonEncoder[R]): Task[T] = exec(token, Request.post(url, Body.fromString(req.toJson)).copy(headers = applicationJson))
 
-    override def groupByCode       (group: GroupCode)                  (using token: RawToken, app: ApplicationCode) = get[Option[RawGroup]]                               (base / "app" / ApplicationCode.value(app) / "group")
-    override def storeGroup(request: StoreGroupRequest)                (using token: RawToken, app: ApplicationCode) = post[StoreGroupRequest, RawGroup]                   (base / "app" / ApplicationCode.value(app) / "group", request)
-    override def removeGroup(request: RemoveGroupRequest)              (using token: RawToken, app: ApplicationCode) = post[RemoveGroupRequest, Long]                      (base / "app" / ApplicationCode.value(app) / "group" / "delete", request)
-    override def groups                                                (using token: RawToken, app: ApplicationCode) = get[Seq[RawGroup]]                                  (base / "app" / ApplicationCode.value(app) / "groups")
-    override def groupsByCode      (groups: Seq[GroupCode])            (using token: RawToken, app: ApplicationCode) = get[Seq[RawGroup]]                                 ((base / "app" / ApplicationCode.value(app) / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
-    override def usersByGroupByCode(group: GroupCode)                  (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]                              (base / "app" / ApplicationCode.value(app) / "group" / GroupCode.value(group) / "users")
-    override def storeUser(request: StoreUserRequest)                  (using token: RawToken, app: ApplicationCode) = post[StoreUserRequest, RawUserEntry]                (base / "app" / ApplicationCode.value(app) / "user", request)
-    override def removeUser(request: RemoveUserRequest)                (using token: RawToken, app: ApplicationCode) = post[RemoveUserRequest, Long]                       (base / "app" / ApplicationCode.value(app) / "user" / "delete", request)
-    override def users                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]                              (base / "app" / ApplicationCode.value(app) / "users")
-    override def roles                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawRole]]                                   (base / "app" / ApplicationCode.value(app) / "roles")
-    override def passwordResetLink(request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode) = post[RequestPasswordRequestLink, PasswordResetLink] (base / "app" / ApplicationCode.value(app) / "password" / "reset", request)
-    override def setPin           (request: SetUserPin)                (using token: RawToken, app: ApplicationCode) = post[SetUserPin, Boolean]                           (base / "app" / ApplicationCode.value(app) / "user" / "pin", request)
+    override def groupByCode       (group: GroupCode)                  (using token: RawToken, app: ApplicationCode) = get[Option[RawGroup]]                                     (Some(token),  base / "app" / ApplicationCode.value(app) / "group")
+    override def storeGroup(request: StoreGroupRequest)                (using token: RawToken, app: ApplicationCode) = post[StoreGroupRequest, RawGroup]                         (Some(token),  base / "app" / ApplicationCode.value(app) / "group", request)
+    override def removeGroup(request: RemoveGroupRequest)              (using token: RawToken, app: ApplicationCode) = post[RemoveGroupRequest, Long]                            (Some(token),  base / "app" / ApplicationCode.value(app) / "group" / "delete", request)
+    override def groups                                                (using token: RawToken, app: ApplicationCode) = get[Seq[RawGroup]]                                        (Some(token),  base / "app" / ApplicationCode.value(app) / "groups")
+    override def groupsByCode      (groups: Seq[GroupCode])            (using token: RawToken, app: ApplicationCode) = get[Seq[RawGroup]]                                        (Some(token), (base / "app" / ApplicationCode.value(app) / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
+    override def usersByGroupByCode(group: GroupCode)                  (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "group" / GroupCode.value(group) / "users")
+    override def storeUser(request: StoreUserRequest)                  (using token: RawToken, app: ApplicationCode) = post[StoreUserRequest, RawUserEntry]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "user", request)
+    override def removeUser(request: RemoveUserRequest)                (using token: RawToken, app: ApplicationCode) = post[RemoveUserRequest, Long]                             (Some(token),  base / "app" / ApplicationCode.value(app) / "user" / "delete", request)
+    override def users                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "users")
+    override def roles                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawRole]]                                         (Some(token),  base / "app" / ApplicationCode.value(app) / "roles")
+    override def passwordResetLink(request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode) = post[RequestPasswordRequestLink, PasswordResetLink]       (Some(token),  base / "app" / ApplicationCode.value(app) / "password" / "reset", request)
+    override def setPin           (request: SetUserPin)                (using token: RawToken, app: ApplicationCode) = post[SetUserPin, Boolean]                                 (Some(token),  base / "app" / ApplicationCode.value(app) / "user" / "pin", request)
+    override def emailLoginLink   (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode) = post[LoginViaEmailLinkRequest, LoginViaEmailLinkResponse] (None       ,  base / "app" / ApplicationCode.value(app) / "login" / "email", request)
   }
+
 }

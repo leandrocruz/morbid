@@ -23,9 +23,11 @@ object gip {
   import com.google.firebase.auth.FirebaseToken
   import com.google.firebase.auth.UserRecord
   import com.google.firebase.auth.UserRecord.CreateRequest
+  import com.google.firebase.auth.ActionCodeSettings
 
   sealed trait Identities {
-    def passwordResetLink(email: Email)                         : Task[String]
+    def passwordResetLink   (email: Email)                      : Task[Link]
+    def signInWithEmailLink (email: Email, url: String)         : Task[Link]
     def providerGiven(email: Email, tenant: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
     def providerGiven(account: AccountId)                       : Task[Option[RawIdentityProvider]]
     def verify     (req: VerifyGoogleTokenRequest)              : Task[CloudIdentity]
@@ -145,9 +147,25 @@ object gip {
       ZIO.attempt { authGiven(Some(request.account.tenantCode)).createUser(req) }
     }
 
-    override def passwordResetLink(email: Email): Task[String] = {
+    override def passwordResetLink(email: Email): Task[Link] = {
       ZIO.attempt {
-        auth.generatePasswordResetLink(Email.value(email))
+        Link.of {
+          auth.generatePasswordResetLink(Email.value(email))
+        }
+      }
+    }
+
+    override def signInWithEmailLink(email: Email, url: String): Task[Link] = {
+      val settings = ActionCodeSettings
+        .builder()
+        .setUrl(url)
+        .setHandleCodeInApp(true)
+        .build()
+
+      ZIO.attempt {
+        Link.of {
+          auth.generateSignInWithEmailLink(Email.value(email), settings)
+        }
       }
     }
   }

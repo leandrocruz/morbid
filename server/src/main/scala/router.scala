@@ -178,6 +178,17 @@ object router {
       }
     }
 
+    private def loginViaEmailLink(app: String, request: Request): Task[Response] = {
+      ensureResponse {
+        for {
+          req       <- request.body.parse[LoginViaEmailLinkRequest]
+          maybeUser <- repo.exec(FindUserByEmail(req.email))
+          _         <- ZIO.fromOption(maybeUser)                         .mapError(_   => ReturnResponseError(Response.notFound(s"Can't find user '${req.email}'")))
+          link      <- identities.signInWithEmailLink(req.email, req.url).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error generating login link for '${req.email}'")))
+        } yield Response.json(LoginViaEmailLinkResponse(link).toJson)
+      }
+    }
+
     private def logoff(request: Request): Task[Response] = {
       ZIO.succeed {
         Response.ok.logOff
@@ -485,6 +496,7 @@ object router {
       Method.POST   / "impersonate"                                -> Handler.fromFunctionZIO[Request](impersonate),
       Method.GET    / "user"                                       -> Handler.fromFunctionZIO[Request](userBy),
       Method.POST   / "user" / "pin" / "validate"                  -> Handler.fromFunctionZIO[Request](validateUserPin),
+      Method.POST   / "app" / string("app") / "login" / "email"    -> handler(loginViaEmailLink),
       Method.POST   / "app" / string("app") / "user" / "pin"       -> handler(protect(setUserPin)),
       Method.POST   / "app" / string("app") / "password" / "reset" -> handler(protect(passwordResetLink)),
       Method.GET    / "app" / string("app") / "users"              -> handler(protect(usersGiven)),
