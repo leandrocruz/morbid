@@ -101,8 +101,8 @@ object tokens {
             created = LocalDateTime.now(),
             deleted = None,
             active  = true,
-            code    = ApplicationCode.of("morbid"),
-            name    = ApplicationName.of("Morbid")
+            code    = ApplicationCode.of("console"),
+            name    = ApplicationName.of("Console")
           ),
           groups  = groups
         )
