@@ -16,7 +16,7 @@ import repo.Repo
 import proto.*
 import tokens.*
 import types.*
-import utils.{errorToResponse, orFail, refineError}
+import utils.{errorToResponse, orFail, refineError, asCommonError}
 import guara.utils.{ensureResponse, parse}
 import guara.errors.*
 import guara.router.Router
@@ -312,11 +312,11 @@ object router {
         acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
         store  = buildRequest(req, acc, code)
         _      <- ZIO.logInfo(s"Storing user '${store.email}/${store.id}' in account '${store.account.id}' in tenant '${store.account.tenantCode}' (update ? ${store.update})")
-        user   <- repo.exec(store).refineError(s"Error storing user '${store.email}'")
+        user   <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")
         _      <- ZIO.logInfo(s"User '${user.email}/${user.id}' stored")
-        _      <- identities.createUser(store, pwd).refineError("Error storing user identity")
+        _      <- identities.createUser(store, pwd).asCommonError(10011, "Error storing user identity")
         groups <- repo.exec(FindGroups(acc.code, Seq(application.details.code), Seq(GroupAll)))
-        _      <- link(groups, user).mapError(e => ReturnResponseWithExceptionError(e, Response.internalServerError("Error adding user to group ALL")))
+        _      <- link(groups, user).asCommonError(10012, "Error adding user to group ALL")
       yield Response.json(user.toJson)
     }
 

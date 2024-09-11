@@ -37,9 +37,22 @@ object utils {
   import domain.raw.RawUser
   import domain.simple.*
   import domain.mini.*
+  import org.apache.commons.lang3.exception.ExceptionUtils
   import guara.errors.ReturnResponseWithExceptionError
   import zio.json.*
-  import zio.http.Response
+  import zio.http.{Body, Response, Header, Headers}
+  import zio.http.Status.InternalServerError
+
+
+  case class CommonError(
+    origin  : String,
+    code    : Int,
+    message : String,
+    request : Option[String] = None,
+    trace   : Option[String] = None
+  )
+
+  given JsonCodec[CommonError] = DeriveJsonCodec.gen
 
   extension (user: RawUser)
     def asJson(format: Option[String]): String = {
@@ -58,9 +71,20 @@ object utils {
       yield value
     }
 
-  extension [T](task: Task[T])
+  extension [T](task: Task[T]) {
     def refineError(message: String): Task[T] = task.mapError(Exception(message, _))
+
     def errorToResponse(response: Response) = task.mapError(ReturnResponseWithExceptionError(_, response))
+
+    def asCommonError(code: Int, msg: String) = {
+      def response(error: Throwable) = Response(
+        status  = InternalServerError,
+        headers = Headers(Header.Custom("X-Error-Type", "GCEv0") /* Guara Common Error = GCEv0 */),
+        body    = Body.fromString(CommonError(origin = "Morbid", code, message = msg, trace = Some(ExceptionUtils.getStackTrace(error))).toJson)
+      )
+      task.mapError(e => ReturnResponseWithExceptionError(e, response(e)))
+    }
+  }
 
   extension [T](op: Option[T])
     def orFail(message: String): Task[T] = ZIO.fromOption(op).mapError(_ => Exception(message))
