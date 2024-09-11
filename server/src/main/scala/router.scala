@@ -1,6 +1,6 @@
 package morbid
 
-import secure.{AppRoute, role, appRoute}
+import secure.{AppRoute, appRoute, role}
 import accounts.AccountManager
 import billing.Billing
 import commands.*
@@ -8,7 +8,7 @@ import config.MorbidConfig
 import domain.*
 import domain.raw.*
 import domain.requests.*
-import domain.token.{Token, SingleAppToken}
+import domain.token.{SingleAppToken, Token}
 import gip.*
 import passwords.PasswordGenerator
 import pins.PinManager
@@ -28,6 +28,7 @@ import zio.http.{Cookie, Handler, HttpApp, Method, Path, Request, Response, Rout
 import zio.http.Middleware.{CorsConfig, cors}
 import zio.http.codec.PathCodec.{long, string}
 import io.scalaland.chimney.dsl.*
+import zio.http.Status.InternalServerError
 
 import scala.util.Random
 import java.time.LocalDateTime
@@ -63,7 +64,8 @@ object router {
   import roles.given
   import guara.utils.get
 
-  private val corsConfig =  CorsConfig()
+  private val corsConfig = CorsConfig()
+  private val GroupAll   = GroupCode.of("all")
 
   object MorbidRouter {
     val layer = ZLayer.fromFunction(MorbidRouter.apply _)
@@ -255,7 +257,7 @@ object router {
     private def storeUser: AppRoute = role("adm" or "user_adm") { request =>
 
       val token       = summon[SingleAppToken]
-      val application = token.user.application.details.code
+      val application = token.user.application
 
       def uniqueCode(email: Email): Task[UserCode] = {
 
@@ -285,6 +287,24 @@ object router {
           .withFieldConst(_.update, req.update.getOrElse(false))
           .transform
 
+      def link(groupsByApp: Map[ApplicationCode, Seq[RawGroup]], user: RawUserEntry): Task[Unit] = {
+
+        def linkTo(group: RawGroup): Task[Unit] = {
+          repo.exec {
+            LinkUsersToGroup(
+              application = application.details.id,
+              group       = group.id,
+              users       = Seq(user.id)
+            )
+          }
+        }
+
+        groupsByApp.get(application.details.code) match {
+          case Some(Seq(group)) if group.code == GroupAll => linkTo(group)
+          case _                                          => ZIO.fail(Exception(s"Can't find group '${GroupAll}' for application '${application.details.code}'"))
+        }
+      }
+
       for
         req    <- request.body.parse[StoreUserRequest].mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
         pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate).errorToResponse(Response.internalServerError("Error generating user code"))
@@ -295,6 +315,8 @@ object router {
         user   <- repo.exec(store).refineError(s"Error storing user '${store.email}'")
         _      <- ZIO.logInfo(s"User '${user.email}/${user.id}' stored")
         _      <- identities.createUser(store, pwd).refineError("Error storing user identity")
+        groups <- repo.exec(FindGroups(acc.code, Seq(application.details.code), Seq(GroupAll)))
+        _      <- link(groups, user).mapError(e => ReturnResponseWithExceptionError(e, Response.internalServerError("Error adding user to group ALL")))
       yield Response.json(user.toJson)
     }
 
