@@ -687,7 +687,9 @@ object repo {
           val groupRoles = groupByFirstElement {
             roles.filter(_._1.isDefined).map(it => (it._1.get, it._2))
           } map {
-            case (role, perms) => role.into[RawRole].withFieldConst(_.permissions, perms.filter(_.isDefined).map(_.get).map(_.transformInto[RawPermission])).transform
+            case (role, perms) =>
+              val discarded = perms.filter(_.isDefined).map(_.get).map(_.transformInto[RawPermission])
+              role.into[RawRole].withFieldConst(_.permissions, Seq.empty).transform
           }
 
           group
@@ -715,12 +717,12 @@ object repo {
           grp <- groups       .join    (_.app == a2a.app)               if grp.deleted.isEmpty && grp.acc == acc.id && (lift(request.filter.isEmpty) || liftQuery(request.filter).contains(grp.code))
           g2r <- group2role   .leftJoin(_.grp == grp.id)
           rol <- roles        .leftJoin(r => g2r.exists(_.rid == r.id)) if rol.exists(_.deleted.isEmpty)
-          //per <- permissions  .leftJoin(p => rol.exists(_.id == p.rid)) if per.exists(_.deleted.isEmpty)
-        } yield (app, (grp, (rol, None)))
+          per <- permissions  .leftJoin(p => rol.exists(_.id == p.rid)) if per.exists(_.deleted.isEmpty)
+        } yield (app, (grp, (rol, per)))
       }
 
       for {
-        _    <- printQuery(query)
+        //_    <- printQuery(query)
         rows <- exec(run(query))
       } yield merge(rows)
     }
@@ -728,8 +730,8 @@ object repo {
     private def rolesGiven(request: FindRoles): Task[Seq[RawRole]] = {
 
       def toRole(role: RoleRow, data: Seq[(RoleRow, Option[PermissionRow])]): RawRole = {
-        val perms = data.map(_._2).filter(_.isDefined).map(_.get).distinct.map(_.transformInto[RawPermission])
-        role.into[RawRole].withFieldConst(_.permissions, perms).transform
+        val discarded = data.map(_._2).filter(_.isDefined).map(_.get).distinct.map(_.transformInto[RawPermission])
+        role.into[RawRole].withFieldConst(_.permissions, Seq.empty).transform
       }
 
       inline def query = quote {
@@ -739,8 +741,8 @@ object repo {
           a2a <- account2app  .join(_.acc == acc.id)     if a2a.deleted.isEmpty
           app <- applications .join(_.id == a2a.app)     if app.deleted.isEmpty && app.active && app.code == lift(request.app)
           rol <- roles        .join(_.app == app.id)     if rol.deleted.isEmpty
-          //per <- permissions  .leftJoin(_.rid == rol.id) if per.exists(_.deleted.isEmpty)
-        } yield (rol, None)
+          per <- permissions  .leftJoin(_.rid == rol.id) if per.exists(_.deleted.isEmpty)
+        } yield (rol, per)
       }
 
       for {
