@@ -170,12 +170,12 @@ object router {
 
       ensureResponse {
         for {
-          vgt       <- request.body.parse[VerifyGoogleTokenRequest]
-          identity  <- identities.verify(vgt)
-          maybeUser <- repo.exec(FindUserByEmail(identity.email))
-          user      <- ensureUser(identity, maybeUser)
-          token     <- tokens.asToken(user)
-          encoded   <- tokens.encode(token)
+          vgt       <- request.body.parse[VerifyGoogleTokenRequest] .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing VerifyGoogleTokenRequest: ${err.getMessage}")))
+          identity  <- identities.verify(vgt)                       .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error verifying firebase token '${vgt.token}: ${err.getMessage}'")))
+          maybeUser <- repo.exec(FindUserByEmail(identity.email))   .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error locating user '${identity.email}': ${err.getMessage}'")))
+          user      <- ensureUser(identity, maybeUser)              .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error ensuring user '${identity.email}': ${err.getMessage}'")))
+          token     <- tokens.asToken(user)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error creating token '${identity.email}': ${err.getMessage}'")))
+          encoded   <- tokens.encode(token)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '${identity.email}': ${err.getMessage}'")))
         } yield loginResponse(token, encoded)
       }
     }
