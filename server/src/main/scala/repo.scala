@@ -715,8 +715,8 @@ object repo {
           grp <- groups       .join    (_.app == a2a.app)               if grp.deleted.isEmpty && grp.acc == acc.id && (lift(request.filter.isEmpty) || liftQuery(request.filter).contains(grp.code))
           g2r <- group2role   .leftJoin(_.grp == grp.id)
           rol <- roles        .leftJoin(r => g2r.exists(_.rid == r.id)) if rol.exists(_.deleted.isEmpty)
-          per <- permissions  .leftJoin(p => rol.exists(_.id == p.rid)) if per.exists(_.deleted.isEmpty)
-        } yield (app, (grp, (rol, per)))
+          //per <- permissions  .leftJoin(p => rol.exists(_.id == p.rid)) if per.exists(_.deleted.isEmpty)
+        } yield (app, (grp, (rol, None)))
       }
 
       for {
@@ -739,8 +739,8 @@ object repo {
           a2a <- account2app  .join(_.acc == acc.id)     if a2a.deleted.isEmpty
           app <- applications .join(_.id == a2a.app)     if app.deleted.isEmpty && app.active && app.code == lift(request.app)
           rol <- roles        .join(_.app == app.id)     if rol.deleted.isEmpty
-          per <- permissions  .leftJoin(_.rid == rol.id) if per.exists(_.deleted.isEmpty)
-        } yield (rol, per)
+          //per <- permissions  .leftJoin(_.rid == rol.id) if per.exists(_.deleted.isEmpty)
+        } yield (rol, None)
       }
 
       for {
