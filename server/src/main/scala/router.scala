@@ -16,7 +16,7 @@ import repo.Repo
 import proto.*
 import tokens.*
 import types.*
-import utils.{errorToResponse, orFail, refineError, asCommonError}
+import utils.{asCommonError, errorToResponse, orFail, refineError}
 import guara.utils.{ensureResponse, parse}
 import guara.errors.*
 import guara.router.Router
@@ -24,7 +24,7 @@ import guara.router.Echo
 import zio.*
 import zio.json.*
 import zio.http.Cookie.SameSite
-import zio.http.{Cookie, Handler, HttpApp, Method, Path, Request, Response, Routes, handler}
+import zio.http.{Body, Cookie, Handler, HttpApp, Method, Path, Request, Response, Routes, Status, handler}
 import zio.http.Middleware.{CorsConfig, cors}
 import zio.http.codec.PathCodec.{long, string}
 import io.scalaland.chimney.dsl.*
@@ -350,12 +350,15 @@ object router {
     }
 
     private def validateUserPin(request: Request): Task[Response] = ensureResponse {
+
+      def res(status: Status, text: String) = Response(status = status, body = Body.fromString(text))
+
       for {
         req   <- request.body.parse[ValidateUserPin]
         token <- tokenFrom(request)
         uid   =  token.impersonatedBy.map(_.id).getOrElse(token.user.details.id)
         valid <- pins.validate(uid, req.pin)
-      } yield if(valid) Response.ok else Response.forbidden
+      } yield if(valid) res(Status.Ok, "true") else res(Status.Forbidden, "false")
     }
 
     private def verify(request: Request): Task[Response] = ensureResponse {
