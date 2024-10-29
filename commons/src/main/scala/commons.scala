@@ -493,16 +493,24 @@ object secure {
   import zio.http.*
   import zio.*
 
-  type AppRoute = SingleAppToken ?=> Request => Task[Response]
+  type AppRoute       = SingleAppToken ?=> Request => Task[Response]
+  type TokenValidator = SingleAppToken => Either[String, Unit]
 
-  def role(role: Role)(fn: Request => Task[Response])(request: Request)(using token: SingleAppToken): Task[Response] = {
+  val AllowAll: TokenValidator = _ => Right(())
+
+  def role(role: Role, allow: TokenValidator = AllowAll)(fn: Request => Task[Response])(request: Request)(using token: SingleAppToken): Task[Response] = {
+
+    def forbidden(message: String) = ZIO.fail(ReturnResponseError(Response.forbidden(message)))
+
     def test(token: SingleAppToken): Task[Unit] = {
       if (role.isSatisfiedBy(token)) ZIO.unit
-      else                           ZIO.fail(ReturnResponseError(Response.forbidden(s"Required role '$role' is missing from user token (application: ${token.user.application.code})")))
+      else                           forbidden(s"Required role '$role' is missing from user token (application: ${token.user.application.code})")
     }
 
     for {
-      _      <- test(token)
+      _ <- allow(token) match
+             case Left(err) => forbidden(err)
+             case Right(_)  => test(token)
       result <- fn(request)
     } yield result
   }
