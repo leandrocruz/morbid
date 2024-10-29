@@ -75,13 +75,14 @@ CREATE TABLE identity_providers (
 
 CREATE TABLE groups (
     id       SERIAL                                             ,
+    acc      BIGINT      NOT NULL REFERENCES accounts     (id)  ,
     app      BIGINT      NOT NULL REFERENCES applications (id)  ,
     created  TIMESTAMP   NOT NULL                               ,
     deleted  TIMESTAMP                                          ,
-    code     VARCHAR(16) NOT NULL                              ,
+    code     VARCHAR(16) NOT NULL                               ,
     name     VARCHAR(64) NOT NULL                               ,
-    UNIQUE      (app, code)                                     ,
-    UNIQUE      (app, name)                                     ,
+    UNIQUE      (acc, app, code)                                ,
+    UNIQUE      (acc, app, name)                                ,
     PRIMARY KEY (id)
 );
 
@@ -122,15 +123,12 @@ CREATE TABLE user_to_group (
     app     BIGINT    NOT NULL REFERENCES applications (id) ,
     grp     BIGINT    NOT NULL REFERENCES groups       (id) ,
     created TIMESTAMP NOT NULL                              ,
-    deleted TIMESTAMP                                       ,
     PRIMARY KEY (usr, app, grp)
 );
 
-CREATE TABLE user_to_role (
-    usr      BIGINT    NOT NULL REFERENCES users        (id)    ,
-    app      BIGINT    NOT NULL REFERENCES applications (id)    ,
-    rid      BIGINT    NOT NULL REFERENCES roles        (id)    ,
-    created  TIMESTAMP NOT NULL                                 ,
-    deleted  TIMESTAMP                                          ,
-    PRIMARY KEY (usr, app, rid)
+CREATE TABLE group_to_role (
+    grp      BIGINT    NOT NULL REFERENCES groups (id) ,
+    rid      BIGINT    NOT NULL REFERENCES roles  (id) ,
+    created  TIMESTAMP NOT NULL                        ,
+    PRIMARY KEY (grp, rid)
 );

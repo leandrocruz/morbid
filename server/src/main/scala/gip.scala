@@ -1,20 +1,19 @@
 package morbid
 
-import com.google.firebase.auth.UserRecord
-import com.google.firebase.auth.UserRecord.CreateRequest
 import zio.*
 
 object gip {
 
+  import morbid.repo.Repo
   import morbid.types.*
   import morbid.proto.*
   import morbid.config.*
-  import morbid.repo.Repo
   import morbid.domain.*
   import morbid.domain.raw.*
+  import morbid.commands.*
+  import morbid.utils.orFail
 
   import zio.json.*
-  import zio.json.internal.Write
 
   import scala.jdk.CollectionConverters.*
   import java.io.{FileInputStream, InputStream}
@@ -22,13 +21,18 @@ object gip {
   import com.google.firebase.{FirebaseApp, FirebaseOptions}
   import com.google.firebase.auth.FirebaseAuth
   import com.google.firebase.auth.FirebaseToken
+  import com.google.firebase.auth.UserRecord
+  import com.google.firebase.auth.UserRecord.CreateRequest
+  import com.google.firebase.auth.ActionCodeSettings
 
   sealed trait Identities {
+    def passwordResetLink   (email: Email)                      : Task[Link]
+    def signInWithEmailLink (email: Email, url: String)         : Task[Link]
     def providerGiven(email: Email, tenant: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
     def providerGiven(account: AccountId)                       : Task[Option[RawIdentityProvider]]
     def verify     (req: VerifyGoogleTokenRequest)              : Task[CloudIdentity]
     def claims     (req: SetClaimsRequest)                      : Task[Unit]
-    def createUser (req: CreateUser)                            : Task[Unit]
+    def createUser (req: StoreUser, password: Password)         : Task[Unit]
   }
 
   case class CloudIdentity(
@@ -75,12 +79,12 @@ object gip {
   private case class GoogleIdentities(auth: FirebaseAuth, repo: Repo) extends Identities {
 
     override def providerGiven(account: AccountId): Task[Option[RawIdentityProvider]] = {
-      repo.providerGiven(account)
+      repo.exec(FindProviderByAccount(account))
     }
 
     override def providerGiven(email: Email, tenant: Option[TenantCode]): Task[Option[RawIdentityProvider]] = {
       email.domainName match
-        case Some(domain) => repo.providerGiven(domain, tenant)
+        case Some(domain) => repo.exec(FindProviderByDomain(domain, tenant))
         case _            => ZIO.succeed(None)
     }
 
@@ -98,12 +102,13 @@ object gip {
 
       def valueFrom[T](token: FirebaseToken, key: String): Task[T] = {
         val claims = token.getClaims.asScala.toMap
-        ZIO.fromOption {
-          for {
-            values <- claims.get("firebase").map(_.asInstanceOf[java.util.Map[String, AnyRef]].asScala.toMap)
-            result <- values.get(key).map(_.asInstanceOf[T])
-          } yield result
-        }.mapError(_ => new Exception(s"Can't find value for key '$key'"))
+
+        val maybe = for {
+          values <- claims.get("firebase").map(_.asInstanceOf[java.util.Map[String, AnyRef]].asScala.toMap)
+          result <- values.get(key).map(_.asInstanceOf[T])
+        } yield result
+
+        maybe.orFail(s"Can't find value for key '$key'")
       }
 
       for {
@@ -127,19 +132,41 @@ object gip {
 
     private def authGiven(code: Option[TenantCode]) = {
       code match
-        case Some(value) => auth.getTenantManager.getAuthForTenant(TenantCode.value(value))
-        case None        => auth
+        case None | Some(TenantCode.DEFAULT) => auth
+        case Some(value)                     => auth.getTenantManager.getAuthForTenant(TenantCode.value(value))
     }
 
     //See https://firebase.google.com/docs/auth/admin/manage-users
-    override def createUser(request: CreateUser): Task[Unit] = {
+    override def createUser(request: StoreUser, password: Password): Task[Unit] = {
       val req = new CreateRequest()
-        .setEmail(Email.value(request.email))
-        .setUid(UserCode.value(request.code))
-        .setPassword(Password.value(request.password))
-        .setDisabled(false)
+        .setEmail    (Email.value(request.email)  )
+        .setUid      (UserCode.value(request.code))
+        .setPassword (Password.value(password)    )
+        .setDisabled (false)
 
-      ZIO.attempt { authGiven(request.tenant).createUser(req) }
+      ZIO.attempt { authGiven(Some(request.account.tenantCode)).createUser(req) }
+    }
+
+    override def passwordResetLink(email: Email): Task[Link] = {
+      ZIO.attempt {
+        Link.of {
+          auth.generatePasswordResetLink(Email.value(email))
+        }
+      }
+    }
+
+    override def signInWithEmailLink(email: Email, url: String): Task[Link] = {
+      val settings = ActionCodeSettings
+        .builder()
+        .setUrl(url)
+        .setHandleCodeInApp(true)
+        .build()
+
+      ZIO.attempt {
+        Link.of {
+          auth.generateSignInWithEmailLink(Email.value(email), settings)
+        }
+      }
     }
   }
 }

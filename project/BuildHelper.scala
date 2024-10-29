@@ -3,22 +3,22 @@ import sbt.Keys._
 
 object BuildHelper {
 
-  val ScalaVersion   = "3.3.0"
-  val ZioVersion     = "2.1-RC1" //same as guara
+  val ScalaVersion   = "3.3.3"
+  val ZioVersion     = "2.1.6" //same as guara
   val ZioJsonVersion = "0.6.2"    //same as guara
 
   lazy val dependencies = new {
     val betterFiles     = "com.github.pathikrit" %% "better-files"      % "3.9.2"
-    val commonsCodec    = "commons-codec"        %  "commons-codec"     % "1.16.0"
-    val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.2.0"
-    val guara           = "guara"                %% "guara-framework"   % "v0.0.2-SNAPSHOT" changing()
+    val commonsCodec    = "commons-codec"        %  "commons-codec"     % "1.17.0"
+    val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.3.0"
+    val guara           = "guara"                %% "guara-framework"   % "v0.1.0-SNAPSHOT" changing()
     val jjwtApi         = "io.jsonwebtoken"      % "jjwt-api"           % "0.12.3"
     val jjwtImpl        = "io.jsonwebtoken"      % "jjwt-impl"          % "0.12.3"
     val jjwtJackson     = "io.jsonwebtoken"      % "jjwt-jackson"       % "0.12.3"
     val chimney         = "io.scalaland"         %% "chimney"           % "0.8.2"
-    val quillZio        = "io.getquill"          %% "quill-zio"         % "4.8.0"
-    val quillZioJdbc    = "io.getquill"          %% "quill-jdbc-zio"    % "4.8.0"
-    val postgresql      = "org.postgresql"       %  "postgresql"        % "42.5.4"
+    val quillZio        = "io.getquill"          %% "quill-zio"         % "4.8.5"
+    val quillZioJdbc    = "io.getquill"          %% "quill-jdbc-zio"    % "4.8.4"
+    val postgresql      = "org.postgresql"       %  "postgresql"        % "42.7.3"
     val zioOptics       = "dev.zio"              %% "zio-optics"        % "0.2.1"
     val zio             = "dev.zio"              %% "zio"               % ZioVersion
     val zioJson         = "dev.zio"              %% "zio-json"          % ZioJsonVersion
@@ -31,7 +31,12 @@ object BuildHelper {
     dependencies.zio,
     dependencies.zioJson,
     dependencies.zioOptics,
-    //guara
+    dependencies.guara
+  )
+
+  lazy val clientDependencies = Seq(
+    dependencies.zio,
+    dependencies.zioJson,
   )
 
   lazy val allDependencies = Seq(
@@ -62,7 +67,7 @@ object BuildHelper {
     ThisBuild / scalaVersion                 := ScalaVersion,
     ThisBuild / scalacOptions                := commonSettings(scalaVersion.value),
     ThisBuild / organization                 := "morbid",
-    ThisBuild / version                      := "v0.0.1-SNAPSHOT",
+    ThisBuild / version                      := "v0.0.2",
     ThisBuild / doc / sources                := Seq.empty,
     ThisBuild / packageDoc / publishArtifact := false,
     ThisBuild / resolvers                    += Resolver.mavenLocal,

@@ -2,7 +2,7 @@ package morbid
 
 object types {
 
-  import guara.utils.{safeCode, safeName, safeDecode}
+  import guara.utils.{safeCode, safeLatinName, safeDecode}
   import zio.json.JsonCodec
   import zio.json.{JsonEncoder, JsonDecoder, JsonFieldEncoder, JsonFieldDecoder}
   import scala.annotation.targetName
@@ -38,6 +38,7 @@ object types {
   opaque type Password        = String
   opaque type Domain          = String
   opaque type Magic           = String
+  opaque type Link            = String
 
   given JsonCodec[TenantId]      = JsonCodec.long
   given JsonCodec[AccountId]     = JsonCodec.long
@@ -47,6 +48,7 @@ object types {
   given JsonCodec[RoleId]        = JsonCodec.long
   given JsonCodec[PermissionId]  = JsonCodec.long
   given JsonCodec[ProviderId]    = JsonCodec.long
+  given JsonCodec[Password]      = JsonCodec.string
 
   // w = [a-zA-Z_0-9]
 
@@ -74,14 +76,15 @@ object types {
   given JsonEncoder      [Domain]          = JsonEncoder.string
   given JsonEncoder      [Magic]           = JsonEncoder.string
   given JsonEncoder      [Pin]             = JsonEncoder.string
+  given JsonEncoder      [Link]             = JsonEncoder.string
 
-  given JsonDecoder      [TenantName]      = safeName(128)
-  given JsonDecoder      [AccountName]     = safeName(64)
-  given JsonDecoder      [ApplicationName] = safeName(256)
-  given JsonDecoder      [GroupName]       = safeName(64)
-  given JsonDecoder      [RoleName]        = safeName(32)
-  given JsonDecoder      [PermissionName]  = safeName(128)
-  given JsonDecoder      [ProviderName]    = safeName(256)
+  given JsonDecoder      [TenantName]      = safeLatinName(128)
+  given JsonDecoder      [AccountName]     = safeLatinName(64)
+  given JsonDecoder      [ApplicationName] = safeLatinName(256)
+  given JsonDecoder      [GroupName]       = safeLatinName(64)
+  given JsonDecoder      [RoleName]        = safeLatinName(32)
+  given JsonDecoder      [PermissionName]  = safeLatinName(128)
+  given JsonDecoder      [ProviderName]    = safeLatinName(256)
 
   given JsonDecoder      [TenantCode]      = safeCode(64)
   given JsonDecoder      [AccountCode]     = safeCode(16)
@@ -95,8 +98,8 @@ object types {
   given JsonDecoder      [Email]           = safeDecode(email, 256)
   given JsonDecoder      [Domain]          = safeDecode(domain, 256)
   given JsonDecoder      [Magic]           = JsonDecoder.string
-  given JsonDecoder      [Password]        = JsonDecoder.string
   given JsonDecoder      [Pin]             = JsonDecoder.string
+  given JsonDecoder      [Link]            = JsonDecoder.string
 
   given JsonFieldEncoder[ApplicationName] = JsonFieldEncoder.string
   given JsonFieldDecoder[ApplicationName] = JsonFieldDecoder.string
@@ -125,6 +128,7 @@ object types {
   object GroupCode       extends OpaqueOps[String, GroupCode]
   object GroupId         extends OpaqueOps[Long, GroupId]
   object GroupName       extends OpaqueOps[String, GroupName]
+  object Link            extends OpaqueOps[String, Link]
   object Password        extends OpaqueOps[String, Password]
   object PinId           extends OpaqueOps[Long, PinId]
   object Pin             extends OpaqueOps[String, Pin]
@@ -138,7 +142,9 @@ object types {
   object RoleId          extends OpaqueOps[Long, RoleId]
   object RoleName        extends OpaqueOps[String, RoleName]
   object Sha256Hash      extends OpaqueOps[String, Sha256Hash]
-  object TenantCode      extends OpaqueOps[String, TenantCode]
+  object TenantCode      extends OpaqueOps[String, TenantCode] {
+    val DEFAULT = TenantCode.of("DEFAULT")
+  }
   object TenantId        extends OpaqueOps[Long, TenantId]
   object TenantName      extends OpaqueOps[String, TenantName]
   object UserCode        extends OpaqueOps[String, UserCode]
@@ -166,11 +172,16 @@ object types {
 
 object domain {
 
+  import token.{HasRoles, SingleAppToken}
   import types.*
   import zio.json.*
   import zio.optics.Lens
   import zio.json.internal.Write
   import java.time.{LocalDateTime, ZonedDateTime}
+
+  trait HasEmail {
+    def email: Email
+  }
 
   enum UserKind {
     case RE /* Regular */ ,
@@ -215,6 +226,18 @@ object domain {
     case class RawUser(
       details      : RawUserDetails,
       applications : Seq[RawApplication] = Seq.empty
+    ) {
+      def narrowTo(application: ApplicationCode): Option[SingleAppRawUser] = {
+        applications
+          .find(_.details.code == application)
+          .map(SingleAppRawUser(details, _))
+      }
+    }
+
+    case class SingleAppRawUser(
+      details        : RawUserDetails,
+      application    : RawApplication,
+      impersonatedBy : Option[RawUserDetails] = None
     )
 
     case class RawUserDetails(
@@ -242,8 +265,7 @@ object domain {
 
     case class RawApplication(
       details : RawApplicationDetails,
-      groups  : Seq[RawGroup] = Seq.empty,
-      roles   : Seq[RawRole]  = Seq.empty
+      groups  : Seq[RawGroup] = Seq.empty
     )
 
     case class RawIdentityProvider(
@@ -264,6 +286,7 @@ object domain {
       deleted : Option[LocalDateTime],
       code    : GroupCode,
       name    : GroupName,
+      roles   : Seq[RawRole] = Seq.empty
     )
 
     case class RawPermission(
@@ -293,24 +316,16 @@ object domain {
       set = id => details => Right(details.copy(id = id))
     )
 
-    given JsonEncoder[RawApplicationDetails] = DeriveJsonEncoder.gen[RawApplicationDetails]
-    given JsonDecoder[RawApplicationDetails] = DeriveJsonDecoder.gen[RawApplicationDetails]
-    given JsonEncoder[RawApplication]        = DeriveJsonEncoder.gen[RawApplication]
-    given JsonDecoder[RawApplication]        = DeriveJsonDecoder.gen[RawApplication]
-    given JsonEncoder[RawUserDetails]        = DeriveJsonEncoder.gen[RawUserDetails]
-    given JsonDecoder[RawUserDetails]        = DeriveJsonDecoder.gen[RawUserDetails]
-    given JsonEncoder[RawGroup]              = DeriveJsonEncoder.gen[RawGroup]
-    given JsonDecoder[RawGroup]              = DeriveJsonDecoder.gen[RawGroup]
-    given JsonEncoder[RawPermission]         = DeriveJsonEncoder.gen[RawPermission]
-    given JsonDecoder[RawPermission]         = DeriveJsonDecoder.gen[RawPermission]
-    given JsonEncoder[RawRole]               = DeriveJsonEncoder.gen[RawRole]
-    given JsonDecoder[RawRole]               = DeriveJsonDecoder.gen[RawRole]
-    given JsonEncoder[RawUser]               = DeriveJsonEncoder.gen[RawUser]
-    given JsonDecoder[RawUser]               = DeriveJsonDecoder.gen[RawUser]
-    given JsonEncoder[RawUserEntry]          = DeriveJsonEncoder.gen[RawUserEntry]
-    given JsonDecoder[RawUserEntry]          = DeriveJsonDecoder.gen[RawUserEntry]
-    given JsonEncoder[RawIdentityProvider]   = DeriveJsonEncoder.gen[RawIdentityProvider]
-    given JsonDecoder[RawIdentityProvider]   = DeriveJsonDecoder.gen[RawIdentityProvider]
+    given JsonCodec[RawApplicationDetails] = DeriveJsonCodec.gen
+    given JsonCodec[RawApplication]        = DeriveJsonCodec.gen
+    given JsonCodec[SingleAppRawUser]      = DeriveJsonCodec.gen
+    given JsonCodec[RawUserDetails]        = DeriveJsonCodec.gen
+    given JsonCodec[RawGroup]              = DeriveJsonCodec.gen
+    given JsonCodec[RawPermission]         = DeriveJsonCodec.gen
+    given JsonCodec[RawRole]               = DeriveJsonCodec.gen
+    given JsonCodec[RawUser]               = DeriveJsonCodec.gen
+    given JsonCodec[RawUserEntry]          = DeriveJsonCodec.gen
+    given JsonCodec[RawIdentityProvider]   = DeriveJsonCodec.gen
   }
 
   object simple {
@@ -318,15 +333,14 @@ object domain {
     import raw.*
 
     case class SimplePermission (id: PermissionId, code: PermissionCode, name: PermissionName)
-    case class SimpleRole       (id: RoleId      , code: RoleCode      , name: RoleName, permissions: Seq[SimplePermission])
-    case class SimpleGroup      (id: GroupId     , code: GroupCode     , name: GroupName)
+    case class SimpleRole       (id: RoleId      , code: RoleCode      , name: RoleName , permissions: Seq[SimplePermission])
+    case class SimpleGroup      (id: GroupId     , code: GroupCode     , name: GroupName, roles      : Seq[SimpleRole])
 
     case class SimpleApp(
      id     : ApplicationId,
      code   : ApplicationCode,
      name   : ApplicationName,
      groups : Seq[SimpleGroup],
-     roles  : Seq[SimpleRole]
     )
 
     case class SimpleTenant (id: TenantId, code: TenantCode)
@@ -343,7 +357,7 @@ object domain {
     )
 
     extension (it: RawGroup)
-      def simple:SimpleGroup = SimpleGroup(it.id, it.code, it.name)
+      def simple:SimpleGroup = SimpleGroup(it.id, it.code, it.name, it.roles.map(_.simple))
 
     extension (it: RawPermission)
       def simple: SimplePermission = SimplePermission(it.id, it.code, it.name)
@@ -356,8 +370,7 @@ object domain {
         id     = it.details.id,
         code   = it.details.code,
         name   = it.details.name,
-        groups = it.groups.map(_.simple),
-        roles  = it.roles.map(_.simple)
+        groups = it.groups.map(_.simple)
       )
 
     extension (it: RawUser)
@@ -385,8 +398,12 @@ object domain {
     import raw.*
 
     case class MiniApp(
-      groups : Seq[GroupCode],
-      roles  : Map[RoleCode, Seq[PermissionCode]]
+      groups : Seq[MiniGroup]
+    )
+
+    case class MiniGroup(
+      code  : GroupCode,
+      roles : Map[RoleCode, Seq[PermissionCode]]
     )
 
     case class MiniUser(
@@ -400,8 +417,12 @@ object domain {
 
     extension (it: RawApplication)
       def mini: MiniApp = MiniApp(
-        groups = it.groups.map(_.code),
-        roles  = it.roles.map { role => role.code -> role.permissions.map(_.code) }.toMap
+        groups = it.groups.map { group =>
+          MiniGroup(
+            code  = group.code,
+            roles = group.roles.map { role => role.code -> role.permissions.map(_.code) }.toMap
+          )
+        }
       )
 
     extension (it: RawUser)
@@ -414,10 +435,12 @@ object domain {
         applications = it.applications.map { app => app.details.code -> app.mini }.toMap
       )
 
-    given JsonEncoder[MiniApp]  = DeriveJsonEncoder.gen[MiniApp]
-    given JsonDecoder[MiniApp]  = DeriveJsonDecoder.gen[MiniApp]
-    given JsonEncoder[MiniUser] = DeriveJsonEncoder.gen[MiniUser]
-    given JsonDecoder[MiniUser] = DeriveJsonDecoder.gen[MiniUser]
+    given JsonEncoder[MiniGroup] = DeriveJsonEncoder.gen
+    given JsonEncoder[MiniApp]   = DeriveJsonEncoder.gen
+    given JsonDecoder[MiniGroup] = DeriveJsonDecoder.gen
+    given JsonDecoder[MiniApp]   = DeriveJsonDecoder.gen
+    given JsonEncoder[MiniUser]  = DeriveJsonEncoder.gen
+    given JsonDecoder[MiniUser]  = DeriveJsonDecoder.gen
   }
 
   object token {
@@ -426,29 +449,179 @@ object domain {
 
     opaque type RawToken = String
 
-    object RawToken:
+    object RawToken {
       def of(value: String): RawToken = value
+      given JsonCodec[RawToken] = JsonCodec.string
+    }
 
     extension (it: RawToken)
       def string: String = it
 
-    case class Token(
-      created : ZonedDateTime,
-      expires : Option[ZonedDateTime],
-      user    : RawUser
-    ) {
-      def roleByCode(code: RoleCode)(using app: ApplicationCode): Option[RawRole] = {
-        for {
-          a <- user.applications.find(_.details.code == app)
-          r <- a.roles.find(_.code == code)
-        } yield r
-      }
-
-      def hasRole(code: RoleCode)(using app: ApplicationCode) = roleByCode(code).isDefined
+    trait HasRoles {
+      def hasRole(code: RoleCode): Boolean
     }
 
-    given JsonEncoder[Token] = DeriveJsonEncoder.gen[Token]
-    given JsonDecoder[Token] = DeriveJsonDecoder.gen[Token]
+    case class Token(
+      created        : ZonedDateTime,
+      expires        : Option[ZonedDateTime],
+      user           : RawUser,
+      impersonatedBy : Option[RawUserDetails] = None
+    ) {
+      def roleByCode(code: RoleCode)(using app: ApplicationCode): Option[RawRole] =
+        for {
+          a <- user.applications.find(_.details.code == app)
+          r <- a.groups.flatMap(_.roles).find(_.code == code)
+        } yield r
 
+      def hasRole(code: RoleCode)(using ApplicationCode) =
+        roleByCode(code).isDefined
+
+      def groups(using app: ApplicationCode): Seq[RawGroup] =
+        narrowTo(app).map(_.user.application.groups).getOrElse(Seq.empty)
+
+      def roles(using app: ApplicationCode): Seq[RawRole] =
+        narrowTo(app).map(_.user.application.groups.flatMap(_.roles)).getOrElse(Seq.empty)
+
+      def narrowTo(application: ApplicationCode): Option[SingleAppToken] =
+        user
+          .applications
+          .find(_.details.code == application)
+          .map { found =>
+            SingleAppToken(
+              created,
+              expires,
+              SingleAppRawUser(details = user.details, application = found, impersonatedBy = impersonatedBy)
+            )
+          }
+    }
+
+    case class SingleAppToken(
+      created     : ZonedDateTime,
+      expires     : Option[ZonedDateTime],
+      user        : SingleAppRawUser
+    ) {
+      def hasRole(code: RoleCode): Boolean = user.application.groups.flatMap(_.roles).exists(_.code == code)
+    }
+
+    given JsonCodec[Token]          = DeriveJsonCodec.gen
+    given JsonCodec[SingleAppToken] = DeriveJsonCodec.gen
   }
+
+  object requests {
+    case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
+    case class StoreUserRequest(id: Option[UserId], code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], update: Option[Boolean] /* TODO: remove this as soon as we migrate all users from legacy */)
+    case class RequestPasswordRequestLink(email: Email) extends HasEmail
+    case class PasswordResetLink(link: Link)
+    case class SetUserPin(email: Email, pin: Pin) extends HasEmail
+    case class ValidateUserPin(pin: Pin)
+    case class RemoveUserRequest(code: UserCode)
+    case class RemoveGroupRequest(code: GroupCode)
+    case class LoginViaEmailLinkRequest(email: Email, url: String)
+    case class LoginViaEmailLinkResponse(link: Link)
+
+    given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
+    given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
+    given JsonCodec[RequestPasswordRequestLink] = DeriveJsonCodec.gen
+    given JsonCodec[PasswordResetLink]          = DeriveJsonCodec.gen
+    given JsonCodec[SetUserPin]                 = DeriveJsonCodec.gen
+    given JsonCodec[ValidateUserPin]            = DeriveJsonCodec.gen
+    given JsonCodec[RemoveUserRequest]          = DeriveJsonCodec.gen
+    given JsonCodec[RemoveGroupRequest]         = DeriveJsonCodec.gen
+    given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
+    given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
+  }
+}
+
+object roles {
+
+  import types.{ApplicationCode, RoleCode}
+  import domain.token.{Token, SingleAppToken, HasRoles}
+
+  given Conversion[String, Role] with
+    def apply(code: String): Role = SingleRole(RoleCode.of(code))
+
+  sealed trait Role {
+    def or  (code: String) : Role = or(SingleRole(RoleCode.of(code)))
+    def or  (code: Role)   : Role = OrRole(this, code)
+    def and (code: String) : Role = and(SingleRole(RoleCode.of(code)))
+    def and (code: Role)   : Role = AndRole(this, code)
+
+    def isSatisfiedBy(token: Token)(using ApplicationCode): Boolean
+    def isSatisfiedBy(token: SingleAppToken): Boolean
+  }
+
+  private case class SingleRole(code: RoleCode) extends Role {
+    override def toString = RoleCode.value(code)
+    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = tk.hasRole(code)
+    override def isSatisfiedBy(tk: SingleAppToken)              : Boolean = tk.hasRole(code)
+  }
+
+  private case class OrRole(r1: Role, r2: Role) extends Role {
+    override def toString = s"($r1 || $r2)"
+    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = r1.isSatisfiedBy(tk) || r2.isSatisfiedBy(tk)
+    override def isSatisfiedBy(tk: SingleAppToken)              : Boolean = r1.isSatisfiedBy(tk) || r2.isSatisfiedBy(tk)
+  }
+
+  private case class AndRole(r1: Role, r2: Role) extends Role {
+    override def toString = s"($r1 && $r2)"
+    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = r1.isSatisfiedBy(tk) && r2.isSatisfiedBy(tk)
+    override def isSatisfiedBy(tk: SingleAppToken)              : Boolean = r1.isSatisfiedBy(tk) && r2.isSatisfiedBy(tk)
+  }
+}
+
+object secure {
+
+  import types.ApplicationCode
+  import domain.token.{SingleAppToken, Token}
+  import roles.Role
+  import guara.utils.ensureResponse
+  import guara.errors.*
+  import zio.http.*
+  import zio.*
+
+  type AppRoute = SingleAppToken ?=> Request => Task[Response]
+  type TokenValidator = SingleAppToken => Either[String, Unit]
+
+  val AllowAll: TokenValidator = _ => Right(())
+
+  def role(role: Role, allow: TokenValidator = AllowAll)(fn: Request => Task[Response])(request: Request)(using token: SingleAppToken): Task[Response] = {
+
+    def forbidden(message: String) = ZIO.fail(ReturnResponseError(Response.forbidden(message)))
+
+    def test(token: SingleAppToken): Task[Unit] = {
+      if (role.isSatisfiedBy(token)) ZIO.unit
+      else                           forbidden(s"Required role '$role' is missing from user token (application: ${token.user.application.details.code})")
+    }
+
+    for {
+      _ <- allow(token) match
+             case Left(err) => forbidden(err)
+             case Right(_)  => test(token)
+      result <- fn(request)
+    } yield result
+  }
+
+  def appRoute(application: ApplicationCode, tokenFrom: Request => Task[Token])(route: AppRoute)(request: Request): Task[Response] = {
+
+    def execute(token: SingleAppToken) = {
+      given SingleAppToken = token
+      route(request)
+    }
+
+    ensureResponse {
+      for
+        _     <- ZIO.logInfo(s"Executing app route for app '${application}'")
+        token <- tokenFrom(request)                         //.mapError(e => ReturnResponseError(Response.forbidden(s"Error extracting token from request: ${e.getMessage}")))
+        _     <- ZIO.logInfo(s"Token extracted ${token.user.details.email}")
+        sat   <- ZIO.fromOption(token.narrowTo(application)).mapError(_ => ReturnResponseError(Response.forbidden(s"User has no access to application '$application'")))
+        _     <- ZIO.logInfo(s"Token narrowed. Executing")
+        res   <- execute(sat)
+      yield res
+    }
+  }
+
+  private def sample(request: Request)(using SingleAppToken): Task[Response] = ???
+  val test: AppRoute = role("") { _ => ZIO.succeed(Response.ok) }
+  def tk(r: Request): Task[Token] = ???
+  val x: (Request) => Task[Response] = appRoute(ApplicationCode.of(""), tk) { sample }
 }
