@@ -360,13 +360,6 @@ object domain {
       applications : Seq[CompactApplication] = Seq.empty
     )
 
-//    case class CompactToken(
-//      created        : ZonedDateTime,
-//      expires        : Option[ZonedDateTime],
-//      user           : CompactUser,
-//      impersonatedBy : Option[RawUserDetails] = None
-//    )
-
     case class Token(
       created        : ZonedDateTime,
       expires        : Option[ZonedDateTime],
