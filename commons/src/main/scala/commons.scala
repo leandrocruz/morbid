@@ -172,8 +172,8 @@ object types {
 
 object domain {
 
-  import token.{HasRoles, SingleAppToken}
   import types.*
+  import domain.token.SingleAppUser
   import zio.json.*
   import zio.optics.Lens
   import zio.json.internal.Write
@@ -201,6 +201,9 @@ object domain {
 
   object raw {
 
+    import morbid.domain.token.CompactApplication
+    import io.scalaland.chimney.dsl.*
+
     case class RawAccount(
       id         : AccountId,
       created    : LocalDateTime,
@@ -227,18 +230,12 @@ object domain {
       details      : RawUserDetails,
       applications : Seq[RawApplication] = Seq.empty
     ) {
-      def narrowTo(application: ApplicationCode): Option[SingleAppRawUser] = {
+      def narrowTo(application: ApplicationCode): Option[SingleAppUser] = {
         applications
           .find(_.details.code == application)
-          .map(SingleAppRawUser(details, _))
+          .map(app => SingleAppUser(details, app.transformInto[CompactApplication]))
       }
     }
-
-    case class SingleAppRawUser(
-      details        : RawUserDetails,
-      application    : RawApplication,
-      impersonatedBy : Option[RawUserDetails] = None
-    )
 
     case class RawUserDetails(
       id          : UserId,
@@ -318,7 +315,6 @@ object domain {
 
     given JsonCodec[RawApplicationDetails] = DeriveJsonCodec.gen
     given JsonCodec[RawApplication]        = DeriveJsonCodec.gen
-    given JsonCodec[SingleAppRawUser]      = DeriveJsonCodec.gen
     given JsonCodec[RawUserDetails]        = DeriveJsonCodec.gen
     given JsonCodec[RawGroup]              = DeriveJsonCodec.gen
     given JsonCodec[RawPermission]         = DeriveJsonCodec.gen
@@ -328,124 +324,11 @@ object domain {
     given JsonCodec[RawIdentityProvider]   = DeriveJsonCodec.gen
   }
 
-  object simple {
-
-    import raw.*
-
-    case class SimplePermission (id: PermissionId, code: PermissionCode, name: PermissionName)
-    case class SimpleRole       (id: RoleId      , code: RoleCode      , name: RoleName , permissions: Seq[SimplePermission])
-    case class SimpleGroup      (id: GroupId     , code: GroupCode     , name: GroupName, roles      : Seq[SimpleRole])
-
-    case class SimpleApp(
-     id     : ApplicationId,
-     code   : ApplicationCode,
-     name   : ApplicationName,
-     groups : Seq[SimpleGroup],
-    )
-
-    case class SimpleTenant (id: TenantId, code: TenantCode)
-    case class SimpleAccount(id: AccountId, code: AccountCode)
-
-    case class SimpleUser(
-      tenant       : SimpleTenant,
-      account      : SimpleAccount,
-      id           : UserId,
-      code         : UserCode,
-      email        : Email,
-      kind         : Option[UserKind],
-      applications : Seq[SimpleApp]
-    )
-
-    extension (it: RawGroup)
-      def simple:SimpleGroup = SimpleGroup(it.id, it.code, it.name, it.roles.map(_.simple))
-
-    extension (it: RawPermission)
-      def simple: SimplePermission = SimplePermission(it.id, it.code, it.name)
-
-    extension (it: RawRole)
-      def simple: SimpleRole = SimpleRole(it.id, it.code, it.name, it.permissions.map(_.simple))
-
-    extension (it: RawApplication)
-      def simple: SimpleApp = SimpleApp(
-        id     = it.details.id,
-        code   = it.details.code,
-        name   = it.details.name,
-        groups = it.groups.map(_.simple)
-      )
-
-    extension (it: RawUser)
-      def simple: SimpleUser = SimpleUser(
-        tenant       = SimpleTenant(it.details.tenant, it.details.tenantCode),
-        account      = SimpleAccount(it.details.account, it.details.accountCode),
-        id           = it.details.id,
-        code         = it.details.code,
-        email        = it.details.email,
-        kind         = it.details.kind,
-        applications = it.applications.map(_.simple)
-      )
-
-    given JsonEncoder[SimplePermission] = DeriveJsonEncoder.gen[SimplePermission]
-    given JsonEncoder[SimpleRole]       = DeriveJsonEncoder.gen[SimpleRole]
-    given JsonEncoder[SimpleGroup]      = DeriveJsonEncoder.gen[SimpleGroup]
-    given JsonEncoder[SimpleApp]        = DeriveJsonEncoder.gen[SimpleApp]
-    given JsonEncoder[SimpleAccount]    = DeriveJsonEncoder.gen[SimpleAccount]
-    given JsonEncoder[SimpleTenant]     = DeriveJsonEncoder.gen[SimpleTenant]
-    given JsonEncoder[SimpleUser]       = DeriveJsonEncoder.gen[SimpleUser]
-  }
-
-  object mini {
-
-    import raw.*
-
-    case class MiniApp(
-      groups : Seq[MiniGroup]
-    )
-
-    case class MiniGroup(
-      code  : GroupCode,
-      roles : Map[RoleCode, Seq[PermissionCode]]
-    )
-
-    case class MiniUser(
-      tenant       : TenantCode,
-      account      : AccountCode,
-      code         : UserCode,
-      email        : Email,
-      kind         : Option[UserKind],
-      applications : Map[ApplicationCode, MiniApp]
-    )
-
-    extension (it: RawApplication)
-      def mini: MiniApp = MiniApp(
-        groups = it.groups.map { group =>
-          MiniGroup(
-            code  = group.code,
-            roles = group.roles.map { role => role.code -> role.permissions.map(_.code) }.toMap
-          )
-        }
-      )
-
-    extension (it: RawUser)
-      def mini: MiniUser = MiniUser(
-        tenant       = it.details.tenantCode,
-        account      = it.details.accountCode,
-        code         = it.details.code,
-        email        = it.details.email,
-        kind         = it.details.kind,
-        applications = it.applications.map { app => app.details.code -> app.mini }.toMap
-      )
-
-    given JsonEncoder[MiniGroup] = DeriveJsonEncoder.gen
-    given JsonEncoder[MiniApp]   = DeriveJsonEncoder.gen
-    given JsonDecoder[MiniGroup] = DeriveJsonDecoder.gen
-    given JsonDecoder[MiniApp]   = DeriveJsonDecoder.gen
-    given JsonEncoder[MiniUser]  = DeriveJsonEncoder.gen
-    given JsonDecoder[MiniUser]  = DeriveJsonDecoder.gen
-  }
-
   object token {
 
     import raw.*
+    import io.scalaland.chimney.Transformer
+    import io.scalaland.chimney.dsl.*
 
     opaque type RawToken = String
 
@@ -461,50 +344,74 @@ object domain {
       def hasRole(code: RoleCode): Boolean
     }
 
+    case class CompactGroup(
+      code  : GroupCode,
+      roles : Seq[RoleCode] = Seq.empty
+    )
+
+    case class CompactApplication(
+      id     : ApplicationId,
+      code   : ApplicationCode,
+      groups : Seq[CompactGroup] = Seq.empty
+    )
+
+    case class CompactUser(
+      details      : RawUserDetails,
+      applications : Seq[CompactApplication] = Seq.empty
+    )
+
     case class Token(
       created        : ZonedDateTime,
       expires        : Option[ZonedDateTime],
-      user           : RawUser,
+      user           : CompactUser,
       impersonatedBy : Option[RawUserDetails] = None
     ) {
-      def roleByCode(code: RoleCode)(using app: ApplicationCode): Option[RawRole] =
+      private def roleByCode(code: RoleCode)(using app: ApplicationCode): Option[RoleCode] =
         for {
-          a <- user.applications.find(_.details.code == app)
-          r <- a.groups.flatMap(_.roles).find(_.code == code)
+          a <- user.applications.find(_.code == app)
+          r <- a.groups.flatMap(_.roles).find(_ == code)
         } yield r
 
       def hasRole(code: RoleCode)(using ApplicationCode) =
         roleByCode(code).isDefined
 
-      def groups(using app: ApplicationCode): Seq[RawGroup] =
-        narrowTo(app).map(_.user.application.groups).getOrElse(Seq.empty)
-
-      def roles(using app: ApplicationCode): Seq[RawRole] =
-        narrowTo(app).map(_.user.application.groups.flatMap(_.roles)).getOrElse(Seq.empty)
-
       def narrowTo(application: ApplicationCode): Option[SingleAppToken] =
         user
           .applications
-          .find(_.details.code == application)
+          .find(_.code == application)
           .map { found =>
             SingleAppToken(
               created,
               expires,
-              SingleAppRawUser(details = user.details, application = found, impersonatedBy = impersonatedBy)
+              SingleAppUser(details = user.details, application = found, impersonatedBy = impersonatedBy)
             )
           }
+
+      //def compact = this.transformInto[CompactToken]
     }
+    case class SingleAppUser(
+      details        : RawUserDetails,
+      application    : CompactApplication,
+      impersonatedBy : Option[RawUserDetails] = None
+    )
 
     case class SingleAppToken(
-      created     : ZonedDateTime,
-      expires     : Option[ZonedDateTime],
-      user        : SingleAppRawUser
+      created : ZonedDateTime,
+      expires : Option[ZonedDateTime],
+      user    : SingleAppUser
     ) {
-      def hasRole(code: RoleCode): Boolean = user.application.groups.flatMap(_.roles).exists(_.code == code)
+      def hasRole(code: RoleCode): Boolean = user.application.groups.flatMap(_.roles).contains(code)
     }
 
-    given JsonCodec[Token]          = DeriveJsonCodec.gen
-    given JsonCodec[SingleAppToken] = DeriveJsonCodec.gen
+    given Transformer[RawGroup, CompactGroup]             = (original: RawGroup)       => CompactGroup(code = original.code, roles = original.roles.map(_.code))
+    given Transformer[RawApplication, CompactApplication] = (original: RawApplication) => CompactApplication(id = original.details.id, code = original.details.code, groups = original.groups.map(_.transformInto[CompactGroup]))
+
+    given JsonCodec[CompactGroup]       = DeriveJsonCodec.gen
+    given JsonCodec[CompactApplication] = DeriveJsonCodec.gen
+    given JsonCodec[CompactUser]        = DeriveJsonCodec.gen
+    given JsonCodec[Token]              = DeriveJsonCodec.gen
+    given JsonCodec[SingleAppUser]      = DeriveJsonCodec.gen
+    given JsonCodec[SingleAppToken]     = DeriveJsonCodec.gen
   }
 
   object requests {
@@ -579,7 +486,7 @@ object secure {
   import zio.http.*
   import zio.*
 
-  type AppRoute = SingleAppToken ?=> Request => Task[Response]
+  type AppRoute       = SingleAppToken ?=> Request => Task[Response]
   type TokenValidator = SingleAppToken => Either[String, Unit]
 
   val AllowAll: TokenValidator = _ => Right(())
@@ -590,7 +497,7 @@ object secure {
 
     def test(token: SingleAppToken): Task[Unit] = {
       if (role.isSatisfiedBy(token)) ZIO.unit
-      else                           forbidden(s"Required role '$role' is missing from user token (application: ${token.user.application.details.code})")
+      else                           forbidden(s"Required role '$role' is missing from user token (application: ${token.user.application.code})")
     }
 
     for {

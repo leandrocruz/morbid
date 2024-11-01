@@ -8,7 +8,7 @@ import config.MorbidConfig
 import domain.*
 import domain.raw.*
 import domain.requests.*
-import domain.token.{SingleAppToken, Token}
+import domain.token.{SingleAppToken, SingleAppUser, Token}
 import gip.*
 import passwords.PasswordGenerator
 import pins.PinManager
@@ -220,7 +220,7 @@ object router {
     private def storeGroup: AppRoute = role("adm" or "group_adm") { request =>
 
       val token       = summon[SingleAppToken]
-      val application = token.user.application.details.code
+      val application = token.user.application.code
 
       def build(req: StoreGroupRequest, app: RawApplication, code: GroupCode, now: LocalDateTime) = {
         val group = RawGroup(
@@ -292,16 +292,16 @@ object router {
         def linkTo(group: RawGroup): Task[Unit] = {
           repo.exec {
             LinkUsersToGroup(
-              application = application.details.id,
+              application = application.id,
               group       = group.id,
               users       = Seq(user.id)
             )
           }
         }
 
-        groupsByApp.get(application.details.code) match {
+        groupsByApp.get(application.code) match {
           case Some(Seq(group)) if group.code == GroupAll => linkTo(group)
-          case _                                          => ZIO.fail(Exception(s"Can't find group '${GroupAll}' for application '${application.details.code}'"))
+          case _                                          => ZIO.fail(Exception(s"Can't find group '${GroupAll}' for application '${application.code}'"))
         }
       }
 
@@ -315,7 +315,7 @@ object router {
         user   <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")
         _      <- ZIO.logInfo(s"User '${user.email}/${user.id}' stored")
         _      <- identities.createUser(store, pwd).asCommonError(10011, "Error storing user identity")
-        groups <- repo.exec(FindGroups(acc.code, Seq(application.details.code), Seq(GroupAll)))
+        groups <- repo.exec(FindGroups(acc.code, Seq(application.code), Seq(GroupAll)))
         _      <- link(groups, user).asCommonError(10012, "Error adding user to group ALL")
       yield Response.json(user.toJson)
     }
@@ -335,7 +335,7 @@ object router {
 
       val token       = summon[SingleAppToken]
       val account     = token.user.details.account
-      val application = token.user.application.details.id
+      val application = token.user.application.id
 
       for
         req    <- request.body.parse[RemoveGroupRequest].mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
@@ -345,7 +345,7 @@ object router {
 
     private def usersGiven: AppRoute = role("adm" or "user_adm") { request =>
       val token       = summon[SingleAppToken]
-      val application = token.user.application.details.code
+      val application = token.user.application.code
       usersGiven(request, application, None)
     }
 
@@ -412,13 +412,13 @@ object router {
       } yield Response.json(seq.toJson)
     }
 
-    private def sameUserOr[T <: HasEmail, R](role: Role)(fn: (SingleAppRawUser, T) => Task[R])(request: Request)(using token: SingleAppToken)(using JsonDecoder[T], JsonEncoder[R]): Task[Response] = ensureResponse {
+    private def sameUserOr[T <: HasEmail, R](role: Role)(fn: (SingleAppUser, T) => Task[R])(request: Request)(using token: SingleAppToken)(using JsonDecoder[T], JsonEncoder[R]): Task[Response] = ensureResponse {
 
-      def ifAdmLoadUserSameAccount(token: SingleAppToken, req: T): Task[SingleAppRawUser] = {
+      def ifAdmLoadUserSameAccount(token: SingleAppToken, req: T): Task[SingleAppUser] = {
 
         def badRequest(reason: String) = ZIO.fail(ReturnResponseError(Response.badRequest(s"Can't find user '${req.email}' ($reason)")))
 
-        val application = token.user.application.details.code
+        val application = token.user.application.code
         val isAdm       = role.isSatisfiedBy(token)
 
         for

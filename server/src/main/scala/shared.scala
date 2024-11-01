@@ -35,8 +35,6 @@ object config {
 object utils {
 
   import domain.raw.RawUser
-  import domain.simple.*
-  import domain.mini.*
   import org.apache.commons.lang3.exception.ExceptionUtils
   import guara.errors.ReturnResponseWithExceptionError
   import zio.json.*
@@ -53,15 +51,6 @@ object utils {
   )
 
   given JsonCodec[CommonError] = DeriveJsonCodec.gen
-
-  extension (user: RawUser)
-    def asJson(format: Option[String]): String = {
-      format match {
-        case Some("simple") => user.simple.toJson
-        case Some("mini")   => user.mini.toJson
-        case _              => user.toJson
-      }
-    }
 
   extension [T](task: Task[Option[T]])
     def orFail(message: String): Task[T] = {

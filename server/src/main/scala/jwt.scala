@@ -6,7 +6,7 @@ object tokens {
 
   import types.*
   import domain.raw.*
-  import domain.token.Token
+  import domain.token.{Token, CompactUser}
   import morbid.config.MorbidConfig
   import better.files._
   import guara.errors.*
@@ -16,6 +16,7 @@ object tokens {
   import java.util.Base64
   import javax.crypto.spec.SecretKeySpec
   import java.time.{ZoneId, ZonedDateTime, LocalDateTime}
+  import io.scalaland.chimney.dsl.*
 
   trait TokenGenerator {
     def verify(payload: String) : Task[Token]
@@ -35,8 +36,8 @@ object tokens {
         }
 
         for {
-          _    <- ZIO.logInfo(s"Loading JWT key from '${config.jwt.key}'")
-          key  <- readKey(config)
+          _   <- ZIO.logInfo(s"Loading JWT key from '${config.jwt.key}'")
+          key <- readKey(config)
         } yield JwtTokenGenerator(key, zone)
       }
 
@@ -58,7 +59,7 @@ object tokens {
       } yield Token(
         created = at,
         expires = Some(at.plusDays(1)), //TODO: define the expiration policy based on the tenant/account/etc
-        user = user
+        user = user.transformInto[CompactUser]
       )
     }
 
@@ -129,7 +130,7 @@ object tokens {
             code        = UserCode.of("usr1"),
             email       = Email.of("usr1@email.com")
           )
-        )
+        ).transformInto[CompactUser]
       )
     }
   }
@@ -145,7 +146,7 @@ object tokens {
       } yield Token(
         created = at,
         expires = Some(at.plusDays(1)), //TODO: define the expiration policy based on the tenant/account/etc
-        user    = user
+        user    = user.transformInto[CompactUser]
       )
     }
 
@@ -153,7 +154,8 @@ object tokens {
      * https://github.com/jwtk/jjwt#jwt-create
      */
     override def encode(token: Token): Task[String] = {
-      ZIO.attempt {
+
+      def build(content: String) = ZIO.attempt {
         Jwts
           .builder()
           .header()
@@ -161,10 +163,15 @@ object tokens {
             .add("version", "v1")
             .add("issuer", "morbid")
           .and()
-          .content(token.toJson)
+          .content(content)
           .signWith(key)
           .compact()
       }
+
+      for {
+        encoded <- ZIO.attempt(token.toJson)
+        result  <- build(encoded)
+      } yield result
     }
 
     override def verify(payload: String): Task[Token] = {

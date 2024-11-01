@@ -1,4 +1,11 @@
 # Morbid
+ 
+ - Using chimney 1.3.0
+ - Renaming `SingleAppRawUser` to `SingleAppUser`
+ - Removing `simple` and `mini`
+ - Changed `Token.RawUser` to `Token.CompactUser` for better/smaller serialization
+ - Removing dead code
+ - Finding users not associated with any groups (refactoring of DatabaseRepo.userGiven)
 
 ## Release v0.0.2
 LTS: 29/10/2024

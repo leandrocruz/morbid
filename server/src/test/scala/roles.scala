@@ -2,7 +2,7 @@ package morbid
 
 import morbid.types.*
 import morbid.domain.raw.*
-import morbid.domain.token.Token
+import morbid.domain.token.{CompactApplication, CompactGroup, CompactUser, Token}
 import zio.test.Assertion.*
 import zio.test.*
 import roles.given
@@ -12,11 +12,13 @@ import java.time.{LocalDateTime, ZonedDateTime}
 object RoleSpec extends ZIOSpecDefault {
 
 
+//    RawUser(
+//    )
   def token(groups: Seq[RawGroup]) = Token(
     created = ZonedDateTime.now(),
     expires = None,
     impersonatedBy = None,
-    user = RawUser(
+    user = CompactUser(
       details = RawUserDetails(
         id          = UserId.of(1),
         created     = LocalDateTime.now(),
@@ -31,13 +33,13 @@ object RoleSpec extends ZIOSpecDefault {
         email       = Email.of("u1@a1.com")
       ),
       applications = Seq (
-        RawApplication(
-          details = RawApplicationDetails(id = ApplicationId.of(1), created = LocalDateTime.now(), deleted = None, active = true, code = ApplicationCode.of("app1"), name = ApplicationName.of("App One")),
-          groups  = groups
+        CompactApplication(
+          id     = ApplicationId.of(1),
+          code   = ApplicationCode.of("app1"),
+          groups = groups.map(g => CompactGroup(code = g.code, roles = g.roles.map(_.code)))
         )
       )
-
-    )
+    ),
   )
 
   def spec =
