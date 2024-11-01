@@ -1,4 +1,7 @@
 # Morbid
+
+## Release v0.0.3
+LTS: 01/11/2024
  
  - Using chimney 1.3.0
  - Renaming `SingleAppRawUser` to `SingleAppUser`
