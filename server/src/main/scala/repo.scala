@@ -204,7 +204,15 @@ object repo {
   )
 
   trait Repo {
+    
     def exec[R](command: Command[R]): Task[R]
+    
+    def get[R](command: Command[Option[R]])(msg: => String): Task[R] = {
+      for {
+        result <- exec(command)
+        value  <- ZIO.fromOption(result).mapError(_ => Exception(msg))
+      } yield value
+    }
   }
 
   object Repo {
@@ -230,8 +238,6 @@ object repo {
     private lazy val ctx = new PostgresZioJdbcContext(SnakeCase)
 
     private inline given InsertMeta[TenantRow]           = insertMeta[TenantRow]           (_.id)
-    private inline given InsertMeta[AccountRow]          = insertMeta[AccountRow]          (_.id)
-    //private inline given InsertMeta[UserRow]             = insertMeta[UserRow]             (_.id)
     private inline given InsertMeta[PinRow]              = insertMeta[PinRow]              (_.id)
     private inline given InsertMeta[ApplicationRow]      = insertMeta[ApplicationRow]      (_.id)
     private inline given InsertMeta[GroupRow]            = insertMeta[GroupRow]            (_.id)
@@ -317,31 +323,34 @@ object repo {
 
     override def exec[R](command: Command[R]): Task[R] = {
       command match
-        case r: StoreGroup            => storeGroup(r)
-        case r: StoreUser             => storeUser(r)
-        case r: DefineUserPin         => setUserPin(r)
-        case r: GetUserPin            => getUserPin(r)
-        case r: FindAccountByCode     => accountByCode(r)
-        case r: FindAccountByProvider => accountByProvider(r)
-        case r: FindApplication       => applicationGiven(r)
-        case r: FindApplications      => applicationDetailsGiven(r)
-        case r: FindGroups            => groupsGiven(r)
-        case r: FindProviderByAccount => providerGiven(r)
-        case r: FindProviderByDomain  => providerGiven(r)
-        case r: FindRoles             => rolesGiven(r)
-        case r: FindUsersByCode       => usersGiven(r)
-        case r: FindUserByEmail       => userGiven(r)
-        case r: FindUserById          => userGiven(r)
-        case r: FindUsersInGroup      => usersGiven(r)
-        case r: LinkUsersToGroup      => linkGroups(r)
-        case r: UnlinkUsersFromGroup  => ZIO.fail(Exception("TODO"))
-        case r: LinkGroupToRoles      => ZIO.fail(Exception("TODO"))
-        case r: UnlinkGroupFromRoles  => ZIO.fail(Exception("TODO"))
-        case r: RemoveAccount         => ZIO.fail(Exception("TODO"))
-        case r: RemoveGroup           => removeGroup(r)
-        case r: RemoveUser            => removeUser(r)
-        case r: ReportUsersByAccount  => usersByAccount(r)
-        case r: UserExists            => userExists(r)
+        case r: StoreAccount           => storeAccount(r)
+        case r: StoreGroup             => storeGroup(r)
+        case r: StoreUser              => storeUser(r)
+        case r: DefineUserPin          => setUserPin(r)
+        case r: GetUserPin             => getUserPin(r)
+        case r: FindAccountByCode      => accountByCode(r)
+        case r: FindAccountByProvider  => accountByProvider(r)
+        case r: FindApplication        => applicationGiven(r)
+        case r: FindApplicationDetails => applicationDetails(r)
+        case r: FindApplications       => applicationDetailsGiven(r)
+        case r: FindGroups             => groupsGiven(r)
+        case r: FindProviderByAccount  => providerGiven(r)
+        case r: FindProviderByDomain   => providerGiven(r)
+        case r: FindRoles              => rolesGiven(r)
+        case r: FindUsersByCode        => usersGiven(r)
+        case r: FindUserByEmail        => userGiven(r)
+        case r: FindUserById           => userGiven(r)
+        case r: FindUsersInGroup       => usersGiven(r)
+        case r: LinkAccountToApp       => linkAccountToApp(r)
+        case r: LinkUsersToGroup       => linkGroups(r)
+        case r: UnlinkUsersFromGroup   => ZIO.fail(Exception("TODO"))
+        case r: LinkGroupToRoles       => ZIO.fail(Exception("TODO"))
+        case r: UnlinkGroupFromRoles   => ZIO.fail(Exception("TODO"))
+        case r: RemoveAccount          => ZIO.fail(Exception("TODO"))
+        case r: RemoveGroup            => removeGroup(r)
+        case r: RemoveUser             => removeUser(r)
+        case r: ReportUsersByAccount   => usersByAccount(r)
+        case r: UserExists             => userExists(r)
     }
 
     private def userGiven(request: FindUserByEmail | FindUserById): Task[Option[RawUser]] = {
@@ -451,6 +460,59 @@ object repo {
       } yield rows.length == 1
     }
 
+    private def storeAccount(request: StoreAccount): Task[RawAccount] = {
+
+      def build(now: LocalDateTime, tenant: RawTenant) = RawAccount(
+        id         = request.id,
+        created    = now,
+        deleted    = None,
+        tenant     = tenant.id,
+        tenantCode = tenant.code,
+        active     = true,
+        code       = request.code,
+        name       = request.name
+      )
+
+      def store(raw: RawAccount): Task[RawAccount] = {
+
+        def insertWithId(row: AccountRow) = {
+          inline def stmt = quote { accounts.insertValue(lift(row)) }
+          for
+            _  <- ZIO.log(s"Creating new account '${row.name}' with id ${row.id}")
+            _ <- exec(run(stmt))
+          yield raw
+        }
+
+        def insertWithoutId(row: AccountRow) = {
+          inline given InsertMeta[AccountRow] = insertMeta[AccountRow](_.id)
+          inline def stmt = quote { accounts.insertValue(lift(row)).returning(_.id) }
+          for
+            _  <- ZIO.log(s"Creating new account '${row.name}'")
+            id <- exec(run(stmt))
+          yield raw.copy(id = id)
+        }
+
+        val row = raw.into[AccountRow].transform
+        if(AccountId.value(raw.id) <= 0) ZIO.fail(Exception(s"Account id '${raw.id}' is not valid"))
+        else                             insertWithId    (row)
+      }
+
+      def tenantById: Task[Option[RawTenant]] = {
+        inline def stmt = quote { tenants.filter(t => t.id == lift(request.tenant) && t.active && t.deleted.isEmpty) }
+        for
+          rows <- exec(run(stmt))
+        yield rows.headOption.map(_.transformInto[RawTenant])
+      }
+
+      for {
+        now    <- Clock.localDateTime
+        maybe  <- tenantById
+        tenant <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Tenant '${request.tenant}' not found"))
+        raw    =  build(now, tenant)
+        acc    <- store(raw)
+      } yield acc
+    }
+
     private def storeUser(req: StoreUser): Task[RawUserEntry] = {
 
       def build(created: LocalDateTime) = {
@@ -477,7 +539,6 @@ object repo {
           for {
             _  <- ZIO.log(s"Creating new user '${row.email}'")
             id <- exec(run(stmt))
-            
           } yield raw.copy(id = id)
         }
 
@@ -876,6 +937,31 @@ object repo {
           case Some(app) => appFrom(app)
         }
       } yield result
+    }
+
+    private def applicationDetails(request: FindApplicationDetails): Task[Option[RawApplicationDetails]] = {
+      inline def query = quote {
+        for {
+          app <- applications if app.deleted.isEmpty && app.active && app.code == lift(request.application)
+        } yield app
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.headOption.map(_.transformInto[RawApplicationDetails])
+    }
+
+    private def linkAccountToApp(request: LinkAccountToApp): Task[Unit] = {
+
+      inline def stmt(row: AccountToAppRow) = quote {
+        account2app.insertValue(lift(row))
+      }
+
+      for
+        now <- Clock.localDateTime
+        row =  AccountToAppRow(request.acc, request.app, now, None)
+        _   <- exec(run(stmt(row)))
+      yield ()
     }
 
     private def linkGroups(cmd: LinkUsersToGroup): Task[Unit] = {

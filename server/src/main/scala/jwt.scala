@@ -70,16 +70,8 @@ object tokens {
           id          = RoleId.of(1),
           created     = LocalDateTime.now,
           deleted     = None,
-          code        = RoleCode.of("user_adm"),
-          name        = RoleName.of("User Admin"),
-          permissions = Seq.empty
-        ),
-        RawRole(
-          id          = RoleId.of(2),
-          created     = LocalDateTime.now,
-          deleted     = None,
-          code        = RoleCode.of("group_adm"),
-          name        = RoleName.of("Group Admin"),
+          code        = RoleCode.of("adm"),
+          name        = RoleName.of("Global Admin"),
           permissions = Seq.empty
         )
       )

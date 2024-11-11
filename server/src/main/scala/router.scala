@@ -30,7 +30,7 @@ import zio.http.codec.PathCodec.{long, string}
 import io.scalaland.chimney.dsl.*
 import zio.http.Status.InternalServerError
 
-import scala.util.Random
+import scala.util.{Failure, Random, Success}
 import java.time.LocalDateTime
 
 object cookies {
@@ -510,6 +510,73 @@ object router {
 
     }
 
+    private def provisionAccount: AppRoute = role("adm") { request =>
+
+      val token  = summon[SingleAppToken]
+      val Presto = summon[ApplicationCode]
+
+      def createGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount): Task[Seq[RawGroup]] = {
+
+        val groups = Seq(
+          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.all  , name = GroupName.of("Todos"), roles = Seq.empty),
+          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.admin, name = GroupName.of("Admin"), roles = Seq.empty)
+        )
+
+        val commands = groups.map { group =>
+          val roles = if(group.code == GroupCode.admin) Seq(RoleCode.of("adm")) else Seq.empty
+          StoreGroup(account = acc.id, accountCode = acc.code, application = app, group = group, users = Seq.empty, roles = roles)
+        }
+
+        ZIO.foreach(commands) {
+          repo.exec
+        }
+      }
+
+      for {
+        req     <- request.body.parse[CreateAccount]
+        _       <- ZIO.logInfo("Account Provisioning")
+        maybe   <- repo.exec(FindApplicationDetails(Presto))
+        details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$Presto'"))
+        acc     <- repo.exec(req.transformInto[StoreAccount])
+        app     =  RawApplication(details)
+        _       <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
+        now     <- Clock.localDateTime
+        groups  <- createGroups(now, app, acc)
+        gid     <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find admin group after account creation"))
+        user    <- repo.exec(StoreUser(id = req.user, email = req.email, code = UserCode.of(s"admin-of-${acc.code}"), account = acc, kind = None, update = false))
+        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = gid, users = Seq(user.id)))
+        //created <- repo.exec(FindApplication(acc.code, Presto))
+        created <- repo.exec(FindUserById(user.id))
+      } yield created match
+        case None        => Response.internalServerError("Error provisioning account")
+        case Some(value) => Response.json(value.toJson)
+    }
+
+    private def provisionUsers: AppRoute = role("adm") { request =>
+
+      val appCode = summon[ApplicationCode]
+
+      for {
+        form    <- request.body.asMultipartForm
+        code    <- ZIO.fromOption(form.get("account")).mapError(_ => Exception("No field called 'account'"))
+        file    <- ZIO.fromOption(form.get("file"))   .mapError(_ => Exception("No field called 'file'"))
+        value   <- code.asText
+        text    <- file.asText
+        acc     <- repo.get(FindAccountByCode(AccountCode.of(value))) { s"Can't find account '$value'" }
+        app     <- repo.get(FindApplicationDetails(appCode))          { s"Can't find application '$appCode' "}
+        groups  <- repo.exec(FindGroups(account = acc.code, apps = Seq(appCode)))
+        group   <- ZIO.fromOption(groups.get(appCode).flatMap(_.find(_.code == GroupCode.all))).mapError(_ => Exception(s"Can't find group '${GroupCode.all}' in account '${acc.id}'"))
+        entries <- accounts.parseCSV(acc, text)
+        created =  entries.map(_._2).filter(_.isSuccess).map(_.get).map(_.id) 
+        _       <- repo.exec(LinkUsersToGroup(app.id, group.id, created))
+      } yield Response.json {
+        entries.map {
+          case (email, Success(user)) => (Email.value(email), s"[ok] ${user.id}")
+          case (email, Failure(err))  => (Email.value(email), s"[err] ${err.getMessage}")
+        }.toMap.toJson
+      }
+    }
+
     private def regular = Routes(
       Method.GET    / "applications"                               -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
       Method.GET    / "application" / string("app")                -> handler(applicationGiven),
@@ -531,7 +598,9 @@ object router {
       Method.POST   / "app" / string("app") / "group"              -> handler(protect(storeGroup)),
       Method.POST   / "app" / string("app") / "group" / "delete"   -> handler(protect(removeGroup)),
       Method.GET    / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
-      Method.GET    / "app" / string("app") / "roles" -> handler(rolesGiven),
+      Method.GET    / "app" / string("app") / "roles"              -> handler(rolesGiven),
+      Method.POST   / "app" / string("app") / "account"            -> handler(protect(provisionAccount)),
+      Method.POST   / "app" / string("app") / "account" / "users"  -> handler(protect(provisionUsers))
     ).sandbox
 
     override def routes = Echo.routes ++ regular @@ cors(corsConfig)
