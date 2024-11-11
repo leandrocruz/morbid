@@ -446,6 +446,14 @@ object router {
       } yield true
     }
 
+    private def changePassword: AppRoute = sameUserOr[ChangePasswordRequest, Boolean]("adm" or "user_adm") { (user, req) =>
+      val email = user.details.email
+      for
+        _ <- ZIO.logInfo(s"Changing password for '${email}'")
+        _ <- identities.changePassword(email, req.password)
+      yield true
+    }
+
     private def passwordResetLink: AppRoute = sameUserOr[RequestPasswordRequestLink, PasswordResetLink]("adm" or "user_adm") { (user, req) =>
       for
         _    <- ZIO.logInfo(s"Generating password reset link for '${req.email}'")
@@ -567,7 +575,7 @@ object router {
         groups  <- repo.exec(FindGroups(account = acc.code, apps = Seq(appCode)))
         group   <- ZIO.fromOption(groups.get(appCode).flatMap(_.find(_.code == GroupCode.all))).mapError(_ => Exception(s"Can't find group '${GroupCode.all}' in account '${acc.id}'"))
         entries <- accounts.parseCSV(acc, text)
-        created =  entries.map(_._2).filter(_.isSuccess).map(_.get).map(_.id) 
+        created =  entries.map(_._2).filter(_.isSuccess).map(_.get).map(_.id)
         _       <- repo.exec(LinkUsersToGroup(app.id, group.id, created))
       } yield Response.json {
         entries.map {
@@ -578,29 +586,30 @@ object router {
     }
 
     private def regular = Routes(
-      Method.GET    / "applications"                               -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
-      Method.GET    / "application" / string("app")                -> handler(applicationGiven),
-      Method.POST   / "login" / "provider"                         -> Handler.fromFunctionZIO[Request](loginProvider),
-      Method.GET    / "login" / "provider"                         -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
-      Method.POST   / "login"                                      -> Handler.fromFunctionZIO[Request](login),
-      Method.POST   / "logoff"                                     -> Handler.fromFunctionZIO[Request](logoff),
-      Method.POST   / "verify"                                     -> Handler.fromFunctionZIO[Request](verify),
-      Method.POST   / "impersonate"                                -> Handler.fromFunctionZIO[Request](impersonate),
-      Method.GET    / "user"                                       -> Handler.fromFunctionZIO[Request](userBy),
-      Method.POST   / "user" / "pin" / "validate"                  -> Handler.fromFunctionZIO[Request](validateUserPin),
-      Method.POST   / "app" / string("app") / "login" / "email"    -> handler(loginViaEmailLink),
-      Method.POST   / "app" / string("app") / "user" / "pin"       -> handler(protect(setUserPin)),
-      Method.POST   / "app" / string("app") / "password" / "reset" -> handler(protect(passwordResetLink)),
-      Method.GET    / "app" / string("app") / "users"              -> handler(protect(usersGiven)),
-      Method.POST   / "app" / string("app") / "user"               -> handler(protect(storeUser)),
-      Method.POST   / "app" / string("app") / "user"  / "delete"   -> handler(protect(removeUser)),
-      Method.GET    / "app" / string("app") / "groups"             -> handler(groupsGiven),
-      Method.POST   / "app" / string("app") / "group"              -> handler(protect(storeGroup)),
-      Method.POST   / "app" / string("app") / "group" / "delete"   -> handler(protect(removeGroup)),
+      Method.GET    / "applications"                                -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
+      Method.GET    / "application" / string("app")                 -> handler(applicationGiven),
+      Method.POST   / "login" / "provider"                          -> Handler.fromFunctionZIO[Request](loginProvider),
+      Method.GET    / "login" / "provider"                          -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
+      Method.POST   / "login"                                       -> Handler.fromFunctionZIO[Request](login),
+      Method.POST   / "logoff"                                      -> Handler.fromFunctionZIO[Request](logoff),
+      Method.POST   / "verify"                                      -> Handler.fromFunctionZIO[Request](verify),
+      Method.POST   / "impersonate"                                 -> Handler.fromFunctionZIO[Request](impersonate),
+      Method.GET    / "user"                                        -> Handler.fromFunctionZIO[Request](userBy),
+      Method.POST   / "user" / "pin" / "validate"                   -> Handler.fromFunctionZIO[Request](validateUserPin),
+      Method.POST   / "app" / string("app") / "login" / "email"     -> handler(loginViaEmailLink),
+      Method.POST   / "app" / string("app") / "user" / "pin"        -> handler(protect(setUserPin)),
+      Method.POST   / "app" / string("app") / "password" / "reset"  -> handler(protect(passwordResetLink)),
+      Method.POST   / "app" / string("app") / "password" / "change" -> handler(protect(changePassword)),
+      Method.GET    / "app" / string("app") / "users"               -> handler(protect(usersGiven)),
+      Method.POST   / "app" / string("app") / "user"                -> handler(protect(storeUser)),
+      Method.POST   / "app" / string("app") / "user"  / "delete"    -> handler(protect(removeUser)),
+      Method.GET    / "app" / string("app") / "groups"              -> handler(groupsGiven),
+      Method.POST   / "app" / string("app") / "group"               -> handler(protect(storeGroup)),
+      Method.POST   / "app" / string("app") / "group" / "delete"    -> handler(protect(removeGroup)),
       Method.GET    / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
-      Method.GET    / "app" / string("app") / "roles"              -> handler(rolesGiven),
-      Method.POST   / "app" / string("app") / "account"            -> handler(protect(provisionAccount)),
-      Method.POST   / "app" / string("app") / "account" / "users"  -> handler(protect(provisionUsers))
+      Method.GET    / "app" / string("app") / "roles"               -> handler(rolesGiven),
+      Method.POST   / "app" / string("app") / "account"             -> handler(protect(provisionAccount)),
+      Method.POST   / "app" / string("app") / "account" / "users"   -> handler(protect(provisionUsers))
     ).sandbox
 
     override def routes = Echo.routes ++ regular @@ cors(corsConfig)
