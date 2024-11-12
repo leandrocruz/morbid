@@ -31,5 +31,5 @@ lazy val root = (project in file("server"))
     topLevelDirectory         := None,
     executableScriptName      := "run",
     Universal / packageName   := "package",
-    libraryDependencies       := BuildHelper.allDependencies
+    libraryDependencies       := BuildHelper.serverDependencies
   )

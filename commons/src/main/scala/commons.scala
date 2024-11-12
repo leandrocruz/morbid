@@ -125,7 +125,10 @@ object types {
   object Domain          extends OpaqueOps[String, Domain]
   object Email           extends OpaqueOps[String, Email]
   object EmailUser       extends OpaqueOps[String, EmailUser]
-  object GroupCode       extends OpaqueOps[String, GroupCode]
+  object GroupCode       extends OpaqueOps[String, GroupCode] {
+    def all   = GroupCode.of("all")
+    def admin = GroupCode.of("admin")
+  }
   object GroupId         extends OpaqueOps[Long, GroupId]
   object GroupName       extends OpaqueOps[String, GroupName]
   object Link            extends OpaqueOps[String, Link]
@@ -162,6 +165,10 @@ object types {
         case userFrom(value) => Some(EmailUser.of(value))
         case _ => None
       }
+  }
+
+  extension (it: Password) {
+    def isValid = it.trim.length >= 6
   }
 
   extension (it: Magic) {
@@ -203,6 +210,11 @@ object domain {
 
     import morbid.domain.token.CompactApplication
     import io.scalaland.chimney.dsl.*
+
+    case class RawTenant(
+      id   : TenantId,
+      code : TenantCode,
+    )
 
     case class RawAccount(
       id         : AccountId,
@@ -418,6 +430,7 @@ object domain {
     case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
     case class StoreUserRequest(id: Option[UserId], code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], update: Option[Boolean] /* TODO: remove this as soon as we migrate all users from legacy */)
     case class RequestPasswordRequestLink(email: Email) extends HasEmail
+    case class ChangePasswordRequest(email: Email, password: Password) extends HasEmail
     case class PasswordResetLink(link: Link)
     case class SetUserPin(email: Email, pin: Pin) extends HasEmail
     case class ValidateUserPin(pin: Pin)
@@ -425,6 +438,7 @@ object domain {
     case class RemoveGroupRequest(code: GroupCode)
     case class LoginViaEmailLinkRequest(email: Email, url: String)
     case class LoginViaEmailLinkResponse(link: Link)
+    case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email)
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
@@ -436,6 +450,8 @@ object domain {
     given JsonCodec[RemoveGroupRequest]         = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
+    given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
+    given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
   }
 }
 
@@ -486,7 +502,7 @@ object secure {
   import zio.http.*
   import zio.*
 
-  type AppRoute       = SingleAppToken ?=> Request => Task[Response]
+  type AppRoute       = (SingleAppToken, ApplicationCode) ?=> Request => Task[Response]
   type TokenValidator = SingleAppToken => Either[String, Unit]
 
   val AllowAll: TokenValidator = _ => Right(())
@@ -511,7 +527,8 @@ object secure {
   def appRoute(application: ApplicationCode, tokenFrom: Request => Task[Token])(route: AppRoute)(request: Request): Task[Response] = {
 
     def execute(token: SingleAppToken) = {
-      given SingleAppToken = token
+      given SingleAppToken  = token
+      given ApplicationCode = application
       route(request)
     }
 
@@ -526,9 +543,4 @@ object secure {
       yield res
     }
   }
-
-  private def sample(request: Request)(using SingleAppToken): Task[Response] = ???
-  val test: AppRoute = role("") { _ => ZIO.succeed(Response.ok) }
-  def tk(r: Request): Task[Token] = ???
-  val x: (Request) => Task[Response] = appRoute(ApplicationCode.of(""), tk) { sample }
 }

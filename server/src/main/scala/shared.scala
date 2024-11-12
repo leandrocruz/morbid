@@ -132,6 +132,10 @@ object commands {
 
   case class FindApplications(account: AccountCode) extends Command[Seq[RawApplicationDetails]]
 
+  case class FindApplicationDetails(
+    application: ApplicationCode
+  ) extends Command[Option[RawApplicationDetails]]
+
   case class FindApplication(
     account     : AccountCode,
     application : ApplicationCode
@@ -167,6 +171,13 @@ object commands {
   case class GetUserPin(user: UserId) extends Command[Option[Sha256Hash]]
   case class DefineUserPin(user: UserId, pin: Sha256Hash) extends Command[Unit]
 
+  case class StoreAccount(
+    id     : AccountId  , //Can't be 0
+    tenant : TenantId   ,
+    code   : AccountCode,
+    name   : AccountName,
+  ) extends Command[RawAccount]
+
   case class StoreUser(
     id      : UserId, // maybe 0
     email   : Email,
@@ -184,6 +195,11 @@ object commands {
     users       : Seq[UserCode],
     roles       : Seq[RoleCode]
   ) extends Command[RawGroup]
+
+  case class LinkAccountToApp(
+    acc: AccountId,
+    app: ApplicationId,
+  ) extends Command[Unit]
 
   case class LinkGroupToRoles(
     group : GroupId,

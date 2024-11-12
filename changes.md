@@ -1,5 +1,10 @@
 # Morbid
 
+ - Account/User provisioning (temporary)
+ - Enabled slf4j logging
+ - Added route POST `/app/:app/password/change`
+ - Added `MorbidClient.passwordChange`
+
 ## Release v0.0.3
 LTS: 01/11/2024
  

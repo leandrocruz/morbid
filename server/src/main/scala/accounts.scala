@@ -14,9 +14,13 @@ object accounts {
   import morbid.utils.*
   import morbid.legacy.*
   import morbid.pins.PinManager
+  import java.time.LocalDateTime
+  import org.apache.commons.lang3.RandomStringUtils
+  import scala.util.Try
 
   trait AccountManager {
     def provision(identity: CloudIdentity) : Task[RawUser]
+    def parseCSV(account: RawAccount, csv: String): Task[Seq[(Email, Try[RawUserEntry])]]
   }
 
   object AccountManager {
@@ -82,6 +86,46 @@ object accounts {
       (identity.tenant, identity.kind, identity.provider) match
         case (None, ProviderKind.SAML, Some(id)) if config.identities.provisionSAMLUsers => provisionSaml(id)
         case _ => ZIO.fail(new Exception(s"Can't provision user for '${identity.email}' with '${identity.kind}' on '${identity.provider.getOrElse("NO PROVIDER")}'"))
+    }
+
+    override def parseCSV(account: RawAccount, csv: String) = {
+
+      def process(now: LocalDateTime)(line: String) = {
+
+        def handle(email: Email, legacy: Option[LegacyUser], current: Option[RawUser]) = {
+
+          def store(user: LegacyUser) = {
+            repo.exec {
+              StoreUser(
+                id      = user.id,
+                email   = email,
+                code    = UserCode.of(RandomStringUtils.secure().nextAlphanumeric(12)),
+                account = account,
+                kind    = None,
+                update  = false
+              )
+            }
+          }
+
+          (legacy, current) match
+            case (None, _)             => ZIO.fail(Exception(s"Can't find legacy user '$email'"))
+            case (Some(user), Some(_)) => ZIO.fail(Exception(s"User '$email' already exists"))
+            case (Some(user), None)    => store(user)
+        }
+
+        val email = Email.of(line)
+        for {
+          legacy  <- legacyMorbid.userBy(email)
+          current <- repo.exec(FindUserByEmail(email))
+          result  <- handle(email, legacy, current).either
+        } yield (email, result.toTry)
+
+      }
+
+      for {
+        now     <- Clock.localDateTime
+        entries <- ZIO.foreachPar(csv.split("\n")) { process(now) }
+      } yield entries
     }
   }
 }
