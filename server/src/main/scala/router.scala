@@ -449,7 +449,8 @@ object router {
     private def changePassword: AppRoute = sameUserOr[ChangePasswordRequest, Boolean]("adm" or "user_adm") { (user, req) =>
       val email = user.details.email
       for
-        _ <- ZIO.logInfo(s"Changing password for '${email}'")
+        _ <- ZIO.logInfo(s"Changing password for '$email'")
+        _ <- ZIO.when(!req.password.isValid) { ZIO.fail(Exception(s"Password for user '$email' is not valid")) }
         _ <- identities.changePassword(email, req.password)
       yield true
     }

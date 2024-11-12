@@ -167,6 +167,10 @@ object types {
       }
   }
 
+  extension (it: Password) {
+    def isValid = it.trim.length >= 6
+  }
+
   extension (it: Magic) {
     @targetName("magic") def string: String = it
     def is(value: String): Boolean = it == value
