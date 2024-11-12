@@ -10,6 +10,7 @@ object BuildHelper {
   lazy val dependencies = new {
     val betterFiles     = "com.github.pathikrit" %% "better-files"      % "3.9.2"
     val commonsCodec    = "commons-codec"        %  "commons-codec"     % "1.17.0"
+    val commonsLang     = "org.apache.commons"   % "commons-lang3"      % "3.17.0"
     val chimney         = "io.scalaland"         %% "chimney"           % "1.3.0"
     val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.3.0"
     val guara           = "guara"                %% "guara-framework"   % "v0.1.0-SNAPSHOT" changing()
@@ -19,6 +20,7 @@ object BuildHelper {
     val quillZio        = "io.getquill"          %% "quill-zio"         % "4.8.5"
     val quillZioJdbc    = "io.getquill"          %% "quill-jdbc-zio"    % "4.8.4"
     val postgresql      = "org.postgresql"       %  "postgresql"        % "42.7.3"
+    val scalaCsv        = "com.github.tototoshi" %% "scala-csv"         % "2.0.0"
     val zioOptics       = "dev.zio"              %% "zio-optics"        % "0.2.1"
     val zio             = "dev.zio"              %% "zio"               % ZioVersion
     val zioJson         = "dev.zio"              %% "zio-json"          % ZioJsonVersion
@@ -57,6 +59,8 @@ object BuildHelper {
     dependencies.zioTestMagnolia,
   )
 
+  lazy val serverDependencies = allDependencies ++ Seq(dependencies.commonsLang)
+
   def commonSettings(scalaVersion: String) = CrossVersion.partialVersion(scalaVersion) match {
     case Some((3, _))                  => Seq.empty
     case Some((2, 12)) | Some((2, 13)) => Seq("-Ywarn-unused:params")
@@ -68,7 +72,7 @@ object BuildHelper {
     ThisBuild / scalaVersion                 := ScalaVersion,
     ThisBuild / scalacOptions                := commonSettings(scalaVersion.value),
     ThisBuild / organization                 := "morbid",
-    ThisBuild / version                      := "v0.0.3",
+    ThisBuild / version                      := "v0.0.4",
     ThisBuild / doc / sources                := Seq.empty,
     ThisBuild / packageDoc / publishArtifact := false,
     ThisBuild / resolvers                    += Resolver.mavenLocal,

@@ -24,10 +24,12 @@ object gip {
   import com.google.firebase.auth.UserRecord
   import com.google.firebase.auth.UserRecord.CreateRequest
   import com.google.firebase.auth.ActionCodeSettings
+  import com.google.firebase.auth.UserRecord.UpdateRequest
 
   sealed trait Identities {
     def passwordResetLink   (email: Email)                      : Task[Link]
     def signInWithEmailLink (email: Email, url: String)         : Task[Link]
+    def changePassword      (email: Email, password: Password)  : Task[Unit]
     def providerGiven(email: Email, tenant: Option[TenantCode]) : Task[Option[RawIdentityProvider]]
     def providerGiven(account: AccountId)                       : Task[Option[RawIdentityProvider]]
     def verify     (req: VerifyGoogleTokenRequest)              : Task[CloudIdentity]
@@ -134,6 +136,14 @@ object gip {
       code match
         case None | Some(TenantCode.DEFAULT) => auth
         case Some(value)                     => auth.getTenantManager.getAuthForTenant(TenantCode.value(value))
+    }
+
+    override def changePassword(email: Email, password: Password): Task[Unit] = {
+      ZIO.attemptBlockingIO {
+        val record = auth.getUserByEmail(Email.value(email))
+        val req    = new UpdateRequest(record.getUid).setPassword(Password.value(password))
+        auth.updateUser(req)
+      }
     }
 
     //See https://firebase.google.com/docs/auth/admin/manage-users
