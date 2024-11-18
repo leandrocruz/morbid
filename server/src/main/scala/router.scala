@@ -541,15 +541,38 @@ object router {
         }
       }
 
+      // account *> https://zio.dev/reference/control-flow/
+      def getOrCreateAccount(req: CreateAccount, maybe: Option[RawAccount]) = {
+        maybe.fold {
+          for {
+            _   <- ZIO.logInfo(s"Not found legacy account to provision account, creating: ${req.code} - ${req.name}")
+            acc <- repo.exec(req.transformInto[StoreAccount])
+          } yield acc
+        } { acc => ZIO.logInfo(s"Using legacy account to provision account: ${acc.code} - ${acc.name}") *> ZIO.succeed(acc) }
+      }
+
+      def getOrCreateGroups(maybe: Map[ApplicationCode, Seq[RawGroup]]) = {
+        val teste = maybe.getOrElse(Presto, Seq.empty)
+
+        (teste.exists(_.code == GroupCode.all), teste.exists(_.code == GroupCode.admin)) match
+          case (true, true) => ??? // cadastrar nenhum
+          case (true, false) => ??? // cadastrar somente o admin
+          case (false, true) => ??? // cadastrar somente o all
+          case (_, _)  => ??? // cadastrar os dois
+        ???
+      }
+
       for {
         req     <- request.body.parse[CreateAccount]
         _       <- ZIO.logInfo("Account Provisioning")
         maybe   <- repo.exec(FindApplicationDetails(Presto))
         details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$Presto'"))
-        acc     <- repo.exec(req.transformInto[StoreAccount])
+        maybe   <- repo.exec(FindAccountByCode(req.code))
+        acc     <- getOrCreateAccount(req, maybe)
         app     =  RawApplication(details)
         _       <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
         now     <- Clock.localDateTime
+        maybe   <- repo.exec(FindGroups(acc.code, Seq(app.details.code)))
         groups  <- createGroups(now, app, acc)
         gid     <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find admin group after account creation"))
         user    <- repo.exec(StoreUser(id = req.user, email = req.email, code = UserCode.of(s"admin-of-${acc.code}"), account = acc, kind = None, update = false))
