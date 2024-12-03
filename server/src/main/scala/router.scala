@@ -28,6 +28,7 @@ import zio.http.{Body, Cookie, Handler, HttpApp, Method, Path, Request, Response
 import zio.http.Middleware.{CorsConfig, cors}
 import zio.http.codec.PathCodec.{long, string}
 import io.scalaland.chimney.dsl.*
+import morbid.legacy.{CreateLegacyAccountRequest, LegacyMorbid}
 import zio.http.Status.InternalServerError
 
 import scala.util.{Failure, Random, Success}
@@ -81,7 +82,8 @@ object router {
     identities   : Identities,
     pins         : PinManager,
     passGen      : PasswordGenerator,
-    tokens       : TokenGenerator
+    tokens       : TokenGenerator,
+    legacy       : LegacyMorbid
   ) extends Router {
 
     private def protect(r: AppRoute)(app: String, request: Request): Task[Response] = {
@@ -524,42 +526,44 @@ object router {
       val token  = summon[SingleAppToken]
       val Presto = summon[ApplicationCode]
 
-      def createGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount): Task[Seq[RawGroup]] = {
+      def createGroupAll(now: LocalDateTime, app: RawApplication, acc: RawAccount): Task[RawGroup] = {
+        val group = RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.all, name = GroupName.of("Todos"), roles = Seq.empty)
+        for
+          result <- repo.exec(StoreGroup(account = acc.id, accountCode = acc.code, application = app, group = group, users = Seq.empty, roles = Seq.empty))
+         yield result
+      }
 
-        val groups = Seq(
-          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.all  , name = GroupName.of("Todos"), roles = Seq.empty),
-          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.admin, name = GroupName.of("Admin"), roles = Seq.empty)
-        )
-
-        val commands = groups.map { group =>
-          val roles = if(group.code == GroupCode.admin) Seq(RoleCode.of("adm")) else Seq.empty
-          StoreGroup(account = acc.id, accountCode = acc.code, application = app, group = group, users = Seq.empty, roles = roles)
-        }
-
-        ZIO.foreach(commands) {
-          repo.exec
-        }
+      def createGroupAdmin(now: LocalDateTime, app: RawApplication, acc: RawAccount): Task[RawGroup] = {
+        val group = RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.admin, name = GroupName.of("Admin"), roles = Seq.empty)
+        for
+          result <- repo.exec(StoreGroup(account = acc.id, accountCode = acc.code, application = app, group = group, users = Seq.empty, roles = Seq(RoleCode.of("adm"))))
+         yield result
       }
 
       // account *> https://zio.dev/reference/control-flow/
       def getOrCreateAccount(req: CreateAccount, maybe: Option[RawAccount]) = {
         maybe.fold {
           for {
-            _   <- ZIO.logInfo(s"Not found legacy account to provision account, creating: ${req.code} - ${req.name}")
-            acc <- repo.exec(req.transformInto[StoreAccount])
-          } yield acc
-        } { acc => ZIO.logInfo(s"Using legacy account to provision account: ${acc.code} - ${acc.name}") *> ZIO.succeed(acc) }
+            _             <- ZIO.logInfo(s"Not found legacy account to provision account, creating: ${req.code} - ${req.name}")
+            legacyAccount <- legacy.createAccount(CreateLegacyAccountRequest(req.name, ApplicationCode.value(Presto)))
+            morbidAccount <- repo.exec(req.copy(id = legacyAccount.id).transformInto[StoreAccount])
+          } yield morbidAccount
+        } { legacyAccount => ZIO.logInfo(s"Using legacy account to provision account: ${legacyAccount.code} - ${legacyAccount.name}") *> ZIO.succeed(legacyAccount) }
       }
 
-      def getOrCreateGroups(maybe: Map[ApplicationCode, Seq[RawGroup]]) = {
-        val teste = maybe.getOrElse(Presto, Seq.empty)
+      def getOrCreateGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount, maybe: Map[ApplicationCode, Seq[RawGroup]]): Task[Seq[RawGroup]] = {
+        val existingGroups = maybe.getOrElse(Presto, Seq.empty)
 
-        (teste.exists(_.code == GroupCode.all), teste.exists(_.code == GroupCode.admin)) match
-          case (true, true) => ??? // cadastrar nenhum
-          case (true, false) => ??? // cadastrar somente o admin
-          case (false, true) => ??? // cadastrar somente o all
-          case (_, _)  => ??? // cadastrar os dois
-        ???
+        (existingGroups.exists(_.code == GroupCode.all), existingGroups.exists(_.code == GroupCode.admin)) match {
+          case (true, true)   => ZIO.succeed(existingGroups) // cadastrar nenhum
+          case (true, false)  => createGroupAdmin(now, app, acc).map(adminGroup => existingGroups :+ adminGroup) // cadastrar somente o admin
+          case (false, true)  => createGroupAll(now, app, acc).map(allGroup => existingGroups :+ allGroup) // cadastrar somente o all
+          case (false, false) =>
+            for {
+              adminGroup <- createGroupAdmin(now, app, acc)
+              allGroup   <- createGroupAll(now, app, acc)
+            } yield existingGroups ++ Seq(adminGroup, allGroup) // cadastrar os dois
+        }
       }
 
       for {
@@ -573,11 +577,10 @@ object router {
         _       <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
         now     <- Clock.localDateTime
         maybe   <- repo.exec(FindGroups(acc.code, Seq(app.details.code)))
-        groups  <- createGroups(now, app, acc)
+        groups  <- getOrCreateGroups(now, app, acc, maybe)
         gid     <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find admin group after account creation"))
         user    <- repo.exec(StoreUser(id = req.user, email = req.email, code = UserCode.of(s"admin-of-${acc.code}"), account = acc, kind = None, update = false))
         _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = gid, users = Seq(user.id)))
-        //created <- repo.exec(FindApplication(acc.code, Presto))
         created <- repo.exec(FindUserById(user.id))
       } yield created match
         case None        => Response.internalServerError("Error provisioning account")
