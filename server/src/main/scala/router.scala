@@ -562,7 +562,7 @@ object router {
             for {
               adminGroup <- createGroupAdmin(now, app, acc)
               allGroup   <- createGroupAll(now, app, acc)
-            } yield existingGroups ++ Seq(adminGroup, allGroup) // cadastrar os dois
+            } yield existingGroups ++ Seq(adminGroup, allGroup) // cadastrar all/admin
         }
       }
 
