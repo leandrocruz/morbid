@@ -28,7 +28,7 @@ import zio.http.{Body, Cookie, Handler, HttpApp, Method, Path, Request, Response
 import zio.http.Middleware.{CorsConfig, cors}
 import zio.http.codec.PathCodec.{long, string}
 import io.scalaland.chimney.dsl.*
-import morbid.legacy.{CreateLegacyAccountRequest, LegacyMorbid}
+import morbid.legacy.{CreateLegacyAccountRequest, CreateLegacyUserRequest, LegacyMorbid}
 import zio.http.Status.InternalServerError
 
 import scala.util.{Failure, Random, Success}
@@ -544,11 +544,11 @@ object router {
       def getOrCreateAccount(req: CreateAccount, maybe: Option[RawAccount]) = {
         maybe.fold {
           for {
-            _             <- ZIO.logInfo(s"Not found legacy account to provision account, creating: ${req.code} - ${req.name}")
+            _             <- ZIO.logInfo(s"Not found legacy account to provision account, creating '${req.code} - ${req.name}'")
             legacyAccount <- legacy.createAccount(CreateLegacyAccountRequest(req.name, ApplicationCode.value(Presto)))
             morbidAccount <- repo.exec(req.copy(id = legacyAccount.id).transformInto[StoreAccount])
           } yield morbidAccount
-        } { legacyAccount => ZIO.logInfo(s"Using legacy account to provision account: ${legacyAccount.code} - ${legacyAccount.name}") *> ZIO.succeed(legacyAccount) }
+        } { legacyAccount => ZIO.logInfo(s"Using legacy account to provision account '${legacyAccount.code} - ${legacyAccount.name}'") *> ZIO.succeed(legacyAccount) }
       }
 
       def getOrCreateGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount, maybe: Map[ApplicationCode, Seq[RawGroup]]): Task[Seq[RawGroup]] = {
@@ -566,6 +566,19 @@ object router {
         }
       }
 
+      def createUser(req: CreateAccount, acc: RawAccount): Task[RawUserEntry] = {
+        for
+          maybe      <- legacy.userBy(req.email)
+          legacy     <- maybe.fold {
+            for {
+              _          <- ZIO.logInfo(s"Not found legacy user to provision account, creating '${req.email}'")
+              legacyUser <- legacy.create(CreateLegacyUserRequest(account = acc.id, name = "Created by presto account provisioning", email = req.email, `type` = ApplicationCode.value(Presto)))
+            } yield legacyUser
+          } { legacyUser => ZIO.logInfo(s"Using legacy user to provision account '${legacyUser.id} - ${legacyUser.email}'") *> ZIO.succeed(legacyUser) }
+          morbidUser <- repo.exec(StoreUser(id = legacy.id, email = req.email, code = UserCode.of(s"admin-of-${acc.code}"), account = acc, kind = None, update = false))
+        yield morbidUser
+      }
+
       for {
         req     <- request.body.parse[CreateAccount]
         _       <- ZIO.logInfo("Account Provisioning")
@@ -579,7 +592,7 @@ object router {
         maybe   <- repo.exec(FindGroups(acc.code, Seq(app.details.code)))
         groups  <- getOrCreateGroups(now, app, acc, maybe)
         gid     <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find admin group after account creation"))
-        user    <- repo.exec(StoreUser(id = req.user, email = req.email, code = UserCode.of(s"admin-of-${acc.code}"), account = acc, kind = None, update = false))
+        user    <- createUser(req, acc)
         _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = gid, users = Seq(user.id)))
         created <- repo.exec(FindUserById(user.id))
       } yield created match
