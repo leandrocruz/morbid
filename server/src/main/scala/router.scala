@@ -541,12 +541,20 @@ object router {
         }
       }
 
+      def maybeLegacy(req: StoreAccountRequest, detailsCode: RawApplicationDetails) =
+        if (!req.update && req.id.isEmpty) {
+          for {
+            legacy <- accounts.createLegacyAccount(req, detailsCode.code)
+          } yield req.copy(id = Some(legacy.id))
+        } else ZIO.succeed(req)
+
       for {
         req     <- request.body.parse[StoreAccountRequest]
         _       <- ZIO.logInfo(s"Store Account ${req.code} - ${req.name}")
         maybe   <- repo.exec(FindApplicationDetails(Presto))
         details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$Presto'"))
-        acc     <- repo.exec(req.transformInto[StoreAccount])
+        legacy  <- maybeLegacy(req, details)
+        acc     <- repo.exec(legacy.transformInto[StoreAccount])
         app     =  RawApplication(details)
         _       <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
         now     <- Clock.localDateTime

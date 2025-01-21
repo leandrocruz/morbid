@@ -19,8 +19,9 @@ object accounts {
   import scala.util.Try
 
   trait AccountManager {
-    def provision(identity: CloudIdentity) : Task[RawUser]
-    def parseCSV(account: RawAccount, csv: String): Task[Seq[(Email, Try[RawUserEntry])]]
+    def provision          (identity: CloudIdentity)                            : Task[RawUser]
+    def parseCSV           (account: RawAccount, csv: String)                   : Task[Seq[(Email, Try[RawUserEntry])]]
+    def createLegacyAccount(request: StoreAccountRequest, app: ApplicationCode) : Task[LegacyAccount]
   }
 
   object AccountManager {
@@ -65,7 +66,7 @@ object accounts {
 
         def legacyUser(account: RawAccount): Task[LegacyUser] = {
 
-          def create = legacyMorbid.create(CreateLegacyUserRequest(account = account.id, name = "Provisioned by Morbid", email = identity.email, `type` = "user"))
+          def create = legacyMorbid.createLegacyUser(CreateLegacyUserRequest(account = account.id, name = "Provisioned by Morbid", email = identity.email, `type` = "user"))
 
           for {
             maybe <- legacyMorbid.userBy(identity.email)
@@ -126,6 +127,13 @@ object accounts {
         now     <- Clock.localDateTime
         entries <- ZIO.foreachPar(csv.split("\n")) { process(now) }
       } yield entries
+    }
+
+    override def createLegacyAccount(request: StoreAccountRequest, app: ApplicationCode): Task[LegacyAccount] = {
+      for {
+        _      <- ZIO.logInfo(s"Creating legacy account: '${request.name}' to ${ApplicationCode.value(app)}")
+        legacy <- legacyMorbid.createLegacyAccount(CreateLegacyAccountRequest(request.name, ApplicationCode.value(app)))
+      } yield legacy
     }
   }
 }
