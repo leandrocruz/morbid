@@ -543,7 +543,7 @@ object router {
 
       for {
         req     <- request.body.parse[StoreAccountRequest]
-        _       <- ZIO.logInfo("Store Account")
+        _       <- ZIO.logInfo(s"Store Account ${req.code} - ${req.name}")
         maybe   <- repo.exec(FindApplicationDetails(Presto))
         details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$Presto'"))
         acc     <- repo.exec(req.transformInto[StoreAccount])
