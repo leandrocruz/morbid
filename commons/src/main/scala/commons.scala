@@ -334,6 +334,7 @@ object domain {
     given JsonCodec[RawUser]               = DeriveJsonCodec.gen
     given JsonCodec[RawUserEntry]          = DeriveJsonCodec.gen
     given JsonCodec[RawIdentityProvider]   = DeriveJsonCodec.gen
+    given JsonCodec[RawAccount]            = DeriveJsonCodec.gen
   }
 
   object token {
@@ -438,9 +439,10 @@ object domain {
     case class RemoveGroupRequest(code: GroupCode)
     case class LoginViaEmailLinkRequest(email: Email, url: String)
     case class LoginViaEmailLinkResponse(link: Link)
-    case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email)
+    case class StoreAccountRequest(id: Option[AccountId], code: AccountCode, name: AccountName, tenant: TenantId, update: Boolean)
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
+    given JsonCodec[StoreAccountRequest]        = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
     given JsonCodec[RequestPasswordRequestLink] = DeriveJsonCodec.gen
     given JsonCodec[PasswordResetLink]          = DeriveJsonCodec.gen
@@ -450,7 +452,6 @@ object domain {
     given JsonCodec[RemoveGroupRequest]         = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
-    given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
   }
 }

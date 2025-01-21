@@ -463,7 +463,7 @@ object repo {
     private def storeAccount(request: StoreAccount): Task[RawAccount] = {
 
       def build(now: LocalDateTime, tenant: RawTenant) = RawAccount(
-        id         = request.id,
+        id         = request.id.getOrElse(AccountId.of(0)),
         created    = now,
         deleted    = None,
         tenant     = tenant.id,
@@ -484,6 +484,7 @@ object repo {
         }
 
         def insertWithoutId(row: AccountRow) = {
+          // TODO insert into legacy morbid too
           inline given InsertMeta[AccountRow] = insertMeta[AccountRow](_.id)
           inline def stmt = quote { accounts.insertValue(lift(row)).returning(_.id) }
           for
@@ -492,9 +493,27 @@ object repo {
           yield raw.copy(id = id)
         }
 
+        def update(row: AccountRow) = {
+
+          inline def stmt = quote {
+            accounts.filter { acc =>
+              acc.id   == lift(row.id) &&
+              acc.code == lift(row.code)
+            }.update(_.name -> lift(row.name))
+          }
+
+          for
+            _ <- exec(run(stmt))
+          yield raw.copy(name = row.name)
+        }
+
         val row = raw.into[AccountRow].transform
-        if(AccountId.value(raw.id) <= 0) ZIO.fail(Exception(s"Account id '${raw.id}' is not valid"))
-        else                             insertWithId    (row)
+        
+        (request.id, request.update) match
+          case (Some(id),  true) => update(row)
+          case (Some(id), false) => insertWithId(row)
+          case (None    , false) => insertWithoutId(row)
+          case (_       ,     _) => ZIO.fail(Exception(s"Account id '${raw.id}' is not valid"))
       }
 
       def tenantById: Task[Option[RawTenant]] = {

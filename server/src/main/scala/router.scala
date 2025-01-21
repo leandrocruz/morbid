@@ -519,7 +519,7 @@ object router {
 
     }
 
-    private def provisionAccount: AppRoute = role("adm") { request =>
+    private def storeAccount: AppRoute = role("adm") { request =>
 
       val token  = summon[SingleAppToken]
       val Presto = summon[ApplicationCode]
@@ -542,23 +542,21 @@ object router {
       }
 
       for {
-        req     <- request.body.parse[CreateAccount]
-        _       <- ZIO.logInfo("Account Provisioning")
+        req     <- request.body.parse[StoreAccountRequest]
+        _       <- ZIO.logInfo("Store Account")
         maybe   <- repo.exec(FindApplicationDetails(Presto))
         details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$Presto'"))
         acc     <- repo.exec(req.transformInto[StoreAccount])
         app     =  RawApplication(details)
         _       <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
         now     <- Clock.localDateTime
-        groups  <- createGroups(now, app, acc)
-        gid     <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find admin group after account creation"))
-        user    <- repo.exec(StoreUser(id = req.user, email = req.email, code = UserCode.of(s"admin-of-${acc.code}"), account = acc, kind = None, update = false))
-        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = gid, users = Seq(user.id)))
-        //created <- repo.exec(FindApplication(acc.code, Presto))
-        created <- repo.exec(FindUserById(user.id))
-      } yield created match
-        case None        => Response.internalServerError("Error provisioning account")
-        case Some(value) => Response.json(value.toJson)
+        _       <- ZIO.when(!req.update) {
+          for {
+            groups <- createGroups(now, app, acc)
+            gid    <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find admin group after account creation"))
+          } yield ()
+        }
+      } yield Response.json(acc.toJson)
     }
 
     private def provisionUsers: AppRoute = role("adm") { request =>
@@ -609,7 +607,7 @@ object router {
       Method.POST   / "app" / string("app") / "group" / "delete"    -> handler(protect(removeGroup)),
       Method.GET    / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
       Method.GET    / "app" / string("app") / "roles"               -> handler(rolesGiven),
-      Method.POST   / "app" / string("app") / "account"             -> handler(protect(provisionAccount)),
+      Method.POST   / "app" / string("app") / "account"             -> handler(protect(storeAccount)),
       Method.POST   / "app" / string("app") / "account" / "users"   -> handler(protect(provisionUsers))
     ).sandbox
 
