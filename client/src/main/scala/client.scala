@@ -26,6 +26,7 @@ object client {
     def users                                                  (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
     def roles                                                  (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]
     def storeGroup        (request: StoreGroupRequest)         (using token: RawToken, app: ApplicationCode): Task[RawGroup]
+    def storeAccount      (request: StoreAccountRequest)       (using token: RawToken, app: ApplicationCode): Task[RawAccount]
     def removeGroup       (request: RemoveGroupRequest)        (using token: RawToken, app: ApplicationCode): Task[Long]
     def storeUser         (request: StoreUserRequest)          (using token: RawToken, app: ApplicationCode): Task[RawUserEntry]
     def removeUser        (request: RemoveUserRequest)         (using token: RawToken, app: ApplicationCode): Task[Long]
@@ -99,6 +100,7 @@ object client {
     override def groupsByCode      (groups: Seq[GroupCode])            (using token: RawToken, app: ApplicationCode) = get[Seq[RawGroup]]                                        (Some(token), (base / "app" / ApplicationCode.value(app) / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
     override def usersByGroupByCode(group: GroupCode)                  (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "group" / GroupCode.value(group) / "users")
     override def storeUser(request: StoreUserRequest)                  (using token: RawToken, app: ApplicationCode) = post[StoreUserRequest, RawUserEntry]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "user", request)
+    override def storeAccount(request: StoreAccountRequest)            (using token: RawToken, app: ApplicationCode) = post[StoreAccountRequest, RawAccount]                     (Some(token),  base / "app" / ApplicationCode.value(app) / "account", request)
     override def removeUser(request: RemoveUserRequest)                (using token: RawToken, app: ApplicationCode) = post[RemoveUserRequest, Long]                             (Some(token),  base / "app" / ApplicationCode.value(app) / "user" / "delete", request)
     override def users                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "users")
     override def roles                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawRole]]                                         (Some(token),  base / "app" / ApplicationCode.value(app) / "roles")
