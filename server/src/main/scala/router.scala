@@ -559,10 +559,10 @@ object router {
       } yield Response.json(acc.toJson)
     }
 
-    private def accountsGiven(app: String, tenant: Long, request: Request): Task[Response] = protect {
+    private def accountsGiven(app: String, tenant: String, request: Request): Task[Response] = protect {
       role("adm") { _ =>
         for {
-          accounts <- repo.exec(FindAccountsByTenant(TenantId.of(tenant)))
+          accounts <- repo.exec(FindAccountsByTenant(TenantCode.of(tenant)))
         } yield Response.json(accounts.toJson)
       }
     }(app, request)
@@ -615,7 +615,7 @@ object router {
       Method.POST   / "app" / string("app") / "group" / "delete"                  -> handler(protect(removeGroup)),
       Method.GET    / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
       Method.GET    / "app" / string("app") / "roles"                             -> handler(rolesGiven),
-      Method.GET    / "app" / string("app") / "account" / long("tenant")          -> handler(accountsGiven),
+      Method.GET    / "app" / string("app") / "account" / string("tenant")        -> handler(accountsGiven),
       Method.POST   / "app" / string("app") / "account"                           -> handler(protect(storeAccount)),
       Method.POST   / "app" / string("app") / "account" / "users"                 -> handler(protect(provisionUsers))
     ).sandbox

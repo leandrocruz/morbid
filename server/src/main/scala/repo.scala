@@ -916,7 +916,7 @@ object repo {
     private def accountsByTenant(request: FindAccountsByTenant): Task[Seq[RawAccount]] = {
       inline def query = quote {
         for {
-          ten <- tenants                           if ten.active && ten.deleted.isEmpty && ten.id == lift(request.tenant)
+          ten <- tenants                           if ten.active && ten.deleted.isEmpty && ten.code == lift(request.tenant)
           acc <- accounts.join(_.tenant == ten.id) if acc.active && acc.deleted.isEmpty
         } yield (ten, acc)
       }
