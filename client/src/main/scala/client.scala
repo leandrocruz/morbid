@@ -17,8 +17,8 @@ object client {
   import zio.json.*
 
   trait MorbidClient {
-    def proxy(request: Request): Task[Response]
-    def tokenFrom(token: RawToken): Task[Token]
+    def proxy             (request: Request): Task[Response]
+    def tokenFrom         (token: RawToken): Task[Token]
     def groups                                                 (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
     def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
     def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode): Task[Option[RawGroup]]
@@ -32,6 +32,7 @@ object client {
     def storeUser         (request: StoreUserRequest)          (using token: RawToken, app: ApplicationCode): Task[RawUserEntry]
     def removeUser        (request: RemoveUserRequest)         (using token: RawToken, app: ApplicationCode): Task[Long]
     def removeAccount     (account: AccountCode)               (using token: RawToken, app: ApplicationCode): Task[Boolean]
+    def usersByAccount    (account: AccountCode)               (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
     def passwordResetLink (request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode): Task[PasswordResetLink]
     def passwordChange    (request: ChangePasswordRequest)     (using token: RawToken, app: ApplicationCode): Task[Boolean]
     def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode): Task[Boolean]
@@ -103,6 +104,7 @@ object client {
     override def groups                                                (using token: RawToken, app: ApplicationCode) = get[Seq[RawGroup]]                                        (Some(token),  base / "app" / ApplicationCode.value(app) / "groups")
     override def groupsByCode      (groups: Seq[GroupCode])            (using token: RawToken, app: ApplicationCode) = get[Seq[RawGroup]]                                        (Some(token), (base / "app" / ApplicationCode.value(app) / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
     override def usersByGroupByCode(group: GroupCode)                  (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "group" / GroupCode.value(group) / "users")
+    override def usersByAccount    (account: AccountCode)              (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "account" / AccountCode.value(account) / "users")
     override def storeUser         (request: StoreUserRequest)         (using token: RawToken, app: ApplicationCode) = post[StoreUserRequest, RawUserEntry]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "user", request)
     override def storeAccount      (request: StoreAccountRequest)      (using token: RawToken, app: ApplicationCode) = post[StoreAccountRequest, RawAccount]                     (Some(token),  base / "app" / ApplicationCode.value(app) / "account", request)
     override def removeUser        (request: RemoveUserRequest)        (using token: RawToken, app: ApplicationCode) = post[RemoveUserRequest, Long]                             (Some(token),  base / "app" / ApplicationCode.value(app) / "user" / "delete", request)
