@@ -559,6 +559,14 @@ object router {
       } yield Response.json(acc.toJson)
     }
 
+    private def accountsGiven(app: String, tenant: Long, request: Request): Task[Response] = protect {
+      role("adm") { _ =>
+        for {
+          accounts <- repo.exec(FindAccountsByTenant(TenantId.of(tenant)))
+        } yield Response.json(accounts.toJson)
+      }
+    }(app, request)
+
     private def provisionUsers: AppRoute = role("adm") { request =>
 
       val appCode = summon[ApplicationCode]
@@ -585,30 +593,31 @@ object router {
     }
 
     private def regular = Routes(
-      Method.GET    / "applications"                                -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
-      Method.GET    / "application" / string("app")                 -> handler(applicationGiven),
-      Method.POST   / "login" / "provider"                          -> Handler.fromFunctionZIO[Request](loginProvider),
-      Method.GET    / "login" / "provider"                          -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
-      Method.POST   / "login"                                       -> Handler.fromFunctionZIO[Request](login),
-      Method.POST   / "logoff"                                      -> Handler.fromFunctionZIO[Request](logoff),
-      Method.POST   / "verify"                                      -> Handler.fromFunctionZIO[Request](verify),
-      Method.POST   / "impersonate"                                 -> Handler.fromFunctionZIO[Request](impersonate),
-      Method.GET    / "user"                                        -> Handler.fromFunctionZIO[Request](userBy),
-      Method.POST   / "user" / "pin" / "validate"                   -> Handler.fromFunctionZIO[Request](validateUserPin),
-      Method.POST   / "app" / string("app") / "login" / "email"     -> handler(loginViaEmailLink),
-      Method.POST   / "app" / string("app") / "user" / "pin"        -> handler(protect(setUserPin)),
-      Method.POST   / "app" / string("app") / "password" / "reset"  -> handler(protect(passwordResetLink)),
-      Method.POST   / "app" / string("app") / "password" / "change" -> handler(protect(changePassword)),
-      Method.GET    / "app" / string("app") / "users"               -> handler(protect(usersGiven)),
-      Method.POST   / "app" / string("app") / "user"                -> handler(protect(storeUser)),
-      Method.POST   / "app" / string("app") / "user"  / "delete"    -> handler(protect(removeUser)),
-      Method.GET    / "app" / string("app") / "groups"              -> handler(groupsGiven),
-      Method.POST   / "app" / string("app") / "group"               -> handler(protect(storeGroup)),
-      Method.POST   / "app" / string("app") / "group" / "delete"    -> handler(protect(removeGroup)),
+      Method.GET    / "applications"                                              -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
+      Method.GET    / "application" / string("app")                               -> handler(applicationGiven),
+      Method.POST   / "login" / "provider"                                        -> Handler.fromFunctionZIO[Request](loginProvider),
+      Method.GET    / "login" / "provider"                                        -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
+      Method.POST   / "login"                                                     -> Handler.fromFunctionZIO[Request](login),
+      Method.POST   / "logoff"                                                    -> Handler.fromFunctionZIO[Request](logoff),
+      Method.POST   / "verify"                                                    -> Handler.fromFunctionZIO[Request](verify),
+      Method.POST   / "impersonate"                                               -> Handler.fromFunctionZIO[Request](impersonate),
+      Method.GET    / "user"                                                      -> Handler.fromFunctionZIO[Request](userBy),
+      Method.POST   / "user" / "pin" / "validate"                                 -> Handler.fromFunctionZIO[Request](validateUserPin),
+      Method.POST   / "app" / string("app") / "login" / "email"                   -> handler(loginViaEmailLink),
+      Method.POST   / "app" / string("app") / "user" / "pin"                      -> handler(protect(setUserPin)),
+      Method.POST   / "app" / string("app") / "password" / "reset"                -> handler(protect(passwordResetLink)),
+      Method.POST   / "app" / string("app") / "password" / "change"               -> handler(protect(changePassword)),
+      Method.GET    / "app" / string("app") / "users"                             -> handler(protect(usersGiven)),
+      Method.POST   / "app" / string("app") / "user"                              -> handler(protect(storeUser)),
+      Method.POST   / "app" / string("app") / "user"  / "delete"                  -> handler(protect(removeUser)),
+      Method.GET    / "app" / string("app") / "groups"                            -> handler(groupsGiven),
+      Method.POST   / "app" / string("app") / "group"                             -> handler(protect(storeGroup)),
+      Method.POST   / "app" / string("app") / "group" / "delete"                  -> handler(protect(removeGroup)),
       Method.GET    / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
-      Method.GET    / "app" / string("app") / "roles"               -> handler(rolesGiven),
-      Method.POST   / "app" / string("app") / "account"             -> handler(protect(storeAccount)),
-      Method.POST   / "app" / string("app") / "account" / "users"   -> handler(protect(provisionUsers))
+      Method.GET    / "app" / string("app") / "roles"                             -> handler(rolesGiven),
+      Method.GET    / "app" / string("app") / "account" / long("tenant")          -> handler(accountsGiven),
+      Method.POST   / "app" / string("app") / "account"                           -> handler(protect(storeAccount)),
+      Method.POST   / "app" / string("app") / "account" / "users"                 -> handler(protect(provisionUsers))
     ).sandbox
 
     override def routes = Echo.routes ++ regular @@ cors(corsConfig)

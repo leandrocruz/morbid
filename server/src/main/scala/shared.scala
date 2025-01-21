@@ -217,6 +217,7 @@ object commands {
     app     : ApplicationCode
   ) extends Command[Seq[RawRole]]
 
+  case class FindAccountsByTenant (tenant: TenantId)   extends Command[Seq[RawAccount]]
   case class FindAccountByProvider(code: ProviderCode) extends Command[Option[RawAccount]]
   case class FindAccountByCode    (code: AccountCode)  extends Command[Option[RawAccount]]
 
