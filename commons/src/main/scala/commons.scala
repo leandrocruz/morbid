@@ -436,6 +436,7 @@ object domain {
     case class SetUserPin(email: Email, pin: Pin) extends HasEmail
     case class ValidateUserPin(pin: Pin)
     case class RemoveUserRequest(code: UserCode)
+    case class RemoveAccountRequest(code: AccountCode)
     case class RemoveGroupRequest(code: GroupCode)
     case class LoginViaEmailLinkRequest(email: Email, url: String)
     case class LoginViaEmailLinkResponse(link: Link)
@@ -450,6 +451,7 @@ object domain {
     given JsonCodec[ValidateUserPin]            = DeriveJsonCodec.gen
     given JsonCodec[RemoveUserRequest]          = DeriveJsonCodec.gen
     given JsonCodec[RemoveGroupRequest]         = DeriveJsonCodec.gen
+    given JsonCodec[RemoveAccountRequest]       = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen

@@ -567,6 +567,17 @@ object router {
       }
     }(app, request)
 
+    private def removeAccount(app: String, account: String, request: Request): Task[Response] = protect {
+      role("adm") { _ =>
+        val token   = summon[SingleAppToken]
+        val account = token.user.details.account
+        for
+          req <- request.body.parse[RemoveAccountRequest].mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+          _   <- repo.exec(RemoveAccount(req.code))
+        yield Response.json(true.toJson)
+      }
+    }(app, request)
+
     private def provisionUsers: AppRoute = role("adm") { request =>
 
       val appCode = summon[ApplicationCode]
@@ -617,6 +628,7 @@ object router {
       Method.GET    / "app" / string("app") / "roles"                             -> handler(rolesGiven),
       Method.GET    / "app" / string("app") / "account" / string("tenant")        -> handler(accountsGiven),
       Method.POST   / "app" / string("app") / "account"                           -> handler(protect(storeAccount)),
+      Method.DELETE / "app" / string("app") / "account" / string("account")       -> handler(removeAccount),
       Method.POST   / "app" / string("app") / "account" / "users"                 -> handler(protect(provisionUsers))
     ).sandbox
 
