@@ -329,6 +329,7 @@ object repo {
         case r: DefineUserPin          => setUserPin(r)
         case r: GetUserPin             => getUserPin(r)
         case r: FindAccountByCode      => accountByCode(r)
+        case r: FindAccountsByTenant   => accountsByTenant(r)
         case r: FindAccountByProvider  => accountByProvider(r)
         case r: FindApplication        => applicationGiven(r)
         case r: FindApplicationDetails => applicationDetails(r)
@@ -910,6 +911,19 @@ object repo {
       } yield rows.headOption.map {
         case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform
       }
+    }
+
+    private def accountsByTenant(request: FindAccountsByTenant): Task[Seq[RawAccount]] = {
+      inline def query = quote {
+        for {
+          ten <- tenants                           if ten.active && ten.deleted.isEmpty && ten.id == lift(request.tenant)
+          acc <- accounts.join(_.tenant == ten.id) if acc.active && acc.deleted.isEmpty
+        } yield (ten, acc)
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.map(ta => ta._2.into[RawAccount].withFieldConst(_.tenantCode, ta._1.code).transform)
     }
 
     private def applicationDetailsGiven(request: FindApplications): Task[Seq[RawApplicationDetails]] = {
