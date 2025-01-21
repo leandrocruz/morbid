@@ -9,6 +9,7 @@ object accounts {
   import morbid.repo.Repo
   import morbid.types.*
   import morbid.domain.*
+  import morbid.domain.requests.StoreAccountRequest
   import morbid.domain.raw.*
   import morbid.gip.*
   import morbid.utils.*
