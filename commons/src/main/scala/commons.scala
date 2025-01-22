@@ -430,6 +430,7 @@ object domain {
   object requests {
     case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
     case class StoreUserRequest(id: Option[UserId], code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], update: Option[Boolean] /* TODO: remove this as soon as we migrate all users from legacy */)
+    case class StoreAccountUserRequest(id: Option[UserId], email: Email, password: Option[Password], account: AccountId, update: Option[Boolean])
     case class RequestPasswordRequestLink(email: Email) extends HasEmail
     case class ChangePasswordRequest(email: Email, password: Password) extends HasEmail
     case class PasswordResetLink(link: Link)
@@ -443,6 +444,7 @@ object domain {
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreAccountRequest]        = DeriveJsonCodec.gen
+    given JsonCodec[StoreAccountUserRequest]    = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
     given JsonCodec[RequestPasswordRequestLink] = DeriveJsonCodec.gen
     given JsonCodec[PasswordResetLink]          = DeriveJsonCodec.gen

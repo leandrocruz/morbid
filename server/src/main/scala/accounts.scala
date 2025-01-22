@@ -20,9 +20,10 @@ object accounts {
   import scala.util.Try
 
   trait AccountManager {
-    def provision          (identity: CloudIdentity)                            : Task[RawUser]
-    def parseCSV           (account: RawAccount, csv: String)                   : Task[Seq[(Email, Try[RawUserEntry])]]
-    def createLegacyAccount(request: StoreAccountRequest, app: ApplicationCode) : Task[LegacyAccount]
+    def provision          (identity: CloudIdentity)                                      : Task[RawUser]
+    def parseCSV           (account: RawAccount, csv: String)                             : Task[Seq[(Email, Try[RawUserEntry])]]
+    def createLegacyAccount(request: StoreAccountRequest, app: ApplicationCode)           : Task[LegacyAccount]
+    def createLegacyUser   (request: StoreUser, password: Password, app: ApplicationCode) : Task[LegacyUser]
   }
 
   object AccountManager {
@@ -134,6 +135,13 @@ object accounts {
       for {
         _      <- ZIO.logInfo(s"Creating legacy account: '${request.name}' to ${ApplicationCode.value(app)}")
         legacy <- legacyMorbid.createLegacyAccount(CreateLegacyAccountRequest(request.name, ApplicationCode.value(app)))
+      } yield legacy
+    }
+
+    override def createLegacyUser(request: StoreUser, password: Password, app: ApplicationCode): Task[LegacyUser] = {
+      for {
+        _      <- ZIO.logInfo(s"Creating legacy user: '${request.email}' to account: ${request.account.id} app: ${ApplicationCode.value(app)}")
+        legacy <- legacyMorbid.createLegacyUser(CreateLegacyUserRequest(request.account.id, EmailUser.value(request.email.userName.get), request.email, ApplicationCode.value(app), Some(Password.value(password))))
       } yield legacy
     }
   }
