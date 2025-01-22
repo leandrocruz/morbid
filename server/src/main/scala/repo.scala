@@ -513,7 +513,7 @@ object repo {
         (AccountId.value(request.id) == 0, request.update) match
           case (false,  true) => update(row)
           case (false, false) => insertWithId(row)
-          case (true,  false) => insertWithoutId(row)
+          case (true , false) => insertWithoutId(row)
           case (_    ,     _) => ZIO.fail(Exception(s"Can't update account without id"))
       }
 
