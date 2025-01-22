@@ -328,6 +328,7 @@ object repo {
         case r: StoreUser              => storeUser(r)
         case r: DefineUserPin          => setUserPin(r)
         case r: GetUserPin             => getUserPin(r)
+        case r: FindAccountById        => accountById(r)
         case r: FindAccountByCode      => accountByCode(r)
         case r: FindAccountsByTenant   => accountsByTenant(r)
         case r: FindAccountByProvider  => accountByProvider(r)
@@ -926,6 +927,21 @@ object repo {
         for {
           t <- tenants                          if t.active && t.deleted.isEmpty
           a <- accounts .join(_.tenant == t.id) if a.active && a.deleted.isEmpty && a.code == lift(request.code)
+        } yield (t, a)
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.headOption.map {
+        case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform
+      }
+    }
+
+    private def accountById(request: FindAccountById): Task[Option[RawAccount]] = {
+      inline def query = quote {
+        for {
+          t <- tenants                         if t.active && t.deleted.isEmpty
+          a <- accounts.join(_.tenant == t.id) if a.active && a.deleted.isEmpty && a.id == lift(request.id)
         } yield (t, a)
       }
 
