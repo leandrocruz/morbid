@@ -388,7 +388,7 @@ object router {
     private def usersGiven(request: Request, application: ApplicationCode, group: Option[GroupCode] = None): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
-        seq <- repo.exec(FindUsersInGroup(tk.user.details.accountCode, application, group))
+        seq <- repo.exec(FindUsersInGroup(tk.user.details.account, application, group))
       } yield Response.json(seq.toJson)
     }
 
@@ -575,20 +575,20 @@ object router {
       }
     } (app, request)
 
-    private def removeAccount(app: String, code: String, request: Request): Task[Response] = protect {
+    private def removeAccount(app: String, account: Long, request: Request): Task[Response] = protect {
       role("adm") { _ =>
         for
-          _   <- repo.exec(RemoveAccount(AccountCode.of(code)))
+          _   <- repo.exec(RemoveAccount(AccountId.of(account)))
         yield Response.json(true.toJson)
       }
     } (app, request)
 
-    private def usersByAccount(app: String, code: String, request: Request): Task[Response] = protect {
+    private def usersByAccount(app: String, account: Long, request: Request): Task[Response] = protect {
         role("adm") { _ =>
           val token = summon[SingleAppToken]
           val application = token.user.application.code
           for
-            users <- repo.exec(FindUsersInGroup(AccountCode.of(code), application, None))
+            users <- repo.exec(FindUsersInGroup(AccountId.of(account), application, None))
           yield Response.json(users.toJson)
         }
       } (app, request)
@@ -648,13 +648,13 @@ object router {
       Method.POST   / "app" / string("app") / "group"                                               -> handler(protect(storeGroup)),
       Method.POST   / "app" / string("app") / "group" / "delete"                                    -> handler(protect(removeGroup)),
       Method.GET    / "app" / string("app") / "group"  / string("code") / "users"                   -> handler(groupUsers),
-      Method.GET    / "app" / string("app") / "account" / string("code") / "users"                  -> handler(usersByAccount),
+      Method.GET    / "app" / string("app") / "account" / long("account") / "users"                 -> handler(usersByAccount),
       Method.GET    / "app" / string("app") / "roles"                                               -> handler(rolesGiven),
       Method.GET    / "app" / string("app") / "accounts" / string("tenant")                         -> handler(accountsGiven),
       Method.POST   / "app" / string("app") / "account"                                             -> handler(protect(storeAccount)),
       Method.POST   / "app" / string("app") / "account" / "user"                                    -> handler(protect(storeAccount)),
       Method.DELETE / "app" / string("app") / "account" / long("account") / "user" / string("user") -> handler(removeAccountUser),
-      Method.DELETE / "app" / string("app") / "account" / string("code")                            -> handler(removeAccount),
+      Method.DELETE / "app" / string("app") / "account" / long("account")                           -> handler(removeAccount),
       Method.POST   / "app" / string("app") / "account" / "users"                                   -> handler(protect(provisionUsers))
     ).sandbox
 

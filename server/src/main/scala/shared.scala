@@ -160,7 +160,7 @@ object commands {
   ) extends Command[Map[ApplicationCode, Seq[RawGroup]]]
 
   case class FindUsersInGroup(
-    account : AccountCode,
+    account : AccountId,
     app     : ApplicationCode,
     group   : Option[GroupCode] = None
   ) extends Command[Seq[RawUserEntry]]
@@ -227,7 +227,7 @@ object commands {
   case class ReportUsersByAccount(app: ApplicationCode) extends Command[Map[RawAccount, Int]]
   case class UserExists(code: UserCode) extends Command[Boolean]
 
-  case class RemoveAccount (code: AccountCode)                                   extends Command[Long]
+  case class RemoveAccount (id: AccountId)                                       extends Command[Long]
   case class RemoveUser    (acc: AccountId, code: UserCode)                      extends Command[Long]
   case class RemoveGroup   (acc: AccountId, app: ApplicationId, code: GroupCode) extends Command[Long]
 }

@@ -619,14 +619,14 @@ object repo {
 
       def remove(now: Option[LocalDateTime]) = {
         inline def stmt = quote {
-          accounts.filter(acc => acc.code == lift(request.code)).update(_.deleted -> lift(now))
+          accounts.filter(acc => acc.id == lift(request.id)).update(_.deleted -> lift(now))
         }
 
         for
-          _     <- ZIO.log(s"Removing account '${request.code}'")
+          _     <- ZIO.log(s"Removing account '${request.id}'")
           count <- exec(run(stmt))
           _     <- ZIO.when(count != 1) {
-            ZIO.fail(Exception(s"Error removing account '${request.code}' (count: $count)"))
+            ZIO.fail(Exception(s"Error removing account '${request.id}' (count: $count)"))
           }
         yield count
       }
@@ -694,7 +694,7 @@ object repo {
         def retrieveCurrent: Task[Seq[RawUserEntry]] = {
           existing match
             case None      => ZIO.succeed(Seq.empty)
-            case Some(old) => usersGiven(FindUsersInGroup(accCode, appCode, Some(old.code)))
+            case Some(old) => usersGiven(FindUsersInGroup(accId, appCode, Some(old.code)))
         }
 
         for
@@ -891,7 +891,7 @@ object repo {
         quote {
           for {
             ten <- tenants                                 if ten.deleted.isEmpty && ten.active
-            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.id == lift(request.account)
             a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
             app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
             grp <- groups       .join(_.app    == app.id)  if grp.deleted.isEmpty && grp.acc == acc.id && grp.code == lift(code)
@@ -905,7 +905,7 @@ object repo {
         quote {
           for {
             ten <- tenants                                 if ten.deleted.isEmpty && ten.active
-            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.id == lift(request.account)
             usr <- users        .join(_.account == acc.id) if usr.deleted.isEmpty && usr.active
           } yield usr
         }
