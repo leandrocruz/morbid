@@ -464,7 +464,7 @@ object repo {
     private def storeAccount(request: StoreAccount): Task[RawAccount] = {
 
       def build(now: LocalDateTime, tenant: RawTenant) = RawAccount(
-        id         = request.id.getOrElse(AccountId.of(0)),
+        id         = request.id,
         created    = now,
         deleted    = None,
         tenant     = tenant.id,
@@ -510,11 +510,11 @@ object repo {
 
         val row = raw.into[AccountRow].transform
         
-        (request.id, request.update) match
-          case (Some(id),  true) => update(row)
-          case (Some(id), false) => insertWithId(row)
-          case (None    , false) => insertWithoutId(row)
-          case (_       ,     _) => ZIO.fail(Exception(s"Account id '${raw.id}' is not valid"))
+        (AccountId.value(request.id) == 0, request.update) match
+          case (false,  true) => update(row)
+          case (false, false) => insertWithId(row)
+          case (true,  false) => insertWithoutId(row)
+          case (_    ,     _) => ZIO.fail(Exception(s"Can't update account without id"))
       }
 
       def tenantById: Task[Option[RawTenant]] = {

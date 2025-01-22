@@ -31,6 +31,7 @@ object client {
     def removeGroup       (request: RemoveGroupRequest)        (using token: RawToken, app: ApplicationCode): Task[Long]
     def storeUser         (request: StoreUserRequest)          (using token: RawToken, app: ApplicationCode): Task[RawUserEntry]
     def removeUser        (request: RemoveUserRequest)         (using token: RawToken, app: ApplicationCode): Task[Long]
+    def removeAccountUser (account: AccountId, user: UserCode) (using token: RawToken, app: ApplicationCode): Task[Boolean]
     def removeAccount     (account: AccountCode)               (using token: RawToken, app: ApplicationCode): Task[Boolean]
     def usersByAccount    (account: AccountCode)               (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
     def passwordResetLink (request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode): Task[PasswordResetLink]
@@ -110,6 +111,7 @@ object client {
     override def removeUser        (request: RemoveUserRequest)        (using token: RawToken, app: ApplicationCode) = post[RemoveUserRequest, Long]                             (Some(token),  base / "app" / ApplicationCode.value(app) / "user" / "delete", request)
     override def users                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "users")
     override def accounts         (tenant: TenantCode)                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawAccount]]                                      (Some(token),  base / "app" / ApplicationCode.value(app) / "accounts" / TenantCode.value(tenant))
+    override def removeAccountUser(account: AccountId, user: UserCode) (using token: RawToken, app: ApplicationCode) = delete[Boolean]                                           (Some(token),  base / "app" / ApplicationCode.value(app) / "account" / AccountId.value(account).toString / "user" / UserCode.value(user))
     override def roles                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawRole]]                                         (Some(token),  base / "app" / ApplicationCode.value(app) / "roles")
     override def passwordResetLink(request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode) = post[RequestPasswordRequestLink, PasswordResetLink]       (Some(token),  base / "app" / ApplicationCode.value(app) / "password" / "reset", request)
     override def passwordChange   (request: ChangePasswordRequest)     (using token: RawToken, app: ApplicationCode) = post[ChangePasswordRequest, Boolean]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "password" / "change", request)
