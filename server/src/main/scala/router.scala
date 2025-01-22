@@ -84,6 +84,14 @@ object router {
     tokens       : TokenGenerator
   ) extends Router {
 
+    private def isRoot(operation: String)(token: SingleAppToken): Either[String, Unit] = {
+      if (token.user.details.account == domain.RootAccount) {
+        Right(())
+      } else {
+        Left(s"A operação '$operation' é restrita aos administradores")
+      }
+    }
+
     private def protect(r: AppRoute)(app: String, request: Request): Task[Response] = {
       appRoute(ApplicationCode.of(app), tokenFrom)(r)(request)
     }
@@ -519,7 +527,7 @@ object router {
 
     }
 
-    private def storeAccount: AppRoute = role("adm") { request =>
+    private def storeAccount: AppRoute = role("adm", isRoot("storeAccount")) { request =>
 
       val token  = summon[SingleAppToken]
       val Presto = summon[ApplicationCode]
@@ -569,7 +577,7 @@ object router {
     }
 
     private def accountsGiven(app: String, tenant: String, request: Request): Task[Response] = protect {
-      role("adm") { _ =>
+      role("adm", isRoot("getAccounts")) { _ =>
         for {
           accounts <- repo.exec(FindAccountsByTenant(TenantCode.of(tenant)))
         } yield Response.json(accounts.toJson)
@@ -577,7 +585,7 @@ object router {
     } (app, request)
 
     private def removeAccount(app: String, account: Long, request: Request): Task[Response] = protect {
-      role("adm") { _ =>
+      role("adm", isRoot("removeAccount")) { _ =>
         for
           _   <- repo.exec(RemoveAccount(AccountId.of(account)))
         yield Response.json(true.toJson)
@@ -585,7 +593,7 @@ object router {
     } (app, request)
 
     private def usersByAccount(app: String, account: Long, request: Request): Task[Response] = protect {
-        role("adm") { _ =>
+        role("adm", isRoot("getUsersByAccount")) { _ =>
           val token = summon[SingleAppToken]
           val application = token.user.application.code
           for
@@ -595,14 +603,14 @@ object router {
       } (app, request)
 
     private def removeAccountUser(app: String, account: Long, user: String, request: Request): Task[Response] = protect {
-      role("adm") { _ =>
+      role("adm", isRoot("removeAccountUser")) { _ =>
         for
           _   <- repo.exec(RemoveUser(AccountId.of(account), UserCode.of(user)))
         yield Response.json(true.toJson)
       }
     } (app, request)
 
-    private def storeAccountUser: AppRoute = role("adm") { request =>
+    private def storeAccountUser: AppRoute = role("adm", isRoot("storeAccountUser")) { request =>
 
       val token       = summon[SingleAppToken]
       val application = token.user.application
