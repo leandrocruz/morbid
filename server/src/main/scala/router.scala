@@ -579,6 +579,8 @@ object router {
     private def accountsGiven(app: String, tenant: String, request: Request): Task[Response] = protect {
       role("adm", isRoot("getAccounts")) { _ =>
         for {
+          tk       <- tokenFrom(request)
+          _        <- ZIO.logInfo(s"Getting accounts by tenant '$tenant' app '$app' by: ${tk.user.details.email}")
           accounts <- repo.exec(FindAccountsByTenant(TenantCode.of(tenant)))
         } yield Response.json(accounts.toJson)
       }
@@ -587,7 +589,9 @@ object router {
     private def removeAccount(app: String, account: Long, request: Request): Task[Response] = protect {
       role("adm", isRoot("removeAccount")) { _ =>
         for
-          _   <- repo.exec(RemoveAccount(AccountId.of(account)))
+          tk <- tokenFrom(request)
+          _  <- ZIO.logInfo(s"Removing account '$account' app '$app' by: ${tk.user.details.email}")
+          _  <- repo.exec(RemoveAccount(AccountId.of(account)))
         yield Response.json(true.toJson)
       }
     } (app, request)
@@ -597,6 +601,7 @@ object router {
           val token = summon[SingleAppToken]
           val application = token.user.application.code
           for
+            _     <- ZIO.logInfo(s"Getting users by account '$account' app '$app' by: ${token.user.details.email}")
             users <- repo.exec(FindUsersInGroup(AccountId.of(account), application, None))
           yield Response.json(users.toJson)
         }
@@ -605,7 +610,9 @@ object router {
     private def removeAccountUser(app: String, account: Long, user: String, request: Request): Task[Response] = protect {
       role("adm", isRoot("removeAccountUser")) { _ =>
         for
-          _   <- repo.exec(RemoveUser(AccountId.of(account), UserCode.of(user)))
+          tk <- tokenFrom(request)
+          _  <- ZIO.logInfo(s"Removing user '$user' from account $account app '$app' by: ${tk.user.details.email}")
+          _  <- repo.exec(RemoveUser(AccountId.of(account), UserCode.of(user)))
         yield Response.json(true.toJson)
       }
     } (app, request)
@@ -693,8 +700,9 @@ object router {
         val appCode = ApplicationCode.of(app)
         val acc     = AccountCode.of(account)
         for {
-          tk     <- tokenFrom(request)
-          map    <- repo.exec(FindGroups(acc, Seq(appCode), Seq.empty))
+          tk  <- tokenFrom(request)
+          _   <- ZIO.logInfo(s"Gettings groups by account '$account' app '$app' by: ${tk.user.details.email}")
+          map <- repo.exec(FindGroups(acc, Seq(appCode), Seq.empty))
         } yield map.get(appCode) match
           case Some(groups) => Response.json(groups.toJson)
           case None         => Response.notFound(s"Can't find groups for '$app'")
@@ -708,12 +716,33 @@ object router {
         val usr     = UserId.of(user)
         for {
           tk  <- tokenFrom(request)
+          _   <- ZIO.logInfo(s"Gettings groups by user '$user' account '$account' app '$app' by: ${tk.user.details.email}")
           map <- repo.exec(FindGroupsByUser(acc, usr, Seq(appCode)))
         } yield map.get(appCode) match
           case Some(groups) => Response.json(groups.toJson)
           case None         => Response.notFound(s"Can't find groups for '$app'")
       }
     } (app, request)
+
+    private def configureAccountUserGroups: AppRoute = role("adm", isRoot("configureAccountUserGroups")) { request =>
+
+      val appCode = summon[ApplicationCode]
+
+      for {
+        tk     <- tokenFrom(request)
+        req    <- request.body.parse[ConfigureCredentialSitesRequest]
+        app    <- repo.get(FindApplicationDetails(appCode)) { s"Can't find application '$appCode' "}
+        usr    <- repo.get(FindUserById(req.user)) { s"Can't find user '${req.user}' "}
+        acc    <- repo.get(FindAccountById(req.account)) { s"Can't find account '${req.account}' "}
+        map    <- repo.exec(FindGroups(acc.code, Seq(app.code)))
+        all    = map.flatMap(_._2).toSeq
+        add    = req.selected.diff(all.map(_.id))
+        remove = all.map(_.id).diff(req.selected)
+        _      <- ZIO.logInfo(s"Configuring groups to user '${usr.details.id} - ${usr.details.email}' account '${acc.id} - ${acc.name}' app: '${app.code}' by: ${tk.user.details.email}")
+        _      <- repo.exec(LinkGroupsToUser(app.id, usr.details.id, add))
+        _      <- repo.exec(UnlinkGroupsToUser(app.id, usr.details.id, add))
+      } yield Response.json(true.toJson)
+    }
 
     private def provisionUsers: AppRoute = role("adm") { request =>
 
@@ -766,6 +795,7 @@ object router {
       Method.GET    / "app" / string("app") / "roles"                                                        -> handler(rolesGiven),
       Method.GET    / "app" / string("app") / "accounts" / string("tenant")                                  -> handler(accountsGiven),
       Method.POST   / "app" / string("app") / "account"                                                      -> handler(protect(storeAccount)),
+      Method.POST   / "app" / string("app") / "account" / "user" / "set" / "groups"                          -> handler(protect(configureAccountUserGroups)),
       Method.POST   / "app" / string("app") / "account" / "user"                                             -> handler(protect(storeAccountUser)),
       Method.DELETE / "app" / string("app") / "account" / long("account") / "user" / string("user")          -> handler(removeAccountUser),
       Method.DELETE / "app" / string("app") / "account" / long("account")                                    -> handler(removeAccount),

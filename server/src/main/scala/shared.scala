@@ -165,6 +165,18 @@ object commands {
     apps: Seq[ApplicationCode]
   ) extends Command[Map[ApplicationCode, Seq[RawGroup]]]
 
+  case class LinkGroupsToUser(
+    application : ApplicationId,
+    user        : UserId,
+    groups      : Seq[GroupId]
+  ) extends Command[Unit]
+
+  case class UnlinkGroupsToUser(
+    application : ApplicationId,
+    user        : UserId,
+    groups      : Seq[GroupId]
+  ) extends Command[Long]
+
   case class FindUsersInGroup(
     account : AccountId,
     app     : ApplicationCode,

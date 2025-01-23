@@ -346,9 +346,11 @@ object repo {
         case r: FindUsersInGroup       => usersGiven(r)
         case r: LinkAccountToApp       => linkAccountToApp(r)
         case r: LinkUsersToGroup       => linkGroups(r)
+        case r: LinkGroupsToUser       => linkGroupsToUser(r)
         case r: UnlinkUsersFromGroup   => ZIO.fail(Exception("TODO"))
         case r: LinkGroupToRoles       => ZIO.fail(Exception("TODO"))
         case r: UnlinkGroupFromRoles   => ZIO.fail(Exception("TODO"))
+        case r: UnlinkGroupsToUser     => unlinkGroupsFromUser(r)
         case r: RemoveAccount          => removeAccount(r)
         case r: RemoveGroup            => removeGroup(r)
         case r: RemoveUser             => removeUser(r)
@@ -1086,6 +1088,40 @@ object repo {
           u2g.app == lift(cmd.application) &&
           u2g.grp == lift(cmd.group)       &&
           liftQuery(cmd.users).contains(u2g.usr)
+        }.delete
+      }
+
+      exec(run(stmt))
+    }
+
+    private def linkGroupsToUser(r: LinkGroupsToUser): Task[Unit] = {
+
+      inline def insertValues(rows: Seq[UserToGroupRow]) = quote {
+        liftQuery(rows).foreach(row => user2group.insertValue(row))
+      }
+
+      def rows(now: LocalDateTime) = r.groups.map { group =>
+        UserToGroupRow(
+          usr     = r.user,
+          app     = r.application,
+          grp     = group,
+          created = now,
+        )
+      }
+
+      for
+        now <- Clock.localDateTime
+        _   <- exec(run(insertValues(rows(now))))
+      yield ()
+    }
+
+    private def unlinkGroupsFromUser(r: UnlinkGroupsToUser): Task[Long] = {
+
+      inline def stmt = quote {
+        user2group.filter { u2g =>
+          u2g.app == lift(r.application) &&
+          u2g.usr == lift(r.user)        &&
+          liftQuery(r.groups).contains(u2g.grp)
         }.delete
       }
 
