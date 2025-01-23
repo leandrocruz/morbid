@@ -694,8 +694,7 @@ object router {
         val acc = AccountCode.of(account)
         for {
           tk     <- tokenFrom(request)
-          filter = request.url.queryParams.getAll("code").map(GroupCode.of)
-          map    <- repo.exec(FindGroups(acc, Seq(appCode), filter))
+          map    <- repo.exec(FindGroups(acc, Seq(appCode), Seq.empty))
         } yield map.get(appCode) match
           case Some(groups) => Response.json(groups.toJson)
           case None         => Response.notFound(s"Can't find groups for '$app'")
