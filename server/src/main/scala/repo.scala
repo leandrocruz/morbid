@@ -336,6 +336,7 @@ object repo {
         case r: FindApplicationDetails => applicationDetails(r)
         case r: FindApplications       => applicationDetailsGiven(r)
         case r: FindGroups             => groupsGiven(r)
+        case r: FindGroupsByUser       => groupsGivenByUser(r)
         case r: FindProviderByAccount  => providerGiven(r)
         case r: FindProviderByDomain   => providerGiven(r)
         case r: FindRoles              => rolesGiven(r)
@@ -803,37 +804,37 @@ object repo {
 
     }
 
-    private def groupsGiven(request: FindGroups): Task[Map[ApplicationCode, Seq[RawGroup]]] = {
+    private def mergeGroups(rows: Seq[(ApplicationRow, (GroupRow, (Option[RoleRow], Option[PermissionRow])))]): Map[ApplicationCode, Seq[RawGroup]] = {
 
-      def merge(rows: Seq[(ApplicationRow, (GroupRow, (Option[RoleRow], Option[PermissionRow])))]): Map[ApplicationCode, Seq[RawGroup]] = {
+      def groupByFirstElement[A, B](seq: Seq[(A, B)]): Seq[(A, Seq[B])] = seq.groupBy(_._1).view.mapValues(_.map(_._2)).toSeq
 
-        def groupByFirstElement[A, B](seq: Seq[(A, B)]): Seq[(A, Seq[B])] = seq.groupBy(_._1).view.mapValues(_.map(_._2)).toSeq
+      def toGroup(group: GroupRow, roles: Seq[(Option[RoleRow], Option[PermissionRow])]): RawGroup = {
 
-        def toGroup(group: GroupRow, roles: Seq[(Option[RoleRow], Option[PermissionRow])]): RawGroup = {
-
-          val groupRoles = groupByFirstElement {
-            roles.filter(_._1.isDefined).map(it => (it._1.get, it._2))
-          } map {
-            case (role, perms) =>
-              val discarded = perms.filter(_.isDefined).map(_.get).map(_.transformInto[RawPermission])
-              role.into[RawRole].withFieldConst(_.permissions, Seq.empty).transform
-          }
-
-          group
-            .into[RawGroup]
-            .withFieldConst(_.roles, groupRoles)
-            .transform
+        val groupRoles = groupByFirstElement {
+          roles.filter(_._1.isDefined).map(it => (it._1.get, it._2))
+        } map {
+          case (role, perms) =>
+            val discarded = perms.filter(_.isDefined).map(_.get).map(_.transformInto[RawPermission])
+            role.into[RawRole].withFieldConst(_.permissions, Seq.empty).transform
         }
 
-        groupByFirstElement {
-          groupByFirstElement(rows).flatMap {
-            case (app: ApplicationRow, groups) => groupByFirstElement(groups).map {
-              case (group: GroupRow, roles) =>
-                (app.code, toGroup(group, roles))
-            }
-          }
-        }.toMap
+        group
+          .into[RawGroup]
+          .withFieldConst(_.roles, groupRoles)
+          .transform
       }
+
+      groupByFirstElement {
+        groupByFirstElement(rows).flatMap {
+          case (app: ApplicationRow, groups) => groupByFirstElement(groups).map {
+            case (group: GroupRow, roles) =>
+              (app.code, toGroup(group, roles))
+          }
+        }
+      }.toMap
+    }
+
+    private def groupsGiven(request: FindGroups): Task[Map[ApplicationCode, Seq[RawGroup]]] = {
 
       inline def query = quote {
         for {
@@ -851,7 +852,28 @@ object repo {
       for {
         _    <- printQuery(query)
         rows <- exec(run(query))
-      } yield merge(rows)
+      } yield mergeGroups(rows)
+    }
+
+    private def groupsGivenByUser(request: FindGroupsByUser): Task[Map[ApplicationCode, Seq[RawGroup]]] = {
+
+      inline def query = quote {
+        for {
+          ten <- tenants                                               if ten.deleted.isEmpty && ten.active
+          acc <- accounts    .join(_.tenant == ten.id)                 if acc.deleted.isEmpty && acc.active && acc.id == lift(request.account)
+          a2a <- account2app .join(_.acc == acc.id)                    if a2a.deleted.isEmpty
+          app <- applications.join(_.id == a2a.app)                    if app.deleted.isEmpty && app.active && liftQuery(request.apps).contains(app.code)
+          grp <- groups      .join(_.app == a2a.app)                   if grp.deleted.isEmpty && grp.acc == acc.id
+          g2r <- group2role  .leftJoin(_.grp == grp.id)
+          rol <- roles       .leftJoin(r => g2r.exists(_.rid == r.id)) if rol.exists(_.deleted.isEmpty)
+          per <- permissions .leftJoin(p => rol.exists(_.id == p.rid)) if per.exists(_.deleted.isEmpty)
+        } yield (app, (grp, (rol, per)))
+      }
+
+      for {
+        _    <- printQuery(query)
+        rows <- exec(run(query))
+      } yield mergeGroups(rows)
     }
 
     private def rolesGiven(request: FindRoles): Task[Seq[RawRole]] = {

@@ -22,6 +22,7 @@ object client {
     def groups                                                 (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
     def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
     def groupsByAccount   (account: AccountCode)               (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
+    def groupsByUser      (account: AccountId, user: UserId)   (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
     def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode): Task[Option[RawGroup]]
     def usersByGroupByCode(group: GroupCode)                   (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
     def users                                                  (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
@@ -106,6 +107,7 @@ object client {
     override def removeAccount     (account: AccountId)                (using token: RawToken, app: ApplicationCode) = delete[Boolean]                                           (Some(token),  base / "app" / ApplicationCode.value(app) / "account" / AccountId.value(account).toString)
     override def groups                                                (using token: RawToken, app: ApplicationCode) = get[Seq[RawGroup]]                                        (Some(token),  base / "app" / ApplicationCode.value(app) / "groups")
     override def groupsByAccount   (account: AccountCode)              (using token: RawToken, app: ApplicationCode) = get[Seq[RawGroup]]                                        (Some(token),  base / "app" / ApplicationCode.value(app) / "account" / AccountCode.value(account) / "groups")
+    override def groupsByUser      (account: AccountId, user: UserId)  (using token: RawToken, app: ApplicationCode) = get[Seq[RawGroup]]                                        (Some(token),  base / "app" / ApplicationCode.value(app) / "account" / AccountId.value(account).toString / "user" / UserId.value(user).toString / "groups")
     override def groupsByCode      (groups: Seq[GroupCode])            (using token: RawToken, app: ApplicationCode) = get[Seq[RawGroup]]                                        (Some(token), (base / "app" / ApplicationCode.value(app) / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
     override def usersByGroupByCode(group: GroupCode)                  (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "group" / GroupCode.value(group) / "users")
     override def usersByAccount    (account: AccountId)                (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "account" / AccountId.value(account).toString / "users")
