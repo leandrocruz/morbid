@@ -444,27 +444,27 @@ object domain {
     case class LoginViaEmailLinkResponse(link: Link)
     case class StoreAccountRequest(id: AccountId, code: AccountCode, name: AccountName, tenant: TenantId, update: Boolean)
 
-    case class ConfigureCredentialSitesRequest(
+    case class ConfigureAccountUserGroupsRequest(
       account  : AccountId,
-      code     : AccountCode,                                              
+      code     : AccountCode,
       user     : UserId,
       selected : Seq[GroupId],
     )
 
-    given JsonCodec[StoreGroupRequest]               = DeriveJsonCodec.gen
-    given JsonCodec[StoreAccountRequest]             = DeriveJsonCodec.gen
-    given JsonCodec[StoreAccountUserRequest]         = DeriveJsonCodec.gen
-    given JsonCodec[StoreUserRequest]                = DeriveJsonCodec.gen
-    given JsonCodec[RequestPasswordRequestLink]      = DeriveJsonCodec.gen
-    given JsonCodec[PasswordResetLink]               = DeriveJsonCodec.gen
-    given JsonCodec[SetUserPin]                      = DeriveJsonCodec.gen
-    given JsonCodec[ValidateUserPin]                 = DeriveJsonCodec.gen
-    given JsonCodec[RemoveUserRequest]               = DeriveJsonCodec.gen
-    given JsonCodec[RemoveGroupRequest]              = DeriveJsonCodec.gen
-    given JsonCodec[LoginViaEmailLinkRequest]        = DeriveJsonCodec.gen
-    given JsonCodec[LoginViaEmailLinkResponse]       = DeriveJsonCodec.gen
-    given JsonCodec[ChangePasswordRequest]           = DeriveJsonCodec.gen
-    given JsonCodec[ConfigureCredentialSitesRequest] = DeriveJsonCodec.gen
+    given JsonCodec[StoreGroupRequest]                 = DeriveJsonCodec.gen
+    given JsonCodec[StoreAccountRequest]               = DeriveJsonCodec.gen
+    given JsonCodec[StoreAccountUserRequest]           = DeriveJsonCodec.gen
+    given JsonCodec[StoreUserRequest]                  = DeriveJsonCodec.gen
+    given JsonCodec[RequestPasswordRequestLink]        = DeriveJsonCodec.gen
+    given JsonCodec[PasswordResetLink]                 = DeriveJsonCodec.gen
+    given JsonCodec[SetUserPin]                        = DeriveJsonCodec.gen
+    given JsonCodec[ValidateUserPin]                   = DeriveJsonCodec.gen
+    given JsonCodec[RemoveUserRequest]                 = DeriveJsonCodec.gen
+    given JsonCodec[RemoveGroupRequest]                = DeriveJsonCodec.gen
+    given JsonCodec[LoginViaEmailLinkRequest]          = DeriveJsonCodec.gen
+    given JsonCodec[LoginViaEmailLinkResponse]         = DeriveJsonCodec.gen
+    given JsonCodec[ChangePasswordRequest]             = DeriveJsonCodec.gen
+    given JsonCodec[ConfigureAccountUserGroupsRequest] = DeriveJsonCodec.gen
   }
 }
 

@@ -730,7 +730,7 @@ object router {
 
       for {
         tk     <- tokenFrom(request)
-        req    <- request.body.parse[ConfigureCredentialSitesRequest]
+        req    <- request.body.parse[ConfigureAccountUserGroupsRequest]
         app    <- repo.get(FindApplicationDetails(appCode)) { s"Can't find application '$appCode' "}
         usr    <- repo.get(FindUserById(req.user)) { s"Can't find user '${req.user}' "}
         acc    <- repo.get(FindAccountById(req.account)) { s"Can't find account '${req.account}' "}
