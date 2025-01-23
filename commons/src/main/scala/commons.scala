@@ -446,7 +446,6 @@ object domain {
 
     case class ConfigureAccountUserGroupsRequest(
       account  : AccountId,
-      code     : AccountCode,
       user     : UserId,
       selected : Seq[GroupId],
     )
