@@ -88,7 +88,7 @@ object router {
       if (token.user.details.account == domain.RootAccount) {
         Right(())
       } else {
-        Left(s"A operação '$operation' é restrita aos administradores")
+        Left(s"A operação '$operation' é restrita aos administradores do ${ApplicationCode.value(token.user.application.code)}")
       }
     }
 
@@ -688,6 +688,20 @@ object router {
       yield Response.json(user.toJson)
     }
 
+    private def groupsGivenByAccount(app: String, account: String, request: Request): Task[Response] = protect {
+      role("adm", isRoot("getGroupsByAccount")) { _ =>
+        val appCode = ApplicationCode.of(app)
+        val acc = AccountCode.of(account)
+        for {
+          tk     <- tokenFrom(request)
+          filter = request.url.queryParams.getAll("code").map(GroupCode.of)
+          map    <- repo.exec(FindGroups(acc, Seq(appCode), filter))
+        } yield map.get(appCode) match
+          case Some(groups) => Response.json(groups.toJson)
+          case None         => Response.notFound(s"Can't find groups for '$app'")
+      }
+    } (app, request)
+
     private def provisionUsers: AppRoute = role("adm") { request =>
 
       val appCode = summon[ApplicationCode]
@@ -742,6 +756,7 @@ object router {
       Method.POST   / "app" / string("app") / "account" / "user"                                    -> handler(protect(storeAccountUser)),
       Method.DELETE / "app" / string("app") / "account" / long("account") / "user" / string("user") -> handler(removeAccountUser),
       Method.DELETE / "app" / string("app") / "account" / long("account")                           -> handler(removeAccount),
+      Method.GET    / "app" / string("app") / "account" / string("account") / "groups"              -> handler(groupsGivenByAccount),
       Method.POST   / "app" / string("app") / "account" / "users"                                   -> handler(protect(provisionUsers))
     ).sandbox
 
