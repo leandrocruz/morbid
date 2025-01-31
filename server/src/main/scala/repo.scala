@@ -328,12 +328,15 @@ object repo {
         case r: StoreUser              => storeUser(r)
         case r: DefineUserPin          => setUserPin(r)
         case r: GetUserPin             => getUserPin(r)
+        case r: FindAccountById        => accountById(r)
         case r: FindAccountByCode      => accountByCode(r)
+        case r: FindAccountsByTenant   => accountsByTenant(r)
         case r: FindAccountByProvider  => accountByProvider(r)
         case r: FindApplication        => applicationGiven(r)
         case r: FindApplicationDetails => applicationDetails(r)
         case r: FindApplications       => applicationDetailsGiven(r)
         case r: FindGroups             => groupsGiven(r)
+        case r: FindGroupsByUser       => groupsGivenByUser(r)
         case r: FindProviderByAccount  => providerGiven(r)
         case r: FindProviderByDomain   => providerGiven(r)
         case r: FindRoles              => rolesGiven(r)
@@ -343,10 +346,12 @@ object repo {
         case r: FindUsersInGroup       => usersGiven(r)
         case r: LinkAccountToApp       => linkAccountToApp(r)
         case r: LinkUsersToGroup       => linkGroups(r)
+        case r: LinkGroupsToUser       => linkGroupsToUser(r)
         case r: UnlinkUsersFromGroup   => ZIO.fail(Exception("TODO"))
         case r: LinkGroupToRoles       => ZIO.fail(Exception("TODO"))
         case r: UnlinkGroupFromRoles   => ZIO.fail(Exception("TODO"))
-        case r: RemoveAccount          => ZIO.fail(Exception("TODO"))
+        case r: UnlinkGroupsToUser     => unlinkGroupsFromUser(r)
+        case r: RemoveAccount          => removeAccount(r)
         case r: RemoveGroup            => removeGroup(r)
         case r: RemoveUser             => removeUser(r)
         case r: ReportUsersByAccount   => usersByAccount(r)
@@ -484,6 +489,7 @@ object repo {
         }
 
         def insertWithoutId(row: AccountRow) = {
+          // TODO insert into legacy morbid too
           inline given InsertMeta[AccountRow] = insertMeta[AccountRow](_.id)
           inline def stmt = quote { accounts.insertValue(lift(row)).returning(_.id) }
           for
@@ -492,9 +498,27 @@ object repo {
           yield raw.copy(id = id)
         }
 
+        def update(row: AccountRow) = {
+
+          inline def stmt = quote {
+            accounts.filter { acc =>
+              acc.id   == lift(row.id) &&
+              acc.code == lift(row.code)
+            }.update(_.name -> lift(row.name))
+          }
+
+          for
+            _ <- exec(run(stmt))
+          yield raw.copy(name = row.name)
+        }
+
         val row = raw.into[AccountRow].transform
-        if(AccountId.value(raw.id) <= 0) ZIO.fail(Exception(s"Account id '${raw.id}' is not valid"))
-        else                             insertWithId    (row)
+        
+        (AccountId.value(request.id) == 0, request.update) match
+          case (false,  true) => update(row)
+          case (false, false) => insertWithId(row)
+          case (true , false) => insertWithoutId(row)
+          case (_    ,     _) => ZIO.fail(Exception(s"Can't update account without id"))
       }
 
       def tenantById: Task[Option[RawTenant]] = {
@@ -595,6 +619,29 @@ object repo {
 
     }
 
+    private def removeAccount(request: RemoveAccount): Task[Long] = {
+
+      def remove(now: Option[LocalDateTime]) = {
+        inline def stmt = quote {
+          accounts.filter(acc => acc.id == lift(request.id)).update(_.deleted -> lift(now))
+        }
+
+        for
+          _     <- ZIO.log(s"Removing account '${request.id}'")
+          count <- exec(run(stmt))
+          _     <- ZIO.when(count != 1) {
+            ZIO.fail(Exception(s"Error removing account '${request.id}' (count: $count)"))
+          }
+        yield count
+      }
+
+      for {
+        now    <- Clock.localDateTime
+        result <- remove(Some(now))
+      } yield result
+
+    }
+
     private def storeGroup(request: StoreGroup): Task[RawGroup] = {
 
       val accId   = request.account
@@ -651,7 +698,7 @@ object repo {
         def retrieveCurrent: Task[Seq[RawUserEntry]] = {
           existing match
             case None      => ZIO.succeed(Seq.empty)
-            case Some(old) => usersGiven(FindUsersInGroup(accCode, appCode, Some(old.code)))
+            case Some(old) => usersGiven(FindUsersInGroup(accId, appCode, Some(old.code)))
         }
 
         for
@@ -759,37 +806,37 @@ object repo {
 
     }
 
-    private def groupsGiven(request: FindGroups): Task[Map[ApplicationCode, Seq[RawGroup]]] = {
+    private def mergeGroups(rows: Seq[(ApplicationRow, (GroupRow, (Option[RoleRow], Option[PermissionRow])))]): Map[ApplicationCode, Seq[RawGroup]] = {
 
-      def merge(rows: Seq[(ApplicationRow, (GroupRow, (Option[RoleRow], Option[PermissionRow])))]): Map[ApplicationCode, Seq[RawGroup]] = {
+      def groupByFirstElement[A, B](seq: Seq[(A, B)]): Seq[(A, Seq[B])] = seq.groupBy(_._1).view.mapValues(_.map(_._2)).toSeq
 
-        def groupByFirstElement[A, B](seq: Seq[(A, B)]): Seq[(A, Seq[B])] = seq.groupBy(_._1).view.mapValues(_.map(_._2)).toSeq
+      def toGroup(group: GroupRow, roles: Seq[(Option[RoleRow], Option[PermissionRow])]): RawGroup = {
 
-        def toGroup(group: GroupRow, roles: Seq[(Option[RoleRow], Option[PermissionRow])]): RawGroup = {
-
-          val groupRoles = groupByFirstElement {
-            roles.filter(_._1.isDefined).map(it => (it._1.get, it._2))
-          } map {
-            case (role, perms) =>
-              val discarded = perms.filter(_.isDefined).map(_.get).map(_.transformInto[RawPermission])
-              role.into[RawRole].withFieldConst(_.permissions, Seq.empty).transform
-          }
-
-          group
-            .into[RawGroup]
-            .withFieldConst(_.roles, groupRoles)
-            .transform
+        val groupRoles = groupByFirstElement {
+          roles.filter(_._1.isDefined).map(it => (it._1.get, it._2))
+        } map {
+          case (role, perms) =>
+            val discarded = perms.filter(_.isDefined).map(_.get).map(_.transformInto[RawPermission])
+            role.into[RawRole].withFieldConst(_.permissions, Seq.empty).transform
         }
 
-        groupByFirstElement {
-          groupByFirstElement(rows).flatMap {
-            case (app: ApplicationRow, groups) => groupByFirstElement(groups).map {
-              case (group: GroupRow, roles) =>
-                (app.code, toGroup(group, roles))
-            }
-          }
-        }.toMap
+        group
+          .into[RawGroup]
+          .withFieldConst(_.roles, groupRoles)
+          .transform
       }
+
+      groupByFirstElement {
+        groupByFirstElement(rows).flatMap {
+          case (app: ApplicationRow, groups) => groupByFirstElement(groups).map {
+            case (group: GroupRow, roles) =>
+              (app.code, toGroup(group, roles))
+          }
+        }
+      }.toMap
+    }
+
+    private def groupsGiven(request: FindGroups): Task[Map[ApplicationCode, Seq[RawGroup]]] = {
 
       inline def query = quote {
         for {
@@ -807,7 +854,29 @@ object repo {
       for {
         _    <- printQuery(query)
         rows <- exec(run(query))
-      } yield merge(rows)
+      } yield mergeGroups(rows)
+    }
+
+    private def groupsGivenByUser(request: FindGroupsByUser): Task[Map[ApplicationCode, Seq[RawGroup]]] = {
+
+      inline def query = quote {
+        for {
+          ten <- tenants                                                     if ten.deleted.isEmpty && ten.active
+          acc <- accounts    .join(_.tenant == ten.id)                       if acc.deleted.isEmpty && acc.active && acc.id == lift(request.account)
+          a2a <- account2app .join(_.acc == acc.id)                          if a2a.deleted.isEmpty
+          app <- applications.join(_.id == a2a.app)                          if app.deleted.isEmpty && app.active && liftQuery(request.apps).contains(app.code)
+          u2g <- user2group  .join(_.app == a2a.app)                         if u2g.usr == lift(request.user)
+          grp <- groups      .join(g => g.app == a2a.app && g.id == u2g.grp) if grp.deleted.isEmpty && grp.acc == acc.id
+          g2r <- group2role  .leftJoin(_.grp == grp.id)
+          rol <- roles       .leftJoin(r => g2r.exists(_.rid == r.id))       if rol.exists(_.deleted.isEmpty)
+          per <- permissions .leftJoin(p => rol.exists(_.id == p.rid))       if per.exists(_.deleted.isEmpty)
+        } yield (app, (grp, (rol, per)))
+      }
+
+      for {
+        _    <- printQuery(query)
+        rows <- exec(run(query))
+      } yield mergeGroups(rows)
     }
 
     private def rolesGiven(request: FindRoles): Task[Seq[RawRole]] = {
@@ -848,7 +917,7 @@ object repo {
         quote {
           for {
             ten <- tenants                                 if ten.deleted.isEmpty && ten.active
-            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.id == lift(request.account)
             a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
             app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
             grp <- groups       .join(_.app    == app.id)  if grp.deleted.isEmpty && grp.acc == acc.id && grp.code == lift(code)
@@ -862,7 +931,7 @@ object repo {
         quote {
           for {
             ten <- tenants                                 if ten.deleted.isEmpty && ten.active
-            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+            acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.id == lift(request.account)
             usr <- users        .join(_.account == acc.id) if usr.deleted.isEmpty && usr.active
           } yield usr
         }
@@ -891,6 +960,34 @@ object repo {
       } yield rows.headOption.map {
         case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform
       }
+    }
+
+    private def accountById(request: FindAccountById): Task[Option[RawAccount]] = {
+      inline def query = quote {
+        for {
+          t <- tenants                         if t.active && t.deleted.isEmpty
+          a <- accounts.join(_.tenant == t.id) if a.active && a.deleted.isEmpty && a.id == lift(request.id)
+        } yield (t, a)
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.headOption.map {
+        case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform
+      }
+    }
+
+    private def accountsByTenant(request: FindAccountsByTenant): Task[Seq[RawAccount]] = {
+      inline def query = quote {
+        for {
+          ten <- tenants                           if ten.active && ten.deleted.isEmpty && ten.code == lift(request.tenant)
+          acc <- accounts.join(_.tenant == ten.id) if acc.active && acc.deleted.isEmpty
+        } yield (ten, acc)
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.map(ta => ta._2.into[RawAccount].withFieldConst(_.tenantCode, ta._1.code).transform)
     }
 
     private def applicationDetailsGiven(request: FindApplications): Task[Seq[RawApplicationDetails]] = {
@@ -992,6 +1089,40 @@ object repo {
           u2g.app == lift(cmd.application) &&
           u2g.grp == lift(cmd.group)       &&
           liftQuery(cmd.users).contains(u2g.usr)
+        }.delete
+      }
+
+      exec(run(stmt))
+    }
+
+    private def linkGroupsToUser(r: LinkGroupsToUser): Task[Unit] = {
+
+      inline def insertValues(rows: Seq[UserToGroupRow]) = quote {
+        liftQuery(rows).foreach(row => user2group.insertValue(row))
+      }
+
+      def rows(now: LocalDateTime) = r.groups.map { group =>
+        UserToGroupRow(
+          usr     = r.user,
+          app     = r.application,
+          grp     = group,
+          created = now,
+        )
+      }
+
+      for
+        now <- Clock.localDateTime
+        _   <- exec(run(insertValues(rows(now))))
+      yield ()
+    }
+
+    private def unlinkGroupsFromUser(r: UnlinkGroupsToUser): Task[Long] = {
+
+      inline def stmt = quote {
+        user2group.filter { u2g =>
+          u2g.app == lift(r.application) &&
+          u2g.usr == lift(r.user)        &&
+          liftQuery(r.groups).contains(u2g.grp)
         }.delete
       }
 

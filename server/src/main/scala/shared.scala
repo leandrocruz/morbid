@@ -159,8 +159,26 @@ object commands {
     filter  : Seq[GroupCode] = Seq.empty
   ) extends Command[Map[ApplicationCode, Seq[RawGroup]]]
 
+  case class FindGroupsByUser(
+    account : AccountId,
+    user    : UserId,
+    apps    : Seq[ApplicationCode]
+  ) extends Command[Map[ApplicationCode, Seq[RawGroup]]]
+
+  case class LinkGroupsToUser(
+    application : ApplicationId,
+    user        : UserId,
+    groups      : Seq[GroupId]
+  ) extends Command[Unit]
+
+  case class UnlinkGroupsToUser(
+    application : ApplicationId,
+    user        : UserId,
+    groups      : Seq[GroupId]
+  ) extends Command[Long]
+
   case class FindUsersInGroup(
-    account : AccountCode,
+    account : AccountId,
     app     : ApplicationCode,
     group   : Option[GroupCode] = None
   ) extends Command[Seq[RawUserEntry]]
@@ -172,10 +190,11 @@ object commands {
   case class DefineUserPin(user: UserId, pin: Sha256Hash) extends Command[Unit]
 
   case class StoreAccount(
-    id     : AccountId  , //Can't be 0
+    id     : AccountId  , // maybe 0
     tenant : TenantId   ,
     code   : AccountCode,
     name   : AccountName,
+    update : Boolean    ,
   ) extends Command[RawAccount]
 
   case class StoreUser(
@@ -216,8 +235,10 @@ object commands {
     app     : ApplicationCode
   ) extends Command[Seq[RawRole]]
 
+  case class FindAccountsByTenant (tenant: TenantCode) extends Command[Seq[RawAccount]]
   case class FindAccountByProvider(code: ProviderCode) extends Command[Option[RawAccount]]
   case class FindAccountByCode    (code: AccountCode)  extends Command[Option[RawAccount]]
+  case class FindAccountById      (id: AccountId)  extends Command[Option[RawAccount]]
 
   case class FindProviderByAccount(account: AccountId)                      extends Command[Option[RawIdentityProvider]]
   case class FindProviderByDomain(domain: Domain, code: Option[TenantCode]) extends Command[Option[RawIdentityProvider]]
@@ -225,7 +246,7 @@ object commands {
   case class ReportUsersByAccount(app: ApplicationCode) extends Command[Map[RawAccount, Int]]
   case class UserExists(code: UserCode) extends Command[Boolean]
 
-  case class RemoveAccount (code: AccountCode)                                   extends Command[Long]
+  case class RemoveAccount (id: AccountId)                                       extends Command[Long]
   case class RemoveUser    (acc: AccountId, code: UserCode)                      extends Command[Long]
   case class RemoveGroup   (acc: AccountId, app: ApplicationId, code: GroupCode) extends Command[Long]
 }

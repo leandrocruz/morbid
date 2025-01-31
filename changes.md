@@ -1,5 +1,7 @@
 # Morbid
 
+ - Implementing Account/User management
+
 ## Release v0.0.4
 LTS: 12/11/2024
 

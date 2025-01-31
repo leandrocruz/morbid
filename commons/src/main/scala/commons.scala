@@ -186,6 +186,8 @@ object domain {
   import zio.json.internal.Write
   import java.time.{LocalDateTime, ZonedDateTime}
 
+  val RootAccount = AccountId.of(1)
+
   trait HasEmail {
     def email: Email
   }
@@ -334,6 +336,7 @@ object domain {
     given JsonCodec[RawUser]               = DeriveJsonCodec.gen
     given JsonCodec[RawUserEntry]          = DeriveJsonCodec.gen
     given JsonCodec[RawIdentityProvider]   = DeriveJsonCodec.gen
+    given JsonCodec[RawAccount]            = DeriveJsonCodec.gen
   }
 
   object token {
@@ -429,6 +432,7 @@ object domain {
   object requests {
     case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
     case class StoreUserRequest(id: Option[UserId], code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], update: Option[Boolean] /* TODO: remove this as soon as we migrate all users from legacy */)
+    case class StoreAccountUserRequest(id: Option[UserId], email: Email, password: Option[Password], account: AccountId, update: Option[Boolean])
     case class RequestPasswordRequestLink(email: Email) extends HasEmail
     case class ChangePasswordRequest(email: Email, password: Password) extends HasEmail
     case class PasswordResetLink(link: Link)
@@ -438,20 +442,28 @@ object domain {
     case class RemoveGroupRequest(code: GroupCode)
     case class LoginViaEmailLinkRequest(email: Email, url: String)
     case class LoginViaEmailLinkResponse(link: Link)
-    case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email)
+    case class StoreAccountRequest(id: AccountId, code: AccountCode, name: AccountName, tenant: TenantId, update: Boolean)
 
-    given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
-    given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
-    given JsonCodec[RequestPasswordRequestLink] = DeriveJsonCodec.gen
-    given JsonCodec[PasswordResetLink]          = DeriveJsonCodec.gen
-    given JsonCodec[SetUserPin]                 = DeriveJsonCodec.gen
-    given JsonCodec[ValidateUserPin]            = DeriveJsonCodec.gen
-    given JsonCodec[RemoveUserRequest]          = DeriveJsonCodec.gen
-    given JsonCodec[RemoveGroupRequest]         = DeriveJsonCodec.gen
-    given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
-    given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
-    given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
-    given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
+    case class ConfigureAccountUserGroupsRequest(
+      account  : AccountId,
+      user     : UserId,
+      selected : Seq[GroupId],
+    )
+
+    given JsonCodec[StoreGroupRequest]                 = DeriveJsonCodec.gen
+    given JsonCodec[StoreAccountRequest]               = DeriveJsonCodec.gen
+    given JsonCodec[StoreAccountUserRequest]           = DeriveJsonCodec.gen
+    given JsonCodec[StoreUserRequest]                  = DeriveJsonCodec.gen
+    given JsonCodec[RequestPasswordRequestLink]        = DeriveJsonCodec.gen
+    given JsonCodec[PasswordResetLink]                 = DeriveJsonCodec.gen
+    given JsonCodec[SetUserPin]                        = DeriveJsonCodec.gen
+    given JsonCodec[ValidateUserPin]                   = DeriveJsonCodec.gen
+    given JsonCodec[RemoveUserRequest]                 = DeriveJsonCodec.gen
+    given JsonCodec[RemoveGroupRequest]                = DeriveJsonCodec.gen
+    given JsonCodec[LoginViaEmailLinkRequest]          = DeriveJsonCodec.gen
+    given JsonCodec[LoginViaEmailLinkResponse]         = DeriveJsonCodec.gen
+    given JsonCodec[ChangePasswordRequest]             = DeriveJsonCodec.gen
+    given JsonCodec[ConfigureAccountUserGroupsRequest] = DeriveJsonCodec.gen
   }
 }
 

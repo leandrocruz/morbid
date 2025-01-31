@@ -84,6 +84,14 @@ object router {
     tokens       : TokenGenerator
   ) extends Router {
 
+    private def isRoot(operation: String)(token: SingleAppToken): Either[String, Unit] = {
+      if (token.user.details.account == domain.RootAccount) {
+        Right(())
+      } else {
+        Left(s"A operação '$operation' é restrita aos administradores do ${ApplicationCode.value(token.user.application.code)}")
+      }
+    }
+
     private def protect(r: AppRoute)(app: String, request: Request): Task[Response] = {
       appRoute(ApplicationCode.of(app), tokenFrom)(r)(request)
     }
@@ -388,7 +396,7 @@ object router {
     private def usersGiven(request: Request, application: ApplicationCode, group: Option[GroupCode] = None): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
-        seq <- repo.exec(FindUsersInGroup(tk.user.details.accountCode, application, group))
+        seq <- repo.exec(FindUsersInGroup(tk.user.details.account, application, group))
       } yield Response.json(seq.toJson)
     }
 
@@ -519,7 +527,7 @@ object router {
 
     }
 
-    private def provisionAccount: AppRoute = role("adm") { request =>
+    private def storeAccount: AppRoute = role("adm", isRoot("storeAccount")) { request =>
 
       val token  = summon[SingleAppToken]
       val Presto = summon[ApplicationCode]
@@ -541,24 +549,199 @@ object router {
         }
       }
 
+      def maybeLegacy(req: StoreAccountRequest, detailsCode: RawApplicationDetails, exists: Option[RawAccount]) =
+        if (!req.update && exists.isEmpty) {
+          for {
+            legacy <- accounts.createLegacyAccount(req, detailsCode.code)
+          } yield req.copy(id = legacy.id)
+        } else ZIO.succeed(req)
+
       for {
-        req     <- request.body.parse[CreateAccount]
-        _       <- ZIO.logInfo("Account Provisioning")
+        req     <- request.body.parse[StoreAccountRequest]
+        _       <- ZIO.logInfo(s"Store Account ${req.code} - ${req.name}")
         maybe   <- repo.exec(FindApplicationDetails(Presto))
         details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$Presto'"))
-        acc     <- repo.exec(req.transformInto[StoreAccount])
+        exists  <- repo.exec(FindAccountByCode(req.code))
+        legacy  <- maybeLegacy(req, details, exists)
+        acc     <- repo.exec(legacy.transformInto[StoreAccount])
         app     =  RawApplication(details)
         _       <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
         now     <- Clock.localDateTime
-        groups  <- createGroups(now, app, acc)
-        gid     <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find admin group after account creation"))
-        user    <- repo.exec(StoreUser(id = req.user, email = req.email, code = UserCode.of(s"admin-of-${acc.code}"), account = acc, kind = None, update = false))
-        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = gid, users = Seq(user.id)))
-        //created <- repo.exec(FindApplication(acc.code, Presto))
-        created <- repo.exec(FindUserById(user.id))
-      } yield created match
-        case None        => Response.internalServerError("Error provisioning account")
-        case Some(value) => Response.json(value.toJson)
+        _       <- ZIO.when(!req.update) {
+          for {
+            groups <- createGroups(now, app, acc)
+            gid    <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find admin group after account creation"))
+          } yield ()
+        }
+      } yield Response.json(acc.toJson)
+    }
+
+    private def accountsGiven(app: String, tenant: String, request: Request): Task[Response] = protect {
+      role("adm", isRoot("getAccounts")) { _ =>
+        for {
+          tk       <- tokenFrom(request)
+          _        <- ZIO.logInfo(s"Getting accounts by tenant '$tenant' app '$app' by: ${tk.user.details.email}")
+          accounts <- repo.exec(FindAccountsByTenant(TenantCode.of(tenant)))
+        } yield Response.json(accounts.toJson)
+      }
+    } (app, request)
+
+    private def removeAccount(app: String, account: Long, request: Request): Task[Response] = protect {
+      role("adm", isRoot("removeAccount")) { _ =>
+        for
+          tk <- tokenFrom(request)
+          _  <- ZIO.logInfo(s"Removing account '$account' app '$app' by: ${tk.user.details.email}")
+          _  <- repo.exec(RemoveAccount(AccountId.of(account)))
+        yield Response.json(true.toJson)
+      }
+    } (app, request)
+
+    private def usersByAccount(app: String, account: Long, request: Request): Task[Response] = protect {
+        role("adm", isRoot("getUsersByAccount")) { _ =>
+          val token = summon[SingleAppToken]
+          val application = token.user.application.code
+          for
+            _     <- ZIO.logInfo(s"Getting users by account '$account' app '$app' by: ${token.user.details.email}")
+            users <- repo.exec(FindUsersInGroup(AccountId.of(account), application, None))
+          yield Response.json(users.toJson)
+        }
+      } (app, request)
+
+    private def removeAccountUser(app: String, account: Long, user: String, request: Request): Task[Response] = protect {
+      role("adm", isRoot("removeAccountUser")) { _ =>
+        for
+          tk <- tokenFrom(request)
+          _  <- ZIO.logInfo(s"Removing user '$user' from account $account app '$app' by: ${tk.user.details.email}")
+          _  <- repo.exec(RemoveUser(AccountId.of(account), UserCode.of(user)))
+        yield Response.json(true.toJson)
+      }
+    } (app, request)
+
+    private def storeAccountUser: AppRoute = role("adm", isRoot("storeAccountUser")) { request =>
+
+      val token       = summon[SingleAppToken]
+      val application = token.user.application
+
+      def uniqueCode(email: Email): Task[UserCode] = {
+
+        def attemptUnique(user: EmailUser, count: Int): Task[UserCode] = {
+
+          def gen: Task[UserCode] = ZIO.attempt(UserCode.of(Random.alphanumeric.take(16).mkString("")))
+
+          for {
+            _ <- ZIO.when(count > 10) {
+              ZIO.fail(new Exception("Can't generate user code. Too many attempts"))
+            }
+            tmp <- gen
+            exists <- repo.exec(UserExists(tmp))
+            code <- if (exists) attemptUnique(user, count + 1) else ZIO.succeed(tmp)
+          } yield code
+        }
+
+        email.userName match
+          case None       => ZIO.fail(new Exception(s"Error generating code from '$email'"))
+          case Some(user) => attemptUnique(user, 0)
+      }
+
+      def buildRequest(req: StoreAccountUserRequest, account: RawAccount, code: UserCode) =
+        req
+          .into[StoreUser]
+          .withFieldConst(_.id     , req.id.getOrElse(UserId.of(0)))
+          .withFieldConst(_.kind   , None)
+          .withFieldConst(_.account, account)
+          .withFieldConst(_.code   , code)
+          .withFieldConst(_.update , req.update.getOrElse(false))
+          .transform
+
+      def link(groupsByApp: Map[ApplicationCode, Seq[RawGroup]], user: RawUserEntry): Task[Unit] = {
+
+        def linkTo(group: RawGroup): Task[Unit] = {
+          repo.exec {
+            LinkUsersToGroup(
+              application = application.id,
+              group = group.id,
+              users = Seq(user.id)
+            )
+          }
+        }
+
+        groupsByApp.get(application.code) match {
+          case Some(Seq(group)) if group.code == GroupAll => linkTo(group)
+          case _ => ZIO.fail(Exception(s"Can't find group '${GroupAll}' for application '${application.code}'"))
+        }
+      }
+
+      def maybeLegacy(req: StoreAccountUserRequest, exists: Option[RawUser], store: StoreUser, password: Password) =
+        if (!req.update.getOrElse(false) && exists.isEmpty) {
+          for {
+            legacy <- accounts.createLegacyUser(store, password, application.code)
+          } yield store.copy(id = legacy.id)
+        } else ZIO.succeed(store)
+
+      for
+        req    <- request.body.parse[StoreAccountUserRequest].mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        pwd    <- ZIO.fromOption(req.password).orElse(passGen.generate).errorToResponse(Response.internalServerError("Error generating user password"))
+        code   <- uniqueCode(req.email)
+        acc    <- repo.exec(FindAccountById(req.account)).orFail(s"Can't find account '${req.account}'")
+        store  = buildRequest(req, acc, code)
+        _      <- ZIO.logInfo(s"Storing user '${store.email}/${store.id}' in account '${store.account.id}' in tenant '${store.account.tenantCode}' (update ? ${store.update})")
+        exists <- repo.exec(FindUserByEmail(req.email))
+        legacy <- maybeLegacy(req, exists, store, pwd)
+        user   <- repo.exec(legacy).asCommonError(10010, s"Error storing user '${store.email}'")
+        _      <- ZIO.logInfo(s"User '${user.email}/${user.id}' stored")
+        _      <- identities.createUser(store, pwd).asCommonError(10011, "Error storing user identity")
+        groups <- repo.exec(FindGroups(acc.code, Seq(application.code), Seq(GroupAll)))
+        _      <- link(groups, user).asCommonError(10012, "Error adding user to group ALL")
+      yield Response.json(user.toJson)
+    }
+
+    private def groupsGivenByAccount(app: String, account: String, request: Request): Task[Response] = protect {
+      role("adm", isRoot("getGroupsByAccount")) { _ =>
+        val appCode = ApplicationCode.of(app)
+        val acc     = AccountCode.of(account)
+        for {
+          tk  <- tokenFrom(request)
+          _   <- ZIO.logInfo(s"Gettings groups by account '$account' app '$app' by: ${tk.user.details.email}")
+          map <- repo.exec(FindGroups(acc, Seq(appCode), Seq.empty))
+        } yield map.get(appCode) match
+          case Some(groups) => Response.json(groups.toJson)
+          case None         => Response.notFound(s"Can't find groups for '$app'")
+      }
+    } (app, request)
+
+    private def groupsGivenByUser(app: String, account: Long, user: Long, request: Request): Task[Response] = protect {
+      role("adm", isRoot("getGroupsByUser")) { _ =>
+        val appCode = ApplicationCode.of(app)
+        val acc     = AccountId.of(account)
+        val usr     = UserId.of(user)
+        for {
+          tk  <- tokenFrom(request)
+          _   <- ZIO.logInfo(s"Gettings groups by user '$user' account '$account' app '$app' by: ${tk.user.details.email}")
+          map <- repo.exec(FindGroupsByUser(acc, usr, Seq(appCode)))
+        } yield map.get(appCode) match
+          case Some(groups) => Response.json(groups.toJson)
+          case None         => Response.notFound(s"Can't find groups for '$app' and user '$user'")
+      }
+    } (app, request)
+
+    private def configureAccountUserGroups: AppRoute = role("adm", isRoot("configureAccountUserGroups")) { request =>
+
+      val appCode = summon[ApplicationCode]
+
+      for {
+        tk     <- tokenFrom(request)
+        req    <- request.body.parse[ConfigureAccountUserGroupsRequest]
+        app    <- repo.get(FindApplicationDetails(appCode)) { s"Can't find application '$appCode' "}
+        usr    <- repo.get(FindUserById(req.user)) { s"Can't find user '${req.user}' "}
+        acc    <- repo.get(FindAccountById(req.account)) { s"Can't find account '${req.account}' "}
+        map    <- repo.exec(FindGroups(acc.code, Seq(app.code)))
+        all    = map.flatMap(_._2).toSeq
+        add    = req.selected.diff(all.map(_.id))
+        remove = all.map(_.id).diff(req.selected)
+        _      <- ZIO.logInfo(s"Configuring groups to user '${usr.details.id} - ${usr.details.email}' account '${acc.id} - ${acc.name}' app: '${app.code}' by: ${tk.user.details.email}")
+        _      <- repo.exec(LinkGroupsToUser(app.id, usr.details.id, add))
+        _      <- repo.exec(UnlinkGroupsToUser(app.id, usr.details.id, add))
+      } yield Response.json(true.toJson)
     }
 
     private def provisionUsers: AppRoute = role("adm") { request =>
@@ -587,30 +770,38 @@ object router {
     }
 
     private def regular = Routes(
-      Method.GET    / "applications"                                -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
-      Method.GET    / "application" / string("app")                 -> handler(applicationGiven),
-      Method.POST   / "login" / "provider"                          -> Handler.fromFunctionZIO[Request](loginProvider),
-      Method.GET    / "login" / "provider"                          -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
-      Method.POST   / "login"                                       -> Handler.fromFunctionZIO[Request](login),
-      Method.POST   / "logoff"                                      -> Handler.fromFunctionZIO[Request](logoff),
-      Method.POST   / "verify"                                      -> Handler.fromFunctionZIO[Request](verify),
-      Method.POST   / "impersonate"                                 -> Handler.fromFunctionZIO[Request](impersonate),
-      Method.GET    / "user"                                        -> Handler.fromFunctionZIO[Request](userBy),
-      Method.POST   / "user" / "pin" / "validate"                   -> Handler.fromFunctionZIO[Request](validateUserPin),
-      Method.POST   / "app" / string("app") / "login" / "email"     -> handler(loginViaEmailLink),
-      Method.POST   / "app" / string("app") / "user" / "pin"        -> handler(protect(setUserPin)),
-      Method.POST   / "app" / string("app") / "password" / "reset"  -> handler(protect(passwordResetLink)),
-      Method.POST   / "app" / string("app") / "password" / "change" -> handler(protect(changePassword)),
-      Method.GET    / "app" / string("app") / "users"               -> handler(protect(usersGiven)),
-      Method.POST   / "app" / string("app") / "user"                -> handler(protect(storeUser)),
-      Method.POST   / "app" / string("app") / "user"  / "delete"    -> handler(protect(removeUser)),
-      Method.GET    / "app" / string("app") / "groups"              -> handler(groupsGiven),
-      Method.POST   / "app" / string("app") / "group"               -> handler(protect(storeGroup)),
-      Method.POST   / "app" / string("app") / "group" / "delete"    -> handler(protect(removeGroup)),
-      Method.GET    / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
-      Method.GET    / "app" / string("app") / "roles"               -> handler(rolesGiven),
-      Method.POST   / "app" / string("app") / "account"             -> handler(protect(provisionAccount)),
-      Method.POST   / "app" / string("app") / "account" / "users"   -> handler(protect(provisionUsers))
+      Method.GET    / "applications"                                                                         -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
+      Method.GET    / "application" / string("app")                                                          -> handler(applicationGiven),
+      Method.POST   / "login" / "provider"                                                                   -> Handler.fromFunctionZIO[Request](loginProvider),
+      Method.GET    / "login" / "provider"                                                                   -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
+      Method.POST   / "login"                                                                                -> Handler.fromFunctionZIO[Request](login),
+      Method.POST   / "logoff"                                                                               -> Handler.fromFunctionZIO[Request](logoff),
+      Method.POST   / "verify"                                                                               -> Handler.fromFunctionZIO[Request](verify),
+      Method.POST   / "impersonate"                                                                          -> Handler.fromFunctionZIO[Request](impersonate),
+      Method.GET    / "user"                                                                                 -> Handler.fromFunctionZIO[Request](userBy),
+      Method.POST   / "user" / "pin" / "validate"                                                            -> Handler.fromFunctionZIO[Request](validateUserPin),
+      Method.POST   / "app" / string("app") / "login" / "email"                                              -> handler(loginViaEmailLink),
+      Method.POST   / "app" / string("app") / "user" / "pin"                                                 -> handler(protect(setUserPin)),
+      Method.POST   / "app" / string("app") / "password" / "reset"                                           -> handler(protect(passwordResetLink)),
+      Method.POST   / "app" / string("app") / "password" / "change"                                          -> handler(protect(changePassword)),
+      Method.GET    / "app" / string("app") / "users"                                                        -> handler(protect(usersGiven)),
+      Method.POST   / "app" / string("app") / "user"                                                         -> handler(protect(storeUser)),
+      Method.POST   / "app" / string("app") / "user"  / "delete"                                             -> handler(protect(removeUser)),
+      Method.GET    / "app" / string("app") / "groups"                                                       -> handler(groupsGiven),
+      Method.POST   / "app" / string("app") / "group"                                                        -> handler(protect(storeGroup)),
+      Method.POST   / "app" / string("app") / "group" / "delete"                                             -> handler(protect(removeGroup)),
+      Method.GET    / "app" / string("app") / "group"  / string("code") / "users"                            -> handler(groupUsers),
+      Method.GET    / "app" / string("app") / "account" / long("account") / "users"                          -> handler(usersByAccount),
+      Method.GET    / "app" / string("app") / "roles"                                                        -> handler(rolesGiven),
+      Method.GET    / "app" / string("app") / "accounts" / string("tenant")                                  -> handler(accountsGiven),
+      Method.POST   / "app" / string("app") / "account"                                                      -> handler(protect(storeAccount)),
+      Method.POST   / "app" / string("app") / "account" / "user" / "set" / "groups"                          -> handler(protect(configureAccountUserGroups)),
+      Method.POST   / "app" / string("app") / "account" / "user"                                             -> handler(protect(storeAccountUser)),
+      Method.DELETE / "app" / string("app") / "account" / long("account") / "user" / string("user")          -> handler(removeAccountUser),
+      Method.DELETE / "app" / string("app") / "account" / long("account")                                    -> handler(removeAccount),
+      Method.GET    / "app" / string("app") / "account" / string("account") / "groups"                       -> handler(groupsGivenByAccount),
+      Method.GET    / "app" / string("app") / "account" / long("account") / "user" / long("user") / "groups" -> handler(groupsGivenByUser),
+      Method.POST   / "app" / string("app") / "account" / "users"                                            -> handler(protect(provisionUsers))
     ).sandbox
 
     override def routes = Echo.routes ++ regular @@ cors(corsConfig)
