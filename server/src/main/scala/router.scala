@@ -8,7 +8,7 @@ import config.MorbidConfig
 import domain.*
 import domain.raw.*
 import domain.requests.*
-import domain.token.{SingleAppToken, SingleAppUser, Token}
+import domain.token.{CompactApplication, SingleAppToken, SingleAppUser, Token}
 import gip.*
 import passwords.PasswordGenerator
 import pins.PinManager
@@ -262,29 +262,31 @@ object router {
       yield Response.json(created.toJson)).errorToResponse(Response.internalServerError("Error creating group"))
     }
 
+    private def generateUniqueCode(email: Email): Task[UserCode] = {
+
+      def attemptUnique(user: EmailUser, count: Int): Task[UserCode] = {
+
+        def gen: Task[UserCode] = ZIO.attempt(UserCode.of(Random.alphanumeric.take(16).mkString("")))
+
+        for {
+          _      <- ZIO.when(count > 10) {
+            ZIO.fail(new Exception("Can't generate user code. Too many attempts"))
+          }
+          tmp    <- gen
+          exists <- repo.exec(UserExists(tmp))
+          code   <- if (exists) attemptUnique(user, count + 1) else ZIO.succeed(tmp)
+        } yield code
+      }
+
+      email.userName match
+        case None       => ZIO.fail(new Exception(s"Error generating code from '$email'"))
+        case Some(user) => attemptUnique(user, 0)
+    }
+
     private def storeUser: AppRoute = role("adm" or "user_adm") { request =>
 
       val token       = summon[SingleAppToken]
       val application = token.user.application
-
-      def uniqueCode(email: Email): Task[UserCode] = {
-
-        def attemptUnique(user: EmailUser, count: Int): Task[UserCode] = {
-
-          def gen: Task[UserCode] = ZIO.attempt(UserCode.of(Random.alphanumeric.take(16).mkString("")))
-
-          for {
-            _      <- ZIO.when(count > 10) { ZIO.fail(new Exception("Can't generate user code. Too many attempts")) }
-            tmp    <- gen
-            exists <- repo.exec(UserExists(tmp))
-            code   <- if(exists) attemptUnique(user, count + 1) else ZIO.succeed(tmp)
-          } yield code
-        }
-
-        email.userName match
-          case None       => ZIO.fail(new Exception(s"Error generating code from '$email'"))
-          case Some(user) => attemptUnique(user, 0)
-      }
 
       def buildRequest(req: StoreUserRequest, account: RawAccount, code: UserCode) =
         req
@@ -295,28 +297,10 @@ object router {
           .withFieldConst(_.update, req.update.getOrElse(false))
           .transform
 
-      def link(groupsByApp: Map[ApplicationCode, Seq[RawGroup]], user: RawUserEntry): Task[Unit] = {
-
-        def linkTo(group: RawGroup): Task[Unit] = {
-          repo.exec {
-            LinkUsersToGroup(
-              application = application.id,
-              group       = group.id,
-              users       = Seq(user.id)
-            )
-          }
-        }
-
-        groupsByApp.get(application.code) match {
-          case Some(Seq(group)) if group.code == GroupAll => linkTo(group)
-          case _                                          => ZIO.fail(Exception(s"Can't find group '${GroupAll}' for application '${application.code}'"))
-        }
-      }
-
       for
         req    <- request.body.parse[StoreUserRequest].mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
         pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate).errorToResponse(Response.internalServerError("Error generating user code"))
-        code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
+        code   <- ZIO.fromOption(req.code)     .orElse(generateUniqueCode(req.email))
         acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
         store  = buildRequest(req, acc, code)
         _      <- ZIO.logInfo(s"Storing user '${store.email}/${store.id}' in account '${store.account.id}' in tenant '${store.account.tenantCode}' (update ? ${store.update})")
@@ -324,7 +308,7 @@ object router {
         _      <- ZIO.logInfo(s"User '${user.email}/${user.id}' stored")
         _      <- identities.createUser(store, pwd).asCommonError(10011, "Error storing user identity")
         groups <- repo.exec(FindGroups(acc.code, Seq(application.code), Seq(GroupAll)))
-        _      <- link(groups, user).asCommonError(10012, "Error adding user to group ALL")
+        _      <- linkUserToGroups(groups, user, application).asCommonError(10012, "Error adding user to group ALL")
       yield Response.json(user.toJson)
     }
 
@@ -617,81 +601,67 @@ object router {
       }
     } (app, request)
 
+    private def linkUserToGroups(groupsByApp: Map[ApplicationCode, Seq[RawGroup]], user: RawUserEntry, application: CompactApplication): Task[Unit] = {
+
+      def linkTo(group: RawGroup): Task[Unit] = {
+        repo.exec {
+          LinkUsersToGroup(
+            application = application.id,
+            group       = group.id,
+            users       = Seq(user.id)
+          )
+        }
+      }
+
+      groupsByApp.get(application.code) match {
+        case Some(Seq(group)) if group.code == GroupAll => linkTo(group)
+        case _                                          => ZIO.fail(Exception(s"Can't find group '${GroupAll}' for application '${application.code}'"))
+      }
+    }
+
     private def storeAccountUser: AppRoute = role("adm", isRoot("storeAccountUser")) { request =>
 
       val token       = summon[SingleAppToken]
       val application = token.user.application
 
-      def uniqueCode(email: Email): Task[UserCode] = {
-
-        def attemptUnique(user: EmailUser, count: Int): Task[UserCode] = {
-
-          def gen: Task[UserCode] = ZIO.attempt(UserCode.of(Random.alphanumeric.take(16).mkString("")))
-
-          for {
-            _ <- ZIO.when(count > 10) {
-              ZIO.fail(new Exception("Can't generate user code. Too many attempts"))
-            }
-            tmp <- gen
-            exists <- repo.exec(UserExists(tmp))
-            code <- if (exists) attemptUnique(user, count + 1) else ZIO.succeed(tmp)
-          } yield code
-        }
-
-        email.userName match
-          case None       => ZIO.fail(new Exception(s"Error generating code from '$email'"))
-          case Some(user) => attemptUnique(user, 0)
-      }
-
       def buildRequest(req: StoreAccountUserRequest, account: RawAccount, code: UserCode) =
         req
           .into[StoreUser]
-          .withFieldConst(_.id     , req.id.getOrElse(UserId.of(0)))
+          .withFieldConst(_.id     , req.id)
           .withFieldConst(_.kind   , None)
           .withFieldConst(_.account, account)
           .withFieldConst(_.code   , code)
-          .withFieldConst(_.update , req.update.getOrElse(false))
+          .withFieldConst(_.update , req.update)
           .transform
 
-      def link(groupsByApp: Map[ApplicationCode, Seq[RawGroup]], user: RawUserEntry): Task[Unit] = {
-
-        def linkTo(group: RawGroup): Task[Unit] = {
-          repo.exec {
-            LinkUsersToGroup(
-              application = application.id,
-              group = group.id,
-              users = Seq(user.id)
-            )
-          }
-        }
-
-        groupsByApp.get(application.code) match {
-          case Some(Seq(group)) if group.code == GroupAll => linkTo(group)
-          case _ => ZIO.fail(Exception(s"Can't find group '${GroupAll}' for application '${application.code}'"))
-        }
-      }
-
-      def maybeLegacy(req: StoreAccountUserRequest, exists: Option[RawUser], store: StoreUser, password: Password) =
-        if (!req.update.getOrElse(false) && exists.isEmpty) {
+      def maybeLegacy(req: StoreAccountUserRequest, exists: Option[RawUser], store: StoreUser, password: Password) = {
+        if (!req.update && exists.isEmpty) {
           for {
             legacy <- accounts.createLegacyUser(store, password, application.code)
           } yield store.copy(id = legacy.id)
         } else ZIO.succeed(store)
+      }
+
+      def storeCloudAndLinkGroups(store: StoreUser, pwd: Password, acc: RawAccount, user: RawUserEntry): Task[Unit] = {
+        for {
+          _      <- identities.createUser(store, pwd).asCommonError(10011, "Error storing user identity")
+          groups <- repo.exec(FindGroups(acc.code, Seq(application.code), Seq(GroupAll)))
+          _      <- linkUserToGroups(groups, user, application).asCommonError(10012, "Error adding user to group ALL")
+        } yield ()
+      }
 
       for
         req    <- request.body.parse[StoreAccountUserRequest].mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
         pwd    <- ZIO.fromOption(req.password).orElse(passGen.generate).errorToResponse(Response.internalServerError("Error generating user password"))
-        code   <- uniqueCode(req.email)
+        code   <- generateUniqueCode(req.email)
         acc    <- repo.exec(FindAccountById(req.account)).orFail(s"Can't find account '${req.account}'")
         store  = buildRequest(req, acc, code)
-        _      <- ZIO.logInfo(s"Storing user '${store.email}/${store.id}' in account '${store.account.id}' in tenant '${store.account.tenantCode}' (update ? ${store.update})")
+        _      <- ZIO.logInfo(s"Storing user ${store.id} - '${store.email}' in account '${store.account.id}' in tenant '${store.account.tenantCode}' updating '${store.update}'")
         exists <- repo.exec(FindUserByEmail(req.email))
         legacy <- maybeLegacy(req, exists, store, pwd)
         user   <- repo.exec(legacy).asCommonError(10010, s"Error storing user '${store.email}'")
         _      <- ZIO.logInfo(s"User '${user.email}/${user.id}' stored")
-        _      <- identities.createUser(store, pwd).asCommonError(10011, "Error storing user identity")
-        groups <- repo.exec(FindGroups(acc.code, Seq(application.code), Seq(GroupAll)))
-        _      <- link(groups, user).asCommonError(10012, "Error adding user to group ALL")
+        _      <- ZIO.when(!req.update && exists.isEmpty)(storeCloudAndLinkGroups(legacy, pwd, acc, user))
       yield Response.json(user.toJson)
     }
 
