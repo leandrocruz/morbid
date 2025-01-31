@@ -1,5 +1,7 @@
 # Morbid
 
+## Release v0.0.5
+LTS: --/--/2025
  - Implementing Account/User management
  - Routes added:
    - GET    `/app/:app/account/:account/users` 
