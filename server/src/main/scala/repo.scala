@@ -489,7 +489,6 @@ object repo {
         }
 
         def insertWithoutId(row: AccountRow) = {
-          // TODO insert into legacy morbid too
           inline given InsertMeta[AccountRow] = insertMeta[AccountRow](_.id)
           inline def stmt = quote { accounts.insertValue(lift(row)).returning(_.id) }
           for

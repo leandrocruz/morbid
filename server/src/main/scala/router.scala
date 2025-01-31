@@ -565,10 +565,10 @@ object router {
         legacy  <- maybeLegacy(req, details, exists)
         acc     <- repo.exec(legacy.transformInto[StoreAccount])
         app     =  RawApplication(details)
-        _       <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
-        now     <- Clock.localDateTime
-        _       <- ZIO.when(!req.update) {
+        _       <- ZIO.when(!req.update && exists.isEmpty) {
           for {
+            _      <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
+            now    <- Clock.localDateTime
             groups <- createGroups(now, app, acc)
             gid    <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find admin group after account creation"))
           } yield ()

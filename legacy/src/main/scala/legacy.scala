@@ -78,7 +78,7 @@ object legacy {
         }
       } yield user
 
-      result.mapError(err => Exception(s"Error creating account '${request.name}'", err))
+      result.mapError(err => Exception(s"Error creating legacy account '${request.name}'", err))
     }
 
   }
