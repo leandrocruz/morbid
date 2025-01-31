@@ -704,13 +704,13 @@ object router {
         app    <- repo.get(FindApplicationDetails(appCode)) { s"Can't find application '$appCode' "}
         usr    <- repo.get(FindUserById(req.user)) { s"Can't find user '${req.user}' "}
         acc    <- repo.get(FindAccountById(req.account)) { s"Can't find account '${req.account}' "}
-        map    <- repo.exec(FindGroups(acc.code, Seq(app.code)))
+        map    <- repo.exec(FindGroupsByUser(acc.id, usr.details.id, Seq(app.code)))
         all    = map.flatMap(_._2).toSeq
         add    = req.selected.diff(all.map(_.id))
         remove = all.map(_.id).diff(req.selected)
         _      <- ZIO.logInfo(s"Configuring groups to user '${usr.details.id} - ${usr.details.email}' account '${acc.id} - ${acc.name}' app: '${app.code}' by: ${tk.user.details.email}")
         _      <- repo.exec(LinkGroupsToUser(app.id, usr.details.id, add))
-        _      <- repo.exec(UnlinkGroupsToUser(app.id, usr.details.id, add))
+        _      <- repo.exec(UnlinkGroupsToUser(app.id, usr.details.id, remove))
       } yield Response.json(true.toJson)
     }
 
