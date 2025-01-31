@@ -1,6 +1,26 @@
 # Morbid
 
  - Implementing Account/User management
+ - Routes added:
+   - GET    `/app/:app/account/:account/users` 
+   - GET    `/app/:app/accounts/:tenant`
+   - POST   `/app/:app/account`
+   - POST   `/app/:app/account/user/set/groups`
+   - POST   `/app/:app/account/user`
+   - DELETE `/app/:app/account/:account/user/:user`
+   - DELETE `/app/:app/account/:account`
+   - GET    `/app/:app/account/:account/groups`
+   - GET    `/app/:app/account/:account/user/:user/groups`
+ - Client methods added:
+   - `MorbidClient.groupsByAccount`
+   - `MorbidClient.groupsByUser`
+   - `MorbidClient.accounts`
+   - `MorbidClient.configureGroupsByUser`
+   - `MorbidClient.storeAccount`
+   - `MorbidClient.storeAccountUser`
+   - `MorbidClient.removeAccountUser`
+   - `MorbidClient.removeAccount`
+   - `MorbidClient.usersByAccount`
 
 ## Release v0.0.4
 LTS: 12/11/2024
