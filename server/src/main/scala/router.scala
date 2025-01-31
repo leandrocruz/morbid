@@ -720,7 +720,7 @@ object router {
           map <- repo.exec(FindGroupsByUser(acc, usr, Seq(appCode)))
         } yield map.get(appCode) match
           case Some(groups) => Response.json(groups.toJson)
-          case None         => Response.notFound(s"Can't find groups for '$app'")
+          case None         => Response.notFound(s"Can't find groups for '$app' and user '$user'")
       }
     } (app, request)
 

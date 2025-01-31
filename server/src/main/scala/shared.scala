@@ -160,9 +160,9 @@ object commands {
   ) extends Command[Map[ApplicationCode, Seq[RawGroup]]]
 
   case class FindGroupsByUser(
-    account: AccountId,
-    user: UserId,
-    apps: Seq[ApplicationCode]
+    account : AccountId,
+    user    : UserId,
+    apps    : Seq[ApplicationCode]
   ) extends Command[Map[ApplicationCode, Seq[RawGroup]]]
 
   case class LinkGroupsToUser(

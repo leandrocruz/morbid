@@ -861,14 +861,15 @@ object repo {
 
       inline def query = quote {
         for {
-          ten <- tenants                                               if ten.deleted.isEmpty && ten.active
-          acc <- accounts    .join(_.tenant == ten.id)                 if acc.deleted.isEmpty && acc.active && acc.id == lift(request.account)
-          a2a <- account2app .join(_.acc == acc.id)                    if a2a.deleted.isEmpty
-          app <- applications.join(_.id == a2a.app)                    if app.deleted.isEmpty && app.active && liftQuery(request.apps).contains(app.code)
-          grp <- groups      .join(_.app == a2a.app)                   if grp.deleted.isEmpty && grp.acc == acc.id
+          ten <- tenants                                                     if ten.deleted.isEmpty && ten.active
+          acc <- accounts    .join(_.tenant == ten.id)                       if acc.deleted.isEmpty && acc.active && acc.id == lift(request.account)
+          a2a <- account2app .join(_.acc == acc.id)                          if a2a.deleted.isEmpty
+          app <- applications.join(_.id == a2a.app)                          if app.deleted.isEmpty && app.active && liftQuery(request.apps).contains(app.code)
+          u2g <- user2group  .join(_.app == a2a.app)                         if u2g.usr == lift(request.user)
+          grp <- groups      .join(g => g.app == a2a.app && g.id == u2g.grp) if grp.deleted.isEmpty && grp.acc == acc.id
           g2r <- group2role  .leftJoin(_.grp == grp.id)
-          rol <- roles       .leftJoin(r => g2r.exists(_.rid == r.id)) if rol.exists(_.deleted.isEmpty)
-          per <- permissions .leftJoin(p => rol.exists(_.id == p.rid)) if per.exists(_.deleted.isEmpty)
+          rol <- roles       .leftJoin(r => g2r.exists(_.rid == r.id))       if rol.exists(_.deleted.isEmpty)
+          per <- permissions .leftJoin(p => rol.exists(_.id == p.rid))       if per.exists(_.deleted.isEmpty)
         } yield (app, (grp, (rol, per)))
       }
 
