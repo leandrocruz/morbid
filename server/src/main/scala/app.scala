@@ -2,6 +2,7 @@ package morbid
 
 import router.MorbidRouter
 import guara.GuaraApp
+import guara.background.BackgroundServices
 import guara.processor.Processor
 import morbid.accounts.AccountManager
 import morbid.billing.Billing
@@ -23,6 +24,7 @@ object MorbidServer extends GuaraApp {
   override val bootstrap = Runtime.removeDefaultLoggers >>> SLF4J.slf4j //(LogFormat.colored)
 
   override val run = startGuara.provide(
+    BackgroundServices.none,
     MorbidConfig.layer,
     MorbidConfig.legacy,
     Client.default,
@@ -34,7 +36,6 @@ object MorbidServer extends GuaraApp {
     MorbidRouter.layer,
     PasswordGenerator.layer,
     PinManager.layer,
-    Processor.drop,
     Repo.datasource,
     Repo.layer,
     TokenGenerator.layer

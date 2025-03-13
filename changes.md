@@ -1,5 +1,10 @@
 # Morbid
 
+## Release v0.0.5
+LTS: 13/03/2025
+
+ - Updating dependencies
+
 ## Release v0.0.4
 LTS: 12/11/2024
 
