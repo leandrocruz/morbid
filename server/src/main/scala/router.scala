@@ -24,7 +24,7 @@ import guara.router.Echo
 import zio.*
 import zio.json.*
 import zio.http.Cookie.SameSite
-import zio.http.{Body, Cookie, Handler, HttpApp, Method, Path, Request, Response, Routes, Status, handler}
+import zio.http.{Body, Cookie, Handler, Method, Path, Request, Response, Routes, Status, handler}
 import zio.http.Middleware.{CorsConfig, cors}
 import zio.http.codec.PathCodec.{long, string}
 import io.scalaland.chimney.dsl.*
