@@ -132,6 +132,7 @@ object types {
   object GroupId         extends OpaqueOps[Long, GroupId]
   object GroupName       extends OpaqueOps[String, GroupName]
   object Link            extends OpaqueOps[String, Link]
+  object Magic           extends OpaqueOps[String, Magic]
   object Password        extends OpaqueOps[String, Password]
   object PinId           extends OpaqueOps[Long, PinId]
   object Pin             extends OpaqueOps[String, Pin]
