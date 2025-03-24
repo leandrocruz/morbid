@@ -34,7 +34,6 @@ object client {
     def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode): Task[Boolean]
     def validatePin       (request: ValidateUserPin)           (using token: RawToken                      ): Task[Boolean]
     def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode): Task[LoginViaEmailLinkResponse]
-    def impersonate       (request: ImpersonationRequest)      (using token: RawToken                      ): Task[Token]
   }
 
   case class MorbidClientConfig(url: String)
@@ -108,7 +107,6 @@ object client {
     override def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode) = post[SetUserPin, Boolean]                                 (Some(token),  base / "app" / ApplicationCode.value(app) / "user" / "pin", request)
     override def validatePin       (request: ValidateUserPin)           (using token: RawToken                      ) = post[ValidateUserPin, Boolean]                            (Some(token),  base                                      / "user" / "pin" / "validate", request)
     override def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode) = post[LoginViaEmailLinkRequest, LoginViaEmailLinkResponse] (None       ,  base / "app" / ApplicationCode.value(app) / "login" / "email", request)
-    override def impersonate       (request: ImpersonationRequest)      (using token: RawToken                      ) = post[ImpersonationRequest, Token]                         (Some(token),  base / "impersonate", request)
   }
 
 }
