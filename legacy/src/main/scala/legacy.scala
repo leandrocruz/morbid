@@ -43,7 +43,7 @@ object legacy {
         response <- client.url(url).get(s"/user/email/$email").provideSome(ZLayer.succeed(scope))
         user     <- response.status.code match {
                       case 404  => ZIO.succeed(None)
-                      case 200  => response.body.parse[LegacyUser].map(Some(_)).mapError(err => Exception("Error parsing LegacyUser from body", err))
+                      case 200  => response.body.parse[LegacyUser]().map(Some(_)).mapError(err => Exception("Error parsing LegacyUser from body", err))
                       case code => ZIO.fail(Exception(s"Result code from legacy is $code"))
                     }
       } yield user
@@ -57,7 +57,7 @@ object legacy {
         body     <- ZIO.attempt(Body.fromString(request.toJson))
         response <- client.url(url).addHeaders(headers).post("/user")(body).provideSome(ZLayer.succeed(scope))
         user     <- response.status.code match {
-          case 200  => response.body.parse[LegacyUser].mapError(err => Exception("Error parsing LegacyUser from body", err))
+          case 200  => response.body.parse[LegacyUser]().mapError(err => Exception("Error parsing LegacyUser from body", err))
           case code => ZIO.fail(Exception(s"Result code from legacy is $code"))
         }
       } yield user
