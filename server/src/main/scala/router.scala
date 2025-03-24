@@ -382,7 +382,7 @@ object router {
         _            <- ZIO.logInfo(s"User '${token.user.details.email}' impersonated by ${impersonator.user.details.email}")
         impersonated = token.copy(impersonatedBy = Some(impersonator.user.details))
         encoded      <- tokens.encode(impersonated)
-      } yield Response.json(encoded.toJson)
+      } yield loginResponse(impersonated, encoded)
     }
 
     private def usersGiven(request: Request, application: ApplicationCode, group: Option[GroupCode] = None): Task[Response] = ensureResponse {
