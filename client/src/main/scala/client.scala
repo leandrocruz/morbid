@@ -85,7 +85,7 @@ object client {
         _      <- ZIO.log(s"Calling '${req.url.encode}'")
         res    <- perform(req.copy(headers = req.headers ++ token.map(morbidToken).getOrElse(Headers.empty))).mapError(e => badGateway(s"Error calling Morbid '${req.url.encode}': ${e.getMessage}"))
         _      <- ZIO.when(res.status.code != 200) { ZIO.fail(ReturnResponseError(res)) }
-        result <- res.body.parse[T].mapError(_ => ReturnResponseError(res))
+        result <- res.body.parse[T]().mapError(_ => ReturnResponseError(res))
       } yield result
     }
 
