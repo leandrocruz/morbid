@@ -17,7 +17,7 @@ import proto.*
 import tokens.*
 import types.*
 import utils.{asCommonError, errorToResponse, orFail, refineError}
-import guara.utils.{ensureResponse, parse}
+import guara.utils.{ensureResponse, parse, Origin}
 import guara.errors.*
 import guara.router.Router
 import guara.router.Echo
@@ -66,6 +66,7 @@ object router {
 
   private val corsConfig = CorsConfig()
   private val GroupAll   = GroupCode.of("all")
+  private given Origin   = Origin.of("MorbidServer")
 
   object MorbidRouter {
     val layer = ZLayer.fromFunction(MorbidRouter.apply _)
@@ -124,7 +125,7 @@ object router {
 
       ensureResponse {
         for {
-          req      <- request.body.parse[GetLoginMode]
+          req      <- request.body.parse[GetLoginMode]()
           provider <- identities.providerGiven(req.email, req.tenant)
         } yield Response.json(encode(provider))
       }
@@ -170,12 +171,12 @@ object router {
 
       ensureResponse {
         for {
-          vgt       <- request.body.parse[VerifyGoogleTokenRequest] .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing VerifyGoogleTokenRequest: ${err.getMessage}")))
-          identity  <- identities.verify(vgt)                       .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error verifying firebase token '${vgt.token}: ${err.getMessage}'")))
-          maybeUser <- repo.exec(FindUserByEmail(identity.email))   .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error locating user '${identity.email}': ${err.getMessage}'")))
-          user      <- ensureUser(identity, maybeUser)              .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error ensuring user '${identity.email}': ${err.getMessage}'")))
-          token     <- tokens.asToken(user)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error creating token '${identity.email}': ${err.getMessage}'")))
-          encoded   <- tokens.encode(token)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '${identity.email}': ${err.getMessage}'")))
+          vgt       <- request.body.parse[VerifyGoogleTokenRequest]() .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing VerifyGoogleTokenRequest: ${err.getMessage}")))
+          identity  <- identities.verify(vgt)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error verifying firebase token '${vgt.token}: ${err.getMessage}'")))
+          maybeUser <- repo.exec(FindUserByEmail(identity.email))     .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error locating user '${identity.email}': ${err.getMessage}'")))
+          user      <- ensureUser(identity, maybeUser)                .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error ensuring user '${identity.email}': ${err.getMessage}'")))
+          token     <- tokens.asToken(user)                           .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error creating token '${identity.email}': ${err.getMessage}'")))
+          encoded   <- tokens.encode(token)                           .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '${identity.email}': ${err.getMessage}'")))
         } yield loginResponse(token, encoded)
       }
     }
@@ -183,7 +184,7 @@ object router {
     private def loginViaEmailLink(app: String, request: Request): Task[Response] = {
       ensureResponse {
         for {
-          req       <- request.body.parse[LoginViaEmailLinkRequest]
+          req       <- request.body.parse[LoginViaEmailLinkRequest]()
           maybeUser <- repo.exec(FindUserByEmail(req.email))
           _         <- ZIO.fromOption(maybeUser)                         .mapError(_   => ReturnResponseError(Response.notFound(s"Can't find user '${req.email}'")))
           link      <- identities.signInWithEmailLink(req.email, req.url).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error generating login link for '${req.email}'")))
@@ -245,7 +246,7 @@ object router {
 
       (for
         now     <- Clock.localDateTime
-        req     <- request.body.parse[StoreGroupRequest].mapError(err => ReturnResponseError(Response.badRequest(err.getMessage)))
+        req     <- request.body.parse[StoreGroupRequest]().mapError(err => ReturnResponseError(Response.badRequest(err.getMessage)))
         app     <- repo.exec(FindApplication(token.user.details.accountCode, application)).orFail(s"Can't find application '${application}'")
         code    <- req.code.map(ZIO.succeed).getOrElse(uniqueCode)
         _       <- ZIO.logInfo(s"Storing group '${req.name} (${req.id}/$code)' in app '${app.details.code}' in account '${token.user.details.account}' in tenant '${token.user.details.tenant}'")
@@ -306,7 +307,7 @@ object router {
       }
 
       for
-        req    <- request.body.parse[StoreUserRequest].mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        req    <- request.body.parse[StoreUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
         pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate).errorToResponse(Response.internalServerError("Error generating user code"))
         code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
         acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
@@ -326,7 +327,7 @@ object router {
       val account = token.user.details.account
 
       for
-        req    <- request.body.parse[RemoveUserRequest].mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        req    <- request.body.parse[RemoveUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
         result <- repo.exec(RemoveUser(account, req.code))
       yield Response.json(result.toJson)
     }
@@ -338,7 +339,7 @@ object router {
       val application = token.user.application.id
 
       for
-        req    <- request.body.parse[RemoveGroupRequest].mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        req    <- request.body.parse[RemoveGroupRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
         result <- repo.exec(RemoveGroup(account, application, req.code))
       yield Response.json(result.toJson)
     }
@@ -354,7 +355,7 @@ object router {
       def res(status: Status, text: String) = Response(status = status, body = Body.fromString(text))
 
       for {
-        req   <- request.body.parse[ValidateUserPin]
+        req   <- request.body.parse[ValidateUserPin]()
         token <- tokenFrom(request)
         uid   =  token.impersonatedBy.map(_.id).getOrElse(token.user.details.id)
         valid <- pins.validate(uid, req.pin)
@@ -363,15 +364,15 @@ object router {
 
     private def verify(request: Request): Task[Response] = ensureResponse {
       for {
-        req   <- request.body.parse[VerifyMorbidTokenRequest].mapError(forbidden)
-        token <- tokens.verify(req.token)                    .mapError(forbidden)
+        req   <- request.body.parse[VerifyMorbidTokenRequest]().mapError(forbidden)
+        token <- tokens.verify(req.token)                      .mapError(forbidden)
       } yield Response.json(token.toJson)
     }
 
     private def impersonate(request: Request): Task[Response] = ensureResponse {
       for {
         impersonator <- tokenFrom(request)
-        req          <- request.body.parse[ImpersonationRequest]
+        req          <- request.body.parse[ImpersonationRequest]()
         same         =  req.magic.is(cfg.magic.password)
         _            <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
         user         <- repo.exec(FindUserByEmail(req.email))
@@ -432,7 +433,7 @@ object router {
       }
 
       for {
-        req    <- request.body.parse[T]
+        req    <- request.body.parse[T]()
         me     =  token.user.details.email == req.email
         user   <- if (me) ZIO.succeed(token.user) else ifAdmLoadUserSameAccount(token, req)
         result <- fn(user, req)
@@ -482,7 +483,7 @@ object router {
       }
 
       for {
-        req   <- request.body.parse[SetUserPin]
+        req   <- request.body.parse[SetUserPin]()
         token <- tokenFrom(request)
         me    =  token.user.details.email == req.email
         id    <- if (me) changeMyPin(token) else changeSomebodyElse(token, req)
@@ -511,7 +512,7 @@ object router {
 
       for
         token <- tokenFrom(request)
-        req   <- request.body.parse[RequestPasswordRequestLink]
+        req   <- request.body.parse[RequestPasswordRequestLink]()
         me    =  token.user.details.email == req.email
         email <- if (me) changeMyPassword(token, req) else changeSomebodyElse(token, req)
         link  <- identities.passwordResetLink(email)
@@ -542,7 +543,7 @@ object router {
       }
 
       for {
-        req     <- request.body.parse[CreateAccount]
+        req     <- request.body.parse[CreateAccount]()
         _       <- ZIO.logInfo("Account Provisioning")
         maybe   <- repo.exec(FindApplicationDetails(Presto))
         details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$Presto'"))
