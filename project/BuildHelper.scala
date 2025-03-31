@@ -72,7 +72,7 @@ object BuildHelper {
     ThisBuild / scalaVersion                 := ScalaVersion,
     ThisBuild / scalacOptions                := commonSettings(scalaVersion.value),
     ThisBuild / organization                 := "morbid",
-    ThisBuild / version                      := "v0.0.6",
+    ThisBuild / version                      := "v0.0.7",
     ThisBuild / doc / sources                := Seq.empty,
     ThisBuild / packageDoc / publishArtifact := false,
     ThisBuild / resolvers                    += Resolver.mavenLocal,
