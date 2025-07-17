@@ -1,5 +1,15 @@
 # Morbid
 
+## Release v0.0.8
+LTS: 17/07/2025
+
+ - Added `FakeMorbidClient`
+
+## Release v0.0.7
+LTS: 31/03/2025
+
+ - Excluding deleted groups and roles when retrieving users
+
 ## Release v0.0.6
 LTS: 24/03/2025
 
