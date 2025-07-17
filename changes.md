@@ -1,5 +1,8 @@
 # Morbid
 
+## Release v0.0.8
+LTS: 17/07/2025
+
  - Added `FakeMorbidClient`
 
 ## Release v0.0.7
