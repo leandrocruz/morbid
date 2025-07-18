@@ -93,8 +93,8 @@ object client {
       } yield result
     }
 
-    private def get   [T]   (token: Option[RawToken],url: URL)          (using dec: JsonDecoder[T])                     : Task[T] = exec(token, Request.get(url))
-    private def post  [R, T](token: Option[RawToken], url: URL, req: R) (using dec: JsonDecoder[T], enc: JsonEncoder[R]): Task[T] = exec(token, Request.post(url, Body.fromString(req.toJson)).copy(headers = applicationJson))
+    private def get [T]   (token: Option[RawToken],url: URL)            (using dec: JsonDecoder[T])                     : Task[T] = exec(token, Request.get(url))
+    private def post[R, T](token: Option[RawToken], url: URL, req: R)   (using dec: JsonDecoder[T], enc: JsonEncoder[R]): Task[T] = exec(token, Request.post(url, Body.fromString(req.toJson)).copy(headers = applicationJson))
 
     override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = get [Option[RawGroup]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "group")
     override def storeGroup        (request: StoreGroupRequest)         (using token: RawToken, app: ApplicationCode) = post[StoreGroupRequest, RawGroup]                         (Some(token),  base / "app" / ApplicationCode.value(app) / "group", request)
