@@ -1,7 +1,5 @@
 # Morbid
 
-## Release v0.0.5
-LTS: --/--/2025
  - Implementing Account/User management
  - Routes added:
    - GET    `/app/:app/account/:account/users` 
@@ -23,6 +21,26 @@ LTS: --/--/2025
    - `MorbidClient.removeAccountUser`
    - `MorbidClient.removeAccount`
    - `MorbidClient.usersByAccount`
+
+## Release v0.0.8
+LTS: 17/07/2025
+
+ - Added `FakeMorbidClient`
+
+## Release v0.0.7
+LTS: 31/03/2025
+
+ - Excluding deleted groups and roles when retrieving users
+
+## Release v0.0.6
+LTS: 24/03/2025
+
+ - Using guara v1.1.4
+
+## Release v0.0.5
+LTS: 13/03/2025
+
+ - Updating dependencies
 
 ## Release v0.0.4
 LTS: 12/11/2024

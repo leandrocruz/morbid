@@ -4,17 +4,18 @@ import zio.*
 
 object client {
 
-  import morbid.types.*
+  import guara.errors.{ReturnResponseError, ReturnResponseWithExceptionError}
+  import guara.utils.{parse, queryParams}
+  import io.scalaland.chimney.dsl.*
   import morbid.domain.*
   import morbid.domain.raw.*
-  import morbid.domain.token.{Token, RawToken}
-  import morbid.domain.token.given
-  import morbid.domain.requests.*
-  import morbid.domain.requests.given
-  import guara.utils.{parse, queryParams}
-  import guara.errors.{ReturnResponseWithExceptionError, ReturnResponseError}
+  import morbid.domain.requests.{*, given}
+  import morbid.domain.token.*
+  import morbid.types.*
   import zio.http.*
   import zio.json.*
+
+  import java.time.{LocalDateTime, ZonedDateTime}
 
   trait MorbidClient {
     def proxy                (request: Request): Task[Response]
@@ -48,6 +49,7 @@ object client {
   case class MorbidClientConfig(url: String)
 
   object MorbidClient {
+
     val layer = ZLayer {
       for {
         config <- ZIO.service[MorbidClientConfig]
@@ -56,6 +58,8 @@ object client {
         url    <- ZIO.fromEither(URL.decode(config.url))
       } yield RemoteMorbidClient(url, client, scope)
     }
+
+    val fake = ZLayer.fromFunction(FakeMorbidClient.apply _)
   }
 
   case class RemoteMorbidClient(base: URL, client: Client, scope: Scope) extends MorbidClient {
@@ -94,7 +98,7 @@ object client {
         _      <- ZIO.log(s"Calling '${req.url.encode}'")
         res    <- perform(req.copy(headers = req.headers ++ token.map(morbidToken).getOrElse(Headers.empty))).mapError(e => badGateway(s"Error calling Morbid '${req.url.encode}': ${e.getMessage}"))
         _      <- ZIO.when(res.status.code != 200) { ZIO.fail(ReturnResponseError(res)) }
-        result <- res.body.parse[T].mapError(_ => ReturnResponseError(res))
+        result <- res.body.parse[T]().mapError(_ => ReturnResponseError(res))
       } yield result
     }
 
@@ -128,4 +132,84 @@ object client {
     override def emailLoginLink       (request: LoginViaEmailLinkRequest)         (using                  app: ApplicationCode) = post[LoginViaEmailLinkRequest, LoginViaEmailLinkResponse] (None       ,  base / "app" / ApplicationCode.value(app) / "login" / "email", request)
   }
 
+  case class FakeMorbidClient() extends MorbidClient {
+
+    private val _adm = RawRole(
+      id          = RoleId.of(1),
+      created     = LocalDateTime.now(),
+      deleted     = None,
+      code        = RoleCode.of("adm"),
+      name        = RoleName.of("Admin"),
+      permissions = Seq.empty
+    )
+
+    private val _groups = Seq(
+      RawGroup(GroupId.of(1), LocalDateTime.now(), None, GroupCode.of("admin"), GroupName.of("Admin"), roles = Seq(_adm)),
+      RawGroup(GroupId.of(2), LocalDateTime.now(), None, GroupCode.of("all"), GroupName.of("All")),
+      RawGroup(GroupId.of(3), LocalDateTime.now(), None, GroupCode.of("g0"), GroupName.of("Group 0")),
+    )
+
+    private val _users = Seq(
+      RawUserEntry(UserId.of(1), LocalDateTime.now(), None, AccountId.of(1), None, code = UserCode.of("usr1"), active = true, Email.of("usr1@email.com")),
+      RawUserEntry(UserId.of(2), LocalDateTime.now(), None, AccountId.of(1), None, code = UserCode.of("usr2"), active = true, Email.of("usr2@email.com")),
+      RawUserEntry(UserId.of(3), LocalDateTime.now(), None, AccountId.of(1), None, code = UserCode.of("usr3"), active = true, Email.of("usr3@email.com"))
+    )
+
+    override def validatePin       (request: ValidateUserPin)            (using token: RawToken)                        = ZIO.succeed(true)
+    override def groups                                                  (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_groups)
+    override def users                                                   (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_users)
+    override def groupByCode       (group: GroupCode)                    (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_groups.find(_.code == group))
+    override def groupsByCode      (groups: Seq[GroupCode])              (using token: RawToken, app: ApplicationCode) = ZIO.succeed { _groups.filter(g => groups.contains(g.code)) }
+    override def proxy             (request: Request)                                                                  = ZIO.fail(Exception("TODO"))
+    override def usersByGroupByCode(group: GroupCode)                    (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
+    override def roles                                                   (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
+    override def storeGroup        (request: StoreGroupRequest)          (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
+    override def storeUser         (request: StoreUserRequest)           (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
+    override def setPin            (request: SetUserPin)                 (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
+    override def passwordResetLink (request: RequestPasswordRequestLink) (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
+    override def removeGroup       (request: RemoveGroupRequest)         (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
+    override def removeUser        (request: RemoveUserRequest)          (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
+    override def emailLoginLink    (request: LoginViaEmailLinkRequest)   (using app: ApplicationCode)                  = ZIO.fail(Exception("TODO"))
+    override def passwordChange    (request: ChangePasswordRequest)      (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
+
+    override def tokenFrom(token: RawToken): Task[Token] = ZIO.attempt {
+
+      val app = CompactApplication(
+        id      = ApplicationId.of(1),
+        code    = ApplicationCode.of("app"),
+        groups  = _groups.map(_.transformInto[CompactGroup])
+      )
+
+      Token(
+        created = ZonedDateTime.now(),
+        expires = None,
+        user    = CompactUser(
+          applications = Seq(app),
+          details = RawUserDetails(
+            tenant      = TenantId.of(1),
+            tenantCode  = TenantCode.of("T1"),
+            account     = AccountId.of(1),
+            accountCode = AccountCode.of("acc1"),
+            id          = UserId.of(1),
+            code        = UserCode.of("usr1"),
+            created     = LocalDateTime.now(),
+            deleted     = None,
+            kind        = None,
+            active      = true,
+            email       = Email.of("usr1@email.com")
+          ),
+        )
+      )
+    }
+
+    override def groupsByAccount(account: AccountCode)(using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]] = ???
+    override def groupsByUser(account: AccountId, user: UserId)(using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]] = ???
+    override def accounts(tenant: TenantCode)(using token: RawToken, app: ApplicationCode): Task[Seq[RawAccount]] = ???
+    override def configureGroupsByUser(request: ConfigureAccountUserGroupsRequest)(using token: RawToken, app: ApplicationCode): Task[Boolean] = ???
+    override def storeAccount(request: StoreAccountRequest)(using token: RawToken, app: ApplicationCode): Task[RawAccount] = ???
+    override def storeAccountUser(request: StoreAccountUserRequest)(using token: RawToken, app: ApplicationCode): Task[RawUserEntry] = ???
+    override def removeAccountUser(account: AccountId, user: UserCode)(using token: RawToken, app: ApplicationCode): Task[Boolean] = ???
+    override def removeAccount(account: AccountId)(using token: RawToken, app: ApplicationCode): Task[Boolean] = ???
+    override def usersByAccount(account: AccountId)(using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]] = ???
+  }
 }

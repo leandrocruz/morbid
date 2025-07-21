@@ -509,7 +509,7 @@ object secure {
   import types.ApplicationCode
   import domain.token.{SingleAppToken, Token}
   import roles.Role
-  import guara.utils.ensureResponse
+  import guara.utils.{ensureResponse, Origin}
   import guara.errors.*
   import zio.http.*
   import zio.*
@@ -536,7 +536,7 @@ object secure {
     } yield result
   }
 
-  def appRoute(application: ApplicationCode, tokenFrom: Request => Task[Token])(route: AppRoute)(request: Request): Task[Response] = {
+  def appRoute(application: ApplicationCode, tokenFrom: Request => Task[Token])(route: AppRoute)(request: Request)(using Origin): Task[Response] = {
 
     def execute(token: SingleAppToken) = {
       given SingleAppToken  = token
