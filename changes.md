@@ -1,5 +1,10 @@
 # Morbid
 
+## Release v1.0.0
+LTS: 24/07/2025
+ 
+ - Moving the `ImpersonationRequest` to morbid-commons
+
 ## Release v0.0.8
 LTS: 17/07/2025
 
