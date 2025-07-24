@@ -86,11 +86,9 @@ object proto {
 
   case class VerifyGoogleTokenRequest(token: String)
   case class VerifyMorbidTokenRequest(token: String)
-  case class ImpersonationRequest(email: Email, magic: Magic)
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
 
-  given JsonDecoder[ImpersonationRequest]     = DeriveJsonDecoder.gen
   given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[SetClaimsRequest]         = DeriveJsonDecoder.gen
