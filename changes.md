@@ -1,5 +1,7 @@
 # Morbid
 
+ - Inactive/active users
+
 ## Release v1.0.0
 LTS: 24/07/2025
  
