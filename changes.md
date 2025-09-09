@@ -1,5 +1,10 @@
 # Morbid
 
+## Release v1.1.2
+LTS: 09/09/2025
+
+ - Creating new user identities for new users only
+
 ## Release v1.1.1
 LTS: 09/09/2025
 
