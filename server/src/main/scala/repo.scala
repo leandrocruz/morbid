@@ -525,7 +525,7 @@ object repo {
           account = req.account.id,
           kind    = req.kind,
           code    = req.code,
-          active  = true,
+          active  = req.active,
           email   = req.email,
         )
       }
@@ -855,7 +855,7 @@ object repo {
             app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
             grp <- groups       .join(_.app    == app.id)  if grp.deleted.isEmpty && grp.acc == acc.id && grp.code == lift(code)
             u2g <- user2group   .join(_.app    == app.id)  if u2g.deleted.isEmpty && u2g.grp  == grp.id
-            usr <- users        .join(_.id     == u2g.usr) if usr.deleted.isEmpty && usr.active
+            usr <- users        .join(_.id     == u2g.usr) if usr.deleted.isEmpty
           } yield usr
         }
       }
@@ -865,7 +865,7 @@ object repo {
           for {
             ten <- tenants                                 if ten.deleted.isEmpty && ten.active
             acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
-            usr <- users        .join(_.account == acc.id) if usr.deleted.isEmpty && usr.active
+            usr <- users        .join(_.account == acc.id) if usr.deleted.isEmpty
           } yield usr
         }
       }

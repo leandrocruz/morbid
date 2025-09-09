@@ -553,7 +553,7 @@ object router {
         now     <- Clock.localDateTime
         groups  <- createGroups(now, app, acc)
         gid     <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find admin group after account creation"))
-        user    <- repo.exec(StoreUser(id = req.user, email = req.email, code = UserCode.of(s"admin-of-${acc.code}"), account = acc, kind = None, update = false))
+        user    <- repo.exec(StoreUser(id = req.user, email = req.email, code = UserCode.of(s"admin-of-${acc.code}"), account = acc, kind = None, update = false, active = true))
         _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = gid, users = Seq(user.id)))
         //created <- repo.exec(FindApplication(acc.code, Presto))
         created <- repo.exec(FindUserById(user.id))

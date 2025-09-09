@@ -77,7 +77,7 @@ object accounts {
           account <- repo.exec(FindAccountByProvider(id)).orFail(s"Can't find account for provider '$identity'")
           legacy  <- legacyUser(account)
           _       <- ZIO.logInfo(s"Provisioning user :: tenant:${account.tenant} account:${account.id}, uid:${legacy.id}, idp:$id, code:${identity.code}, email:${identity.email}")
-          user    <- repo.exec(StoreUser(legacy.id, identity.email, identity.code, account, kind = None, update = false))
+          user    <- repo.exec(StoreUser(legacy.id, identity.email, identity.code, account, kind = None, update = false, active = true))
           _       <- setup(account, user)
           result  <- repo.exec(FindUserByEmail(user.email)).orFail(s"Error reading newly created user, email:${user.email}") // load applications, groups, etc
         } yield result
@@ -102,7 +102,8 @@ object accounts {
                 code    = UserCode.of(RandomStringUtils.secure().nextAlphanumeric(12)),
                 account = account,
                 kind    = None,
-                update  = false
+                update  = false,
+                active  = true,
               )
             }
           }
