@@ -1,5 +1,10 @@
 # Morbid
 
+## Release v1.1.1
+LTS: 09/09/2025
+
+ - Using guara v1.1.9
+
 ## Release v1.1.0
 LTS: 09/09/2025
 
