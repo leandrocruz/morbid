@@ -1,6 +1,9 @@
 # Morbid
 
- - Inactive/active users
+## Release v1.1.0
+LTS: 09/09/2025
+
+ - Returning inactive users
 
 ## Release v1.0.0
 LTS: 24/07/2025
