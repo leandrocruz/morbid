@@ -288,36 +288,44 @@ object router {
           .withFieldConst(_.update, req.update.getOrElse(false))
           .transform
 
-      def link(groupsByApp: Map[ApplicationCode, Seq[RawGroup]], user: RawUserEntry): Task[Unit] = {
 
-        def linkTo(group: RawGroup): Task[Unit] = {
-          repo.exec {
-            LinkUsersToGroup(
-              application = application.id,
-              group       = group.id,
-              users       = Seq(user.id)
-            )
+      def whenNewUser(acc: RawAccount, user: RawUserEntry, store: StoreUser, pwd: Password) = {
+
+        def link(groupsByApp: Map[ApplicationCode, Seq[RawGroup]], user: RawUserEntry): Task[Unit] = {
+
+          def linkTo(group: RawGroup): Task[Unit] = {
+            repo.exec {
+              LinkUsersToGroup(
+                application = application.id,
+                group       = group.id,
+                users       = Seq(user.id)
+              )
+            }
+          }
+
+          groupsByApp.get(application.code) match {
+            case Some(Seq(group)) if group.code == GroupAll => linkTo(group)
+            case _                                          => ZIO.fail(Exception(s"Can't find group '${GroupAll}' for application '${application.code}'"))
           }
         }
 
-        groupsByApp.get(application.code) match {
-          case Some(Seq(group)) if group.code == GroupAll => linkTo(group)
-          case _                                          => ZIO.fail(Exception(s"Can't find group '${GroupAll}' for application '${application.code}'"))
-        }
+        for
+          _      <- identities.createUser(store, pwd).asCommonError(10011, "Error storing user identity")
+          groups <- repo.exec(FindGroups(acc.code, Seq(application.code), Seq(GroupAll)))
+          _      <- link(groups, user).asCommonError(10012, "Error adding user to group ALL")
+        yield ()
       }
 
       for
-        req    <- request.body.parse[StoreUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
-        pwd    <- ZIO.fromOption(req.password) .orElse(passGen.generate).errorToResponse(Response.internalServerError("Error generating user code"))
-        code   <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
-        acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
-        store  = buildRequest(req, acc, code)
-        _      <- ZIO.logInfo(s"Storing user '${store.email}/${store.id}' in account '${store.account.id}' in tenant '${store.account.tenantCode}' (update ? ${store.update})")
-        user   <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")
-        _      <- ZIO.logInfo(s"User '${user.email}/${user.id}' stored")
-        _      <- identities.createUser(store, pwd).asCommonError(10011, "Error storing user identity")
-        groups <- repo.exec(FindGroups(acc.code, Seq(application.code), Seq(GroupAll)))
-        _      <- link(groups, user).asCommonError(10012, "Error adding user to group ALL")
+        req   <- request.body.parse[StoreUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        pwd   <- ZIO.fromOption(req.password) .orElse(passGen.generate).errorToResponse(Response.internalServerError("Error generating user code"))
+        code  <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
+        acc   <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
+        store =  buildRequest(req, acc, code)
+        _     <- ZIO.logInfo(s"Storing user '${store.email}/${store.id}' in account '${store.account.id}' in tenant '${store.account.tenantCode}' (update ? ${store.update})")
+        user  <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")
+        _     <- ZIO.logInfo(s"User '${user.email}/${user.id}' stored")
+        _     <- ZIO.when(req.id.isEmpty) { whenNewUser(acc, user, store, pwd) }
       yield Response.json(user.toJson)
     }
 
