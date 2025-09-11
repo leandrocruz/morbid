@@ -1,5 +1,11 @@
 # Morbid
 
+## Release v1.1.3
+LTS: 11/09/2025
+
+ - Updating firebase-admin from 9.3.0 to 9.6.0
+ - Testing the return of auth.generatePasswordResetLink for nulls
+
 ## Release v1.1.2
 LTS: 09/09/2025
 

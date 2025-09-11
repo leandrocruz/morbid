@@ -158,11 +158,10 @@ object gip {
     }
 
     override def passwordResetLink(email: Email): Task[Link] = {
-      ZIO.attempt {
-        Link.of {
-          auth.generatePasswordResetLink(Email.value(email))
-        }
-      }
+      for
+        link   <- ZIO.attempt { auth.generatePasswordResetLink(Email.value(email)) }.mapError(e => Exception(s"Error generating password reset link for '$email': ${e.getMessage}", e))
+        result <- ZIO.fromOption(Option(link))                                      .mapError(_ => Exception(s"Failed to generate password reset link for '$email'"))
+      yield Link.of(result)
     }
 
     override def signInWithEmailLink(email: Email, url: String): Task[Link] = {
