@@ -1,5 +1,13 @@
 # Morbid
 
+## Release v1.2.0
+LTS: 16/09/2025
+
+ - Improved account/user provisioning
+ - Code format
+ - Optimizing imports
+ - Added script `diff-compare.sc`
+
 ## Release v1.1.3
 LTS: 11/09/2025
 

@@ -1,4 +1,8 @@
 target
 .idea
 .bsp
+.metals
+.vscode
+.scala-build
 tmp
+*.csv
