@@ -81,8 +81,7 @@ object router {
     identities : Identities,
     pins       : PinManager,
     passGen    : PasswordGenerator,
-    tokens     : TokenGenerator,
-    legacy     : LegacyMorbid
+    tokens     : TokenGenerator
   ) extends Router {
 
     private def protect(r: AppRoute)(app: String, request: Request): Task[Response] = {
@@ -530,7 +529,6 @@ object router {
 
     private def provisionAccount: AppRoute = role("adm") { request =>
 
-      val token  = summon[SingleAppToken]
       val Presto = summon[ApplicationCode]
 
       def createGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount): Task[Seq[RawGroup]] = {
@@ -552,7 +550,7 @@ object router {
 
       for {
         req     <- request.body.parse[CreateAccount]()
-        _       <- ZIO.logInfo("Account Provisioning")
+        _       <- ZIO.logInfo(s"Account Provisioning '${req.email}'")
         maybe   <- repo.exec(FindApplicationDetails(Presto))
         details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$Presto'"))
         acc     <- repo.exec(req.transformInto[StoreAccount])
@@ -560,17 +558,16 @@ object router {
         _       <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
         now     <- Clock.localDateTime
         groups  <- createGroups(now, app, acc)
-        admin   <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find admin group after account creation"))
-        all     <- ZIO.fromOption(groups.find(_.code == GroupCode.all).map(_.id)).mapError(_ => Exception("Can't find all group after account creation"))
+        admin   <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find group 'admin' after account creation"))
+        all     <- ZIO.fromOption(groups.find(_.code == GroupCode.all)  .map(_.id)).mapError(_ => Exception("Can't find group 'all' after account creation"))
         store   = StoreUser(id = req.user, email = req.email, code = UserCode.of(RandomStringUtils.secure().nextAlphanumeric(28)), account = acc, kind = None, update = false, active = true) // 28 is the default Firebase UID length
         user    <- repo.exec(store)
-        _       <- identities.createUser(store, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
         _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = admin, users = Seq(user.id)))
-        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = all, users = Seq(user.id)))
-        //created <- repo.exec(FindApplication(acc.code, Presto))
+        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = all  , users = Seq(user.id)))
+        _       <- identities.createUser(store, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
         created <- repo.exec(FindUserById(user.id))
       } yield created match
-        case None        => Response.internalServerError("Error provisioning account")
+        case None        => Response.internalServerError(s"Error provisioning account ${req.email}")
         case Some(value) => Response.json(value.toJson)
     }
 
