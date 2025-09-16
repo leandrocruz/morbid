@@ -1,5 +1,8 @@
 # Morbid
 
+## Release v1.2.0
+LTS: 16/09/2025
+
  - Improved account/user provisioning
  - Code format
  - Optimizing imports
