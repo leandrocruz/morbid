@@ -4,18 +4,19 @@ import zio.*
 
 object accounts {
 
-  import morbid.config.MorbidConfig
   import morbid.commands.*
-  import morbid.repo.Repo
-  import morbid.types.*
+  import morbid.config.MorbidConfig
   import morbid.domain.*
   import morbid.domain.raw.*
   import morbid.gip.*
-  import morbid.utils.*
   import morbid.legacy.*
   import morbid.pins.PinManager
-  import java.time.LocalDateTime
+  import morbid.repo.Repo
+  import morbid.types.*
+  import morbid.utils.*
   import org.apache.commons.lang3.RandomStringUtils
+
+  import java.time.LocalDateTime
   import scala.util.Try
 
   trait AccountManager {
@@ -27,7 +28,7 @@ object accounts {
     val layer = ZLayer.fromFunction(LocalAccountManager.apply _)
   }
 
-  case class LocalAccountManager(config: MorbidConfig, repo: Repo, legacyMorbid: LegacyMorbid, pins: PinManager) extends AccountManager {
+  case class LocalAccountManager(config: MorbidConfig, repo: Repo, legacyMorbid: LegacyMorbid, pins: PinManager, identities: Identities) extends AccountManager {
 
     private val DefaultGroup = GroupCode.of("all")
 
@@ -95,17 +96,21 @@ object accounts {
         def handle(email: Email, legacy: Option[LegacyUser], current: Option[RawUser]) = {
 
           def store(user: LegacyUser) = {
-            repo.exec {
-              StoreUser(
-                id      = user.id,
-                email   = email,
-                code    = UserCode.of(RandomStringUtils.secure().nextAlphanumeric(12)),
-                account = account,
-                kind    = None,
-                update  = false,
-                active  = true,
-              )
-            }
+
+            val request = StoreUser(
+              id      = user.id,
+              email   = email,
+              code    = UserCode.of(RandomStringUtils.secure().nextAlphanumeric(28)), // 28 is the default Firebase UID length
+              account = account,
+              kind    = None,
+              update  = false,
+              active  = true,
+            )
+
+            for {
+              usr <- repo.exec(request)
+              _   <- identities.createUser(request, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
+            } yield usr
           }
 
           (legacy, current) match
@@ -120,7 +125,6 @@ object accounts {
           current <- repo.exec(FindUserByEmail(email))
           result  <- handle(email, legacy, current).either
         } yield (email, result.toTry)
-
       }
 
       for {
