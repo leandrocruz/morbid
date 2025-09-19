@@ -179,7 +179,7 @@ object commands {
   case class StoreUser(
     id      : UserId, // maybe 0
     email   : Email,
-    code    : UserCode,
+    code    : UserCode, // From firebase
     account : RawAccount,
     kind    : Option[UserKind] = None,
     update  : Boolean, //TODO: remove this as soon as we migrate all users from legacy,

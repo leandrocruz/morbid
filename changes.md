@@ -1,5 +1,8 @@
 # Morbid
 
+ - Temporarily disabled insert users without id in repo
+ - Using UID from Firebase
+
 ## Release v1.2.0
 LTS: 16/09/2025
 
