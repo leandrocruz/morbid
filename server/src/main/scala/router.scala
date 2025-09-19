@@ -21,13 +21,14 @@ import morbid.repo.Repo
 import morbid.secure.{AppRoute, appRoute, role}
 import morbid.tokens.*
 import morbid.types.*
-import morbid.utils.{asCommonError, errorToResponse, orFail}
+import morbid.utils.{asCommonError, errorToResponse, orFail, refineError}
 import org.apache.commons.lang3.RandomStringUtils
 import zio.*
+import zio.http.*
 import zio.http.Cookie.SameSite
 import zio.http.Middleware.{CorsConfig, cors}
+import zio.http.Status.InternalServerError
 import zio.http.codec.PathCodec.string
-import zio.http.*
 import zio.json.*
 
 import java.time.LocalDateTime
@@ -259,36 +260,16 @@ object router {
       val token       = summon[SingleAppToken]
       val application = token.user.application
 
-      def uniqueCode(email: Email): Task[UserCode] = {
-
-        def attemptUnique(user: EmailUser, count: Int): Task[UserCode] = {
-
-          def gen: Task[UserCode] = ZIO.attempt(UserCode.of(Random.alphanumeric.take(16).mkString("")))
-
-          for {
-            _      <- ZIO.when(count > 10) { ZIO.fail(new Exception("Can't generate user code. Too many attempts")) }
-            tmp    <- gen
-            exists <- repo.exec(UserExists(tmp))
-            code   <- if(exists) attemptUnique(user, count + 1) else ZIO.succeed(tmp)
-          } yield code
-        }
-
-        email.userName match
-          case None       => ZIO.fail(new Exception(s"Error generating code from '$email'"))
-          case Some(user) => attemptUnique(user, 0)
-      }
-
-      def buildRequest(req: StoreUserRequest, account: RawAccount, code: UserCode) =
+      def buildRequest(req: StoreUserRequest, account: RawAccount, code: String) =
         req
           .into[StoreUser]
-          .withFieldConst(_.id, req.id.getOrElse(UserId.of(0)))
+          .withFieldConst(_.id     , req.id.getOrElse(UserId.of(0)))
           .withFieldConst(_.account, account)
-          .withFieldConst(_.code, code)
-          .withFieldConst(_.update, req.update.getOrElse(false))
+          .withFieldConst(_.code   , UserCode.of(code)) // From firebase
+          .withFieldConst(_.update , req.update.getOrElse(false))
           .transform
 
-
-      def whenNewUser(acc: RawAccount, user: RawUserEntry, store: StoreUser, pwd: Password) = {
+      def whenNewUser(acc: RawAccount, user: RawUserEntry) = {
 
         def link(groupsByApp: Map[ApplicationCode, Seq[RawGroup]], user: RawUserEntry): Task[Unit] = {
 
@@ -309,22 +290,21 @@ object router {
         }
 
         for
-          _      <- identities.createUser(store, pwd).asCommonError(10011, "Error storing user identity")
           groups <- repo.exec(FindGroups(acc.code, Seq(application.code), Seq(GroupAll)))
           _      <- link(groups, user).asCommonError(10012, "Error adding user to group ALL")
         yield ()
       }
 
       for
-        req   <- request.body.parse[StoreUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
-        pwd   <- ZIO.fromOption(req.password) .orElse(passGen.generate).errorToResponse(Response.internalServerError("Error generating user code"))
-        code  <- ZIO.fromOption(req.code)     .orElse(uniqueCode(req.email))
-        acc   <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
-        store =  buildRequest(req, acc, code)
-        _     <- ZIO.logInfo(s"Storing user '${store.email}/${store.id}' in account '${store.account.id}' in tenant '${store.account.tenantCode}' (update ? ${store.update})")
-        user  <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")
-        _     <- ZIO.logInfo(s"User '${user.email}/${user.id}' stored")
-        _     <- ZIO.when(req.id.isEmpty) { whenNewUser(acc, user, store, pwd) }
+        req    <- request.body.parse[StoreUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
+        pass   = Password.of(RandomStringUtils.secure().nextAlphanumeric(10))
+        fbUser <- identities.createUser(req.email, acc.tenantCode, pass).asCommonError(10011, "Error storing user identity")
+        store  =  buildRequest(req, acc, fbUser.getUid)
+        _      <- ZIO.logInfo(s"Storing user ${store.id} - ${store.email} || Account ${store.account.id} || Tenant ${store.account.tenantCode} || Update: ${store.update}")
+        user   <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")
+        _      <- ZIO.logInfo(s"User ${user.id} - ${user.email} stored")
+        _      <- ZIO.when(req.id.isEmpty) { whenNewUser(acc, user) }
       yield Response.json(user.toJson)
     }
 
@@ -560,11 +540,11 @@ object router {
         groups  <- createGroups(now, app, acc)
         admin   <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find group 'admin' after account creation"))
         all     <- ZIO.fromOption(groups.find(_.code == GroupCode.all)  .map(_.id)).mapError(_ => Exception("Can't find group 'all' after account creation"))
-        store   = StoreUser(id = req.user, email = req.email, code = UserCode.of(RandomStringUtils.secure().nextAlphanumeric(28)), account = acc, kind = None, update = false, active = true) // 28 is the default Firebase UID length
+        fbUser  <- identities.createUser(req.email, acc.tenantCode, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
+        store   = StoreUser(id = req.user, email = req.email, code = UserCode.of(fbUser.getUid), account = acc, kind = None, update = false, active = true)
         user    <- repo.exec(store)
         _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = admin, users = Seq(user.id)))
         _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = all  , users = Seq(user.id)))
-        _       <- identities.createUser(store, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
         created <- repo.exec(FindUserById(user.id))
       } yield created match
         case None        => Response.internalServerError(s"Error provisioning account ${req.email}")
