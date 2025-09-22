@@ -50,7 +50,7 @@ object client {
       } yield RemoteMorbidClient(url, client, scope)
     }
 
-    val fake = ZLayer.fromFunction(FakeMorbidClient.apply _)
+    def fake(app: ApplicationCode) = ZLayer.succeed(FakeMorbidClient(app))
   }
 
   case class RemoteMorbidClient(base: URL, client: Client, scope: Scope) extends MorbidClient {
@@ -113,7 +113,7 @@ object client {
     override def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode) = post[LoginViaEmailLinkRequest, LoginViaEmailLinkResponse] (None       ,  base / "app" / ApplicationCode.value(app) / "login" / "email", request)
   }
 
-  case class FakeMorbidClient() extends MorbidClient {
+  case class FakeMorbidClient(appcode: ApplicationCode) extends MorbidClient {
 
     private val _adm = RawRole(
       id          = RoleId.of(1),
@@ -157,7 +157,7 @@ object client {
 
       val app = CompactApplication(
         id      = ApplicationId.of(1),
-        code    = ApplicationCode.of("app"),
+        code    = appcode,
         groups  = _groups.map(_.transformInto[CompactGroup])
       )
 
