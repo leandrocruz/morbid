@@ -3,6 +3,11 @@
  - Temporarily disabled insert users without id in repo
  - Using UID from Firebase
 
+## Release v1.3.0
+LTS: 22/09/2025
+
+ - Added ApplicationCode to `MorbidClient.fake(appcode)` (better for testing/mocking)
+
 ## Release v1.2.0
 LTS: 16/09/2025
 
