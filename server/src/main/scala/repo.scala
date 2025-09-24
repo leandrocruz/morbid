@@ -563,9 +563,9 @@ object repo {
         }
 
         (req.update, UserId.value(req.id) == 0) match
-          case (true , false) => update
-          case (false, false) => insertWithId
-          case (false, true ) => ZIO.fail(Exception(s"User id not provided")) // Force exception
+          case (true , _    ) => update
+          case (_    , false) => insertWithId
+          case (_    , true ) => ZIO.fail(Exception(s"User id not provided")) // Force exception
        }
 
       for {
