@@ -97,20 +97,22 @@ object accounts {
 
           def store(user: LegacyUser) = {
 
-            for {
+            def userGiven(code: UserCode) = {
+              StoreUser(
+                id      = user.id,
+                email   = email,
+                code    = code,
+                account = account,
+                kind    = None,
+                update  = false,
+                active  = true,
+              )
+            }
+
+            for
               fbUser <- identities.createUser(email, account.tenantCode, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
-              usr    <- repo.exec {
-                StoreUser(
-                  id      = user.id,
-                  email   = email,
-                  code    = UserCode.of(fbUser.getUid),
-                  account = account,
-                  kind    = None,
-                  update  = false,
-                  active  = true,
-                )
-              }
-            } yield usr
+              usr    <- repo.exec(userGiven(UserCode.of(fbUser.getUid)))
+            yield usr
           }
 
           (legacy, current) match
