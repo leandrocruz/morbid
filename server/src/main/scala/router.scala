@@ -13,7 +13,6 @@ import morbid.domain.raw.*
 import morbid.domain.requests.*
 import morbid.domain.token.{SingleAppToken, SingleAppUser, Token}
 import morbid.gip.*
-import morbid.legacy.LegacyMorbid
 import morbid.passwords.PasswordGenerator
 import morbid.pins.PinManager
 import morbid.proto.*
@@ -21,13 +20,12 @@ import morbid.repo.Repo
 import morbid.secure.{AppRoute, appRoute, role}
 import morbid.tokens.*
 import morbid.types.*
-import morbid.utils.{asCommonError, errorToResponse, orFail, refineError}
+import morbid.utils.{asCommonError, errorToResponse, orFail}
 import org.apache.commons.lang3.RandomStringUtils
 import zio.*
 import zio.http.*
 import zio.http.Cookie.SameSite
 import zio.http.Middleware.{CorsConfig, cors}
-import zio.http.Status.InternalServerError
 import zio.http.codec.PathCodec.string
 import zio.json.*
 
