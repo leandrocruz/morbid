@@ -97,20 +97,22 @@ object accounts {
 
           def store(user: LegacyUser) = {
 
-            val request = StoreUser(
-              id      = user.id,
-              email   = email,
-              code    = UserCode.of(RandomStringUtils.secure().nextAlphanumeric(28)), // 28 is the default Firebase UID length
-              account = account,
-              kind    = None,
-              update  = false,
-              active  = true,
-            )
+            def userGiven(code: UserCode) = {
+              StoreUser(
+                id      = user.id,
+                email   = email,
+                code    = code,
+                account = account,
+                kind    = None,
+                update  = false,
+                active  = true,
+              )
+            }
 
-            for {
-              usr <- repo.exec(request)
-              _   <- identities.createUser(request, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
-            } yield usr
+            for
+              fbUser <- identities.createUser(email, account.tenantCode, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
+              usr    <- repo.exec(userGiven(UserCode.of(fbUser.getUid)))
+            yield usr
           }
 
           (legacy, current) match
