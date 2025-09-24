@@ -1,5 +1,11 @@
 # Morbid
 
+## Release v1.4.1
+LTS: 24/09/2025 
+
+ - Added method to get user from Firebase
+ - Fix: When the id is empty, just get the user from Firebase, otherwise try to insert
+
 ## Release v1.4.0
 LTS: 24/09/2025
 
