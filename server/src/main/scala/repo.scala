@@ -533,16 +533,16 @@ object repo {
       def store(raw: RawUserEntry): Task[RawUserEntry] = {
         val row = raw.transformInto[UserRow]
 
-        def insertWithoutId = {
-          
-          inline given InsertMeta[UserRow] = insertMeta[UserRow](_.id)
-          inline def stmt = quote { users.insertValue(lift(row)).returning(_.id) }
-          
-          for {
-            _  <- ZIO.log(s"Creating new user '${row.email}'")
-            id <- exec(run(stmt))
-          } yield raw.copy(id = id)
-        }
+//        def insertWithoutId = { // temporarily disabled
+//          
+//          inline given InsertMeta[UserRow] = insertMeta[UserRow](_.id)
+//          inline def stmt = quote { users.insertValue(lift(row)).returning(_.id) }
+//          
+//          for {
+//            _  <- ZIO.log(s"Creating new user '${row.email}'")
+//            id <- exec(run(stmt))
+//          } yield raw.copy(id = id)
+//        }
 
         def insertWithId = {
           inline def stmt = quote { users.insertValue(lift(row)) }
@@ -563,9 +563,9 @@ object repo {
         }
 
         (req.update, UserId.value(req.id) == 0) match
-          case (true, _ ) => update
-          case (_, false) => insertWithId
-          case (_, true ) => insertWithoutId
+          case (true , _    ) => update
+          case (_    , false) => insertWithId
+          case (_    , true ) => ZIO.fail(Exception(s"User id not provided")) // Force exception
        }
 
       for {
