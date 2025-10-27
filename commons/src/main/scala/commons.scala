@@ -334,6 +334,7 @@ object domain {
     given JsonCodec[RawRole]               = DeriveJsonCodec.gen
     given JsonCodec[RawUser]               = DeriveJsonCodec.gen
     given JsonCodec[RawUserEntry]          = DeriveJsonCodec.gen
+    given JsonCodec[RawAccount]            = DeriveJsonCodec.gen
     given JsonCodec[RawIdentityProvider]   = DeriveJsonCodec.gen
   }
 

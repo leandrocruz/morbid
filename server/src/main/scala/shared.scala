@@ -16,7 +16,8 @@ object config {
   case class ClockConfig(timezone: String)
   case class MagicConfig(password: String)
   case class PinConfig(prefix: String, default: String)
-  case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig, magic: MagicConfig, pin: PinConfig, legacy: LegacyClientConfig, printQueries: Boolean)
+  case class ServiceConfig(token: String)
+  case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig, magic: MagicConfig, pin: PinConfig, legacy: LegacyClientConfig, printQueries: Boolean, service: ServiceConfig)
 
   object MorbidConfig {
 
@@ -161,6 +162,14 @@ object commands {
     account : AccountCode,
     app     : ApplicationCode,
     group   : Option[GroupCode] = None
+  ) extends Command[Seq[RawUserEntry]]
+
+  case class FindAccountsByApp(
+    app: ApplicationCode
+  ) extends Command[Seq[RawAccount]]
+  
+  case class FindUsersByApp(
+    app: ApplicationCode
   ) extends Command[Seq[RawUserEntry]]
 
   case class FindUsersByCode(account: AccountId, codes: Seq[UserCode]) extends Command[Seq[RawUserEntry]]
