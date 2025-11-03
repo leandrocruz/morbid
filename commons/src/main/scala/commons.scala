@@ -239,6 +239,18 @@ object domain {
       email   : Email
     )
 
+    case class RawUserData(
+      id      : UserId,
+      created : LocalDateTime,
+      deleted : Option[LocalDateTime],
+      account : AccountId,
+      kind    : Option[UserKind],
+      code    : UserCode,
+      active  : Boolean,
+      email   : Email,
+      groups  : Seq[RawGroup]             
+    )
+
     case class RawUser(
       details      : RawUserDetails,
       applications : Seq[RawApplication] = Seq.empty
@@ -328,6 +340,7 @@ object domain {
 
     given JsonCodec[RawApplicationDetails] = DeriveJsonCodec.gen
     given JsonCodec[RawApplication]        = DeriveJsonCodec.gen
+    given JsonCodec[RawUserData]           = DeriveJsonCodec.gen
     given JsonCodec[RawUserDetails]        = DeriveJsonCodec.gen
     given JsonCodec[RawGroup]              = DeriveJsonCodec.gen
     given JsonCodec[RawPermission]         = DeriveJsonCodec.gen

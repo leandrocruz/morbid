@@ -870,20 +870,32 @@ object repo {
       }
     }
 
-    private def usersByApp(request: FindUsersByApp): Task[Seq[RawUserEntry]] = {
+    private def usersByApp(request: FindUsersByApp): Task[Seq[RawUserData]] = {
+
+      inline def groupsByUser(user: UserRow) = {
+        quote {
+          for
+            ata <- user2group.join(_.usr == user.id)
+            grp <- groups    .join(_.id == ata.grp)
+          yield grp
+        }
+      }
 
       inline def query = {
         quote {
           for
-            acc <- accountsByAppFilter(request.app)
-            usr <- users.join(_.account == acc.id)
-          yield usr
+            acc  <- accountsByAppFilter(request.app)
+            usr  <- users.join(_.account == acc.id)
+            grps <- groupsByUser(usr)
+          yield (usr, grps)
         }
       }
 
       for
         rows <- exec(run(query))
-      yield rows.map(_.transformInto[RawUserEntry])
+      yield rows.groupBy { (user, _) => user }.view.mapValues { data => data.map { (_, grp) => grp} }.toMap.map {
+        (usr, groups) => usr.into[RawUserData].withFieldConst(_.groups, groups.map(_.into[RawGroup].withFieldConst(_.roles, Seq.empty).transform)).transform
+      }.toSeq
     }
 
     private def usersGiven(request: FindUsersInGroup): Task[Seq[RawUserEntry]] = {
