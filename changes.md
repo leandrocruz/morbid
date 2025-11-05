@@ -1,5 +1,16 @@
 # Morbid
 
+## Release v1.5.0
+LTS: 05/10/2025
+
+ - Added service token authentication for internal API access
+ - New service routes: 
+   - `/service/app/{app}/users`
+   - `/service/app/{app}/accounts`
+ - Added `FindAccountsByApp` and `FindUsersByApp` commands
+ - Added `RawAccount` JSON codec support
+ - Service configuration with token-based authentication
+
 ## Release v1.4.1
 LTS: 24/09/2025 
 

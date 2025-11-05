@@ -340,6 +340,8 @@ object repo {
         case r: FindProviderByDomain   => providerGiven(r)
         case r: FindRoles              => rolesGiven(r)
         case r: FindUsersByCode        => usersGiven(r)
+        case r: FindUsersByApp         => usersByApp(r)
+        case r: FindAccountsByApp      => accountsByApp(r)
         case r: FindUserByEmail        => userGiven(r)
         case r: FindUserById           => userGiven(r)
         case r: FindUsersInGroup       => usersGiven(r)
@@ -842,6 +844,58 @@ object repo {
           _   <- ZIO.log(str)
         } yield ()
       } else ZIO.unit
+    }
+
+    private def accountsByAppFilter(code: ApplicationCode) = quote {
+      for
+        app <- applications if app.code == lift(code)
+        ata <- account2app.join(_.app == app.id)
+        acc <- accounts.join(_.id == ata.acc)
+      yield acc
+    }
+
+    private def accountsByApp(request: FindAccountsByApp): Task[Seq[RawAccount]] = {
+
+      inline def query = quote {
+        for
+          acc <- accountsByAppFilter(request.app)
+          ten <- tenants.join(_.id == acc.tenant)
+        yield (ten, acc)
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.map {
+        (tenant, account) => account.into[RawAccount].withFieldConst(_.tenantCode, tenant.code).transform
+      }
+    }
+
+    private def usersByApp(request: FindUsersByApp): Task[Seq[RawUserData]] = {
+
+      inline def groupsByUser(user: UserRow) = {
+        quote {
+          for
+            ata <- user2group.join(_.usr == user.id)
+            grp <- groups    .join(_.id == ata.grp)
+          yield grp
+        }
+      }
+
+      inline def query = {
+        quote {
+          for
+            acc  <- accountsByAppFilter(request.app)
+            usr  <- users.join(_.account == acc.id)
+            grps <- groupsByUser(usr)
+          yield (usr, grps)
+        }
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.groupBy { (user, _) => user }.view.mapValues { data => data.map { (_, grp) => grp} }.toMap.map {
+        (usr, groups) => usr.into[RawUserData].withFieldConst(_.groups, groups.map(_.into[RawGroup].withFieldConst(_.roles, Seq.empty).transform)).transform
+      }.toSeq
     }
 
     private def usersGiven(request: FindUsersInGroup): Task[Seq[RawUserEntry]] = {
