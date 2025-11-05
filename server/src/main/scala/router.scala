@@ -293,11 +293,18 @@ object router {
         yield ()
       }
 
+      def handleFirebaseUser(req: StoreUserRequest, acc: RawAccount, pass: Password) = {
+        (req.id, req.update) match
+          case (Some(_), Some(false)) | (Some(_), None) => identities.createUser(req.email, acc.tenantCode, pass).asCommonError(10011, "Error storing user identity")
+          case (Some(_), Some(true))                    => identities.getUserByEmail(req.email, acc.tenantCode)
+          case (None   , _)                             => ZIO.fail(Exception(s"User id not provided"))
+      }
+
       for
         req    <- request.body.parse[StoreUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
         acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
         pass   = Password.of(RandomStringUtils.secure().nextAlphanumeric(10))
-        fbUser <- identities.createUser(req.email, acc.tenantCode, pass).asCommonError(10011, "Error storing user identity")
+        fbUser <- handleFirebaseUser(req, acc, pass)
         store  =  buildRequest(req, acc, fbUser.getUid)
         _      <- ZIO.logInfo(s"Storing user ${store.id} - ${store.email} || Account ${store.account.id} || Tenant ${store.account.tenantCode} || Update: ${store.update}")
         user   <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")

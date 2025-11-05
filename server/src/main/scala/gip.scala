@@ -27,14 +27,15 @@ object gip {
   import com.google.firebase.auth.UserRecord.UpdateRequest
 
   sealed trait Identities {
-    def passwordResetLink   (email: Email)                                : Task[Link]
-    def signInWithEmailLink (email: Email, url: String)                   : Task[Link]
-    def changePassword      (email: Email, password: Password)            : Task[Unit]
-    def providerGiven(email: Email, tenant: Option[TenantCode])           : Task[Option[RawIdentityProvider]]
-    def providerGiven(account: AccountId)                                 : Task[Option[RawIdentityProvider]]
-    def verify     (req: VerifyGoogleTokenRequest)                        : Task[CloudIdentity]
-    def claims     (req: SetClaimsRequest)                                : Task[Unit]
-    def createUser (email: Email, tenant: TenantCode, password: Password) : Task[UserRecord]
+    def passwordResetLink   (email: Email)                                         : Task[Link]
+    def signInWithEmailLink (email: Email, url: String)                            : Task[Link]
+    def changePassword      (email: Email, password: Password)                     : Task[Unit]
+    def providerGiven       (email: Email, tenant: Option[TenantCode])             : Task[Option[RawIdentityProvider]]
+    def providerGiven       (account: AccountId)                                   : Task[Option[RawIdentityProvider]]
+    def verify              (req: VerifyGoogleTokenRequest)                        : Task[CloudIdentity]
+    def claims              (req: SetClaimsRequest)                                : Task[Unit]
+    def getUserByEmail      (email: Email, tenant: TenantCode)                     : Task[UserRecord]
+    def createUser          (email: Email, tenant: TenantCode, password: Password) : Task[UserRecord]
   }
 
   case class CloudIdentity(
@@ -154,6 +155,10 @@ object gip {
         .setDisabled (false)
 
       ZIO.attempt { authGiven(Some(tenant)).createUser(req) }
+    }
+
+    override def getUserByEmail(email: Email, tenant: TenantCode): Task[UserRecord] = {
+      ZIO.attempt { authGiven(Some(tenant)).getUserByEmail(Email.value(email)) }
     }
 
     override def passwordResetLink(email: Email): Task[Link] = {
