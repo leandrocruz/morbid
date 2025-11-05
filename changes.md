@@ -1,5 +1,8 @@
 # Morbid
 
+## Release v1.5.0
+LTS: 05/10/2025
+
  - Added service token authentication for internal API access
  - New service routes: 
    - `/service/app/{app}/users`
