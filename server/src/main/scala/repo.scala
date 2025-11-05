@@ -846,9 +846,9 @@ object repo {
       } else ZIO.unit
     }
 
-    private def accountsByAppFilter(appCode: ApplicationCode) = quote {
+    private def accountsByAppFilter(code: ApplicationCode) = quote {
       for
-        app <- applications if app.code == lift(appCode)
+        app <- applications if app.code == lift(code)
         ata <- account2app.join(_.app == app.id)
         acc <- accounts.join(_.id == ata.acc)
       yield acc

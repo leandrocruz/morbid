@@ -164,13 +164,8 @@ object commands {
     group   : Option[GroupCode] = None
   ) extends Command[Seq[RawUserEntry]]
 
-  case class FindAccountsByApp(
-    app: ApplicationCode
-  ) extends Command[Seq[RawAccount]]
-  
-  case class FindUsersByApp(
-    app: ApplicationCode
-  ) extends Command[Seq[RawUserData]]
+  case class FindAccountsByApp(app: ApplicationCode) extends Command[Seq[RawAccount]]
+  case class FindUsersByApp   (app: ApplicationCode) extends Command[Seq[RawUserData]]
 
   case class FindUsersByCode(account: AccountId, codes: Seq[UserCode]) extends Command[Seq[RawUserEntry]]
   case class FindUserById(id: UserId) extends Command[Option[RawUser]]
