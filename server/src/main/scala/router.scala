@@ -204,21 +204,24 @@ object router {
 
       ensureResponse {
         for
+          owner    <- tokenFrom(request)
           req      <- request.body.parse[EmitToken]() .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing request: ${err.getMessage}")))
           same     =  req.magic.is(cfg.magic.password)
           _        <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
-          (_, enc) <- tokenGiven(req.email, req.days.getOrElse(365)) { ensureUser(req.email) }
+          (_, enc) <- tokenGiven(req.email, req.days.getOrElse(365), Some(owner)) { ensureUser(req.email) }
+          _        <- ZIO.logWarning(s"Service Account Token '${req.email}' created by '${owner.user.details.email}'")
         yield Response.text(enc)
       }
     }
 
-    private def tokenGiven(email: Email, days: Int = 1)(ensureUser: Option[RawUser] => Task[RawUser]): Task[(Token, String)] = {
+    private def tokenGiven(email: Email, days: Int = 1, owner: Option[Token] = None)(ensureUser: Option[RawUser] => Task[RawUser]): Task[(Token, String)] = {
       for
         maybeUser <- repo.exec(FindUserByEmail(email)).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error locating user '$email': ${err.getMessage}'")))
         user      <- ensureUser(maybeUser)            .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error ensuring user '$email': ${err.getMessage}'")))
         token     <- tokens.asToken(user, days)       .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error creating token '$email': ${err.getMessage}'")))
-        encoded   <- tokens.encode(token)             .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '$email': ${err.getMessage}'")))
-      yield (token, encoded)
+        result    =  token.copy(impersonatedBy = owner.map(_.user.details))
+        encoded   <- tokens.encode(result)             .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '$email': ${err.getMessage}'")))
+      yield (result, encoded)
     }
 
     private def loginViaEmailLink(app: String, request: Request): Task[Response] = {
