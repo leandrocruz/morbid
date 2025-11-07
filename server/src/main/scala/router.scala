@@ -172,7 +172,7 @@ object router {
 
     private def login(request: Request): Task[Response] = {
 
-      def ensureUser(identity: CloudIdentity, maybeUser: Option[RawUser]): Task[RawUser] = {
+      def ensureUser(identity: CloudIdentity)(maybeUser: Option[RawUser]): Task[RawUser] = {
         maybeUser match {
           case Some(user) => ZIO.succeed(user)
           case None       => accounts.provision(identity).mapError(err => Exception(s"Error provisioning user account for '${identity.email}': ${err.getMessage}", err))
@@ -183,12 +183,19 @@ object router {
         for {
           vgt       <- request.body.parse[VerifyGoogleTokenRequest]() .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing VerifyGoogleTokenRequest: ${err.getMessage}")))
           identity  <- identities.verify(vgt)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error verifying firebase token '${vgt.token}: ${err.getMessage}'")))
-          maybeUser <- repo.exec(FindUserByEmail(identity.email))     .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error locating user '${identity.email}': ${err.getMessage}'")))
-          user      <- ensureUser(identity, maybeUser)                .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error ensuring user '${identity.email}': ${err.getMessage}'")))
-          token     <- tokens.asToken(user)                           .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error creating token '${identity.email}': ${err.getMessage}'")))
-          encoded   <- tokens.encode(token)                           .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '${identity.email}': ${err.getMessage}'")))
-        } yield loginResponse(token, encoded)
+          fn        =  ensureUser(identity)
+          (tk, enc) <- tokenGiven(identity.email) { fn }
+        } yield loginResponse(tk, enc)
       }
+    }
+
+    private def tokenGiven(email: Email)(ensureUser: Option[RawUser] => Task[RawUser]): Task[(Token, String)] = {
+      for {
+        maybeUser <- repo.exec(FindUserByEmail(email)).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error locating user '$email': ${err.getMessage}'")))
+        user      <- ensureUser(maybeUser)            .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error ensuring user '$email': ${err.getMessage}'")))
+        token     <- tokens.asToken(user)             .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error creating token '$email': ${err.getMessage}'")))
+        encoded   <- tokens.encode(token)             .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '$email': ${err.getMessage}'")))
+      } yield (token, encoded)
     }
 
     private def loginViaEmailLink(app: String, request: Request): Task[Response] = {
