@@ -173,29 +173,52 @@ object router {
     private def login(request: Request): Task[Response] = {
 
       def ensureUser(identity: CloudIdentity)(maybeUser: Option[RawUser]): Task[RawUser] = {
-        maybeUser match {
+        maybeUser match
           case Some(user) => ZIO.succeed(user)
           case None       => accounts.provision(identity).mapError(err => Exception(s"Error provisioning user account for '${identity.email}': ${err.getMessage}", err))
-        }
       }
 
       ensureResponse {
-        for {
+        for
           vgt       <- request.body.parse[VerifyGoogleTokenRequest]() .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing VerifyGoogleTokenRequest: ${err.getMessage}")))
           identity  <- identities.verify(vgt)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error verifying firebase token '${vgt.token}: ${err.getMessage}'")))
           fn        =  ensureUser(identity)
           (tk, enc) <- tokenGiven(identity.email) { fn }
-        } yield loginResponse(tk, enc)
+        yield loginResponse(tk, enc)
       }
     }
 
-    private def tokenGiven(email: Email)(ensureUser: Option[RawUser] => Task[RawUser]): Task[(Token, String)] = {
-      for {
+    private def emitToken(request: Request) = {
+
+      def ensureUser(email: Email)(maybe: Option[RawUser]) = {
+        val tuple = for
+          user <- maybe
+          kind <- user.details.kind
+        yield (user, kind)
+
+        tuple match
+          case Some(user, UserKind.SA) => ZIO.succeed(user)
+          case Some(_, _ )             => ZIO.fail(Exception(s"Can't find service account: $email"))
+          case None                    => ZIO.fail(Exception(s"Can't find user: $email"))
+      }
+
+      ensureResponse {
+        for
+          req      <- request.body.parse[EmitToken]() .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing request: ${err.getMessage}")))
+          same     =  req.magic.is(cfg.magic.password)
+          _        <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
+          (_, enc) <- tokenGiven(req.email, req.days.getOrElse(365)) { ensureUser(req.email) }
+        yield Response.text(enc)
+      }
+    }
+
+    private def tokenGiven(email: Email, days: Int = 1)(ensureUser: Option[RawUser] => Task[RawUser]): Task[(Token, String)] = {
+      for
         maybeUser <- repo.exec(FindUserByEmail(email)).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error locating user '$email': ${err.getMessage}'")))
         user      <- ensureUser(maybeUser)            .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error ensuring user '$email': ${err.getMessage}'")))
-        token     <- tokens.asToken(user)             .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error creating token '$email': ${err.getMessage}'")))
+        token     <- tokens.asToken(user, days)       .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error creating token '$email': ${err.getMessage}'")))
         encoded   <- tokens.encode(token)             .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '$email': ${err.getMessage}'")))
-      } yield (token, encoded)
+      yield (token, encoded)
     }
 
     private def loginViaEmailLink(app: String, request: Request): Task[Response] = {
@@ -629,6 +652,7 @@ object router {
       Method.POST / "logoff"                                                    -> Handler.fromFunctionZIO[Request](logoff),
       Method.POST / "verify"                                                    -> Handler.fromFunctionZIO[Request](verify),
       Method.POST / "impersonate"                                               -> Handler.fromFunctionZIO[Request](impersonate),
+      Method.POST / "emit"                                                      -> Handler.fromFunctionZIO[Request](emitToken),
       Method.GET  / "user"                                                      -> Handler.fromFunctionZIO[Request](userBy),
       Method.POST / "user" / "pin" / "validate"                                 -> Handler.fromFunctionZIO[Request](validateUserPin),
       Method.POST / "app" / string("app") / "login" / "email"                   -> handler(loginViaEmailLink),
