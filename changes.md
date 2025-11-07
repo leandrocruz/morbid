@@ -1,5 +1,8 @@
 # Morbid
 
+## Release v1.6.0
+LTS: 07/10/2025
+
  - Emitting tokens for service accounts
  - Scala upgrade 3.3.3 -> 3.7.2
  - Configurable days for tokens
