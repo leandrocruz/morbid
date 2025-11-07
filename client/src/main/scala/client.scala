@@ -158,7 +158,7 @@ object client {
       val app = CompactApplication(
         id      = ApplicationId.of(1),
         code    = appcode,
-        groups  = _groups.map(_.transformInto[CompactGroup])
+        groups  = _groups.map(CompactGroup.of)
       )
 
       Token(

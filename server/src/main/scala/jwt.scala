@@ -19,9 +19,9 @@ object tokens {
   import io.scalaland.chimney.dsl.*
 
   trait TokenGenerator {
-    def verify(payload: String) : Task[Token]
-    def asToken(user: RawUser)  : Task[Token]
-    def encode(token: Token)    : Task[String]
+    def verify(payload: String)              : Task[Token]
+    def asToken(user: RawUser, days: Int = 1): Task[Token]
+    def encode(token: Token)                 : Task[String]
   }
 
   object TokenGenerator {
@@ -52,13 +52,13 @@ object tokens {
   private case class FakeTokenGenerator(zone: ZoneId) extends TokenGenerator {
     override def encode(token: Token)   : Task[String] = ZIO.succeed("TODO: encode token")
 
-    override def asToken(user: RawUser) : Task[Token]  = {
+    override def asToken(user: RawUser, days: Int) : Task[Token]  = {
       for {
         now <- Clock.localDateTime
         at = now.atZone(zone)
       } yield Token(
         created = at,
-        expires = Some(at.plusDays(1)), //TODO: define the expiration policy based on the tenant/account/etc
+        expires = Some(at.plusDays(days)), //TODO: define the expiration policy based on the tenant/account/etc
         user = user.transformInto[CompactUser]
       )
     }
@@ -131,13 +131,13 @@ object tokens {
 
     private val parser = Jwts.parser().verifyWith(key).build()
 
-    override def asToken(user: RawUser): Task[Token] = {
+    override def asToken(user: RawUser, days: Int): Task[Token] = {
       for {
         now <- Clock.localDateTime
         at  =  now.atZone(zone)
       } yield Token(
         created = at,
-        expires = Some(at.plusDays(1)), //TODO: define the expiration policy based on the tenant/account/etc
+        expires = Some(at.plusDays(days)), //TODO: define the expiration policy based on the tenant/account/etc
         user    = user.transformInto[CompactUser]
       )
     }

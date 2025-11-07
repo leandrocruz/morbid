@@ -258,7 +258,7 @@ object domain {
       def narrowTo(application: ApplicationCode): Option[SingleAppUser] = {
         applications
           .find(_.details.code == application)
-          .map(app => SingleAppUser(details, app.transformInto[CompactApplication]))
+          .map(app => SingleAppUser(details, CompactApplication.of(app)))
       }
     }
 
@@ -376,11 +376,19 @@ object domain {
       roles : Seq[RoleCode] = Seq.empty
     )
 
+    object CompactGroup {
+      def of(raw: RawGroup) = raw.transformInto[CompactGroup]
+    }
+
     case class CompactApplication(
       id     : ApplicationId,
       code   : ApplicationCode,
       groups : Seq[CompactGroup] = Seq.empty
     )
+
+    object CompactApplication {
+      def of(raw: RawApplication) = raw.transformInto[CompactApplication]
+    }
 
     case class CompactUser(
       details      : RawUserDetails,
