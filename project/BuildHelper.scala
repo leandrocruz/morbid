@@ -3,7 +3,7 @@ import sbt.Keys._
 
 object BuildHelper {
 
-  val ScalaVersion   = "3.3.3"
+  val ScalaVersion   = "3.7.2"
   val ZioVersion     = "2.1.16" //same as guara
   val ZioJsonVersion = "0.7.39" //same as guara
 
