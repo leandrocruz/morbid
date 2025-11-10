@@ -4,18 +4,19 @@ import zio.*
 
 object repo {
 
+  import commands.*
   import types.*
   import domain.*
   import domain.raw.*
-  import commands.*
-  import morbid.config.MorbidConfig
-  import utils.refineError
   import io.getquill.*
   import io.getquill.jdbczio.Quill
-  import javax.sql.DataSource
+  import io.scalaland.chimney.dsl.*
+  import morbid.config.MorbidConfig
+  import utils.refineError
+
   import java.sql.SQLException
   import java.time.LocalDateTime
-  import io.scalaland.chimney.dsl._
+  import javax.sql.DataSource
 
   /**
    *
@@ -231,11 +232,11 @@ object repo {
 
   private case class DatabaseRepo(config: MorbidConfig, ds: DataSource) extends Repo {
 
-    private type ApplicationGroups = (ApplicationId, GroupRow)
-    private type AppMap[T]         = Map[ApplicationCode, Seq[T]]
-
     import ctx._
     import extras._
+    
+    private type ApplicationGroups = (ApplicationId, GroupRow)
+    private type AppMap[T]         = Map[ApplicationCode, Seq[T]]
 
     private lazy val ctx = new PostgresZioJdbcContext(SnakeCase)
 
@@ -353,7 +354,7 @@ object repo {
         case r: RemoveAccount          => ZIO.fail(Exception("TODO"))
         case r: RemoveGroup            => removeGroup(r)
         case r: RemoveUser             => removeUser(r)
-        case r: ReportUsersByAccount   => usersByAccount(r)
+        case r: UsersByAccount         => usersByAccount(r)
         case r: UserExists             => userExists(r)
     }
 
@@ -1108,7 +1109,7 @@ object repo {
       inline def query = quote {
         (for {
           p <- pins if p.deleted.isEmpty && p.userId == lift(request.user)
-        } yield p).sortBy(_.created)(Ord.desc)
+        } yield p).sortBy(_.created)(using Ord.desc)
       }
 
       for {
@@ -1116,23 +1117,19 @@ object repo {
       } yield rows.headOption.map { _.pin }
     }
 
-    private def usersByAccount(request: ReportUsersByAccount): Task[Map[RawAccount, Int]] = {
+    private def usersByAccount(request: UsersByAccount): Task[Seq[RawUserEntry]] = {
       inline def query = quote {
-        (for {
+        for
           app <- applications                           if app.active && app.deleted.isEmpty && app.code == lift(request.app)
-          a2a <- account2app .join(_.app == app.id)     if               a2a.deleted.isEmpty
+          a2a <- account2app .join(_.app == app.id)     if               a2a.deleted.isEmpty && a2a.acc == lift(request.account)
           acc <- accounts    .join(_.id == a2a.acc)     if acc.active && acc.deleted.isEmpty
           usr <- users       .join(_.account == acc.id) if usr.active && usr.deleted.isEmpty
-        } yield (acc, usr)).groupBy(_._1).map {
-          case (acc, users) => (acc, users.size)
-        }
+        yield usr
       }
 
-      for {
+      for
         rows <- exec(run(query))
-      } yield rows.map {
-        case (account, count) => account.into[RawAccount].withFieldConst(_.tenantCode, TenantCode.of("")).transform -> count.toInt
-      }.toMap
+      yield rows.map(_.transformInto[RawUserEntry])
     }
 
     private def usersGiven(request: FindUsersByCode): Task[Seq[RawUserEntry]] = {

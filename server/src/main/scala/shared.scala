@@ -41,7 +41,9 @@ object utils {
   import zio.json.*
   import zio.http.{Body, Response, Header, Headers}
   import zio.http.Status.InternalServerError
+  import zio.http.Request
 
+  type ValidateToken = Request => Task[Unit]
 
   case class CommonError(
     origin  : String,
@@ -226,7 +228,7 @@ object commands {
   case class FindProviderByAccount(account: AccountId)                      extends Command[Option[RawIdentityProvider]]
   case class FindProviderByDomain(domain: Domain, code: Option[TenantCode]) extends Command[Option[RawIdentityProvider]]
 
-  case class ReportUsersByAccount(app: ApplicationCode) extends Command[Map[RawAccount, Int]]
+  case class UsersByAccount(app: ApplicationCode, account: AccountId) extends Command[Seq[RawUserEntry]]
   case class UserExists(code: UserCode) extends Command[Boolean]
 
   case class RemoveAccount (code: AccountCode)                                   extends Command[Long]

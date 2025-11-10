@@ -1,5 +1,15 @@
 # Morbid
 
+ - Added manager routes for root account operations
+ - Added `Presto` application code and `RootAccount` constants
+ - Refactored `ReportUsersByAccount` to `UsersByAccount` command
+ - Added root account validation for manager operations
+ - New manager routes:
+   - `GET /app/{app}/manager/accounts`
+   - `GET /app/{app}/manager/account/{id}/users`
+ - Improved token validation with `ValidateToken` type alias
+ - Enhanced logging for entity operations
+
 ## Release v1.6.0
 LTS: 07/10/2025
 

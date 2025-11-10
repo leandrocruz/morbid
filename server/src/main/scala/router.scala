@@ -20,7 +20,7 @@ import morbid.repo.Repo
 import morbid.secure.{AppRoute, appRoute, role}
 import morbid.tokens.*
 import morbid.types.*
-import morbid.utils.{asCommonError, errorToResponse, orFail}
+import morbid.utils.*
 import org.apache.commons.lang3.RandomStringUtils
 import zio.*
 import zio.http.*
@@ -91,8 +91,10 @@ object router {
 
     private def testServiceToken(request: Request) = {
 
-      def test(value: String) = ZIO.when(cfg.service.token != value) {
-        ZIO.fail(ReturnResponseError(Response.unauthorized("Bad Authorization")))
+      def test(value: String) = {
+        for
+          _ <- ZIO.when(cfg.service.token != value) { ZIO.fail(ReturnResponseError(Response.unauthorized("Bad Authorization"))) }
+        yield ()
       }
 
       (request.headers.get("X-Morbid-Service-Token"), request.cookie("morbid-service-token")) match
@@ -559,8 +561,6 @@ object router {
 
     private def provisionAccount: AppRoute = role("adm") { request =>
 
-      val Presto = summon[ApplicationCode]
-
       def createGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount): Task[Seq[RawGroup]] = {
 
         val groups = Seq(
@@ -626,24 +626,47 @@ object router {
       }
     }
 
-    private def entitiesByApp[R](request: Request, command: Command[R])(using JsonCodec[R]) = ensureResponse {
+    private def entitiesByValidate[R](validateToken: ValidateToken)(request: Request, command: Command[R])(using JsonCodec[R]) = ensureResponse {
       for
-        _   <- testServiceToken(request)
+        _   <- validateToken(request)
+        tk  <- tokenFrom(request)
+        _   <- ZIO.logInfo(s"Executing 'EntitiesByValidate' | Requested by: ${tk.user.details.email} | Command: ${command.getClass.toString}")
         res <- repo.exec(command)
       yield Response.json(res.toJson)
     }
 
-    private def accountsByApp(app: String, request: Request) = {
-      entitiesByApp(request, FindAccountsByApp(ApplicationCode.of(app)))
+    private def accountsByApp(validateToken: ValidateToken)(app: String, request: Request) = {
+      entitiesByValidate(validateToken)(request, FindAccountsByApp(ApplicationCode.of(app)))
     }
 
-    private def usersByApp(app: String, request: Request) = {
-      entitiesByApp(request, FindUsersByApp(ApplicationCode.of(app)))
+    private def usersByApp(validateToken: ValidateToken)(app: String, request: Request) = {
+      entitiesByValidate(validateToken)(request, FindUsersByApp(ApplicationCode.of(app)))
     }
+
+    private def managerGetUsers(validateToken: ValidateToken)(app: String, id: Long, request: Request) = {
+      entitiesByValidate(requireRootAccount)(request, UsersByAccount(ApplicationCode.of(app), AccountId.of(id)))
+    }
+
+    private def requireRootAccount(request: Request) = {
+      for {
+        tk <- tokenFrom(request)
+        _  <- ZIO.unless(tk.user.details.account == RootAccount) { ZIO.fail(ReturnResponseError(Response.forbidden("Operation required root account"))) }
+      } yield ()
+    }
+
+    private def managerRoutes = Routes(
+//      Method.POST   / "app" / string("app") / "manager/account" -> handler(xxxMethodAccounts(requireRootAccount)),
+//      Method.DELETE / "app" / string("app") / "manager/account" -> handler(xxxMethodAccounts(requireRootAccount)),
+      Method.GET    / "app" / string("app") / "manager/accounts" -> handler(accountsByApp(requireRootAccount)),
+
+//      Method.POST   / "app" / string("app") / "manager/account" / long("id") / "user" -> handler(xxxMethodUsers(requireRootAccount)),
+//      Method.DELETE / "app" / string("app") / "manager/account" / long("id") / "user" -> handler(xxxMethodUsers(requireRootAccount)),
+      Method.GET    / "app" / string("app") / "manager/account" / long("id") / "users" -> handler(managerGetUsers(requireRootAccount)),
+    ).sandbox
 
     private def serviceRoutes = Routes(
-      Method.GET / "service" / "app" / string("app") /"users"    -> handler(usersByApp),
-      Method.GET / "service" / "app" / string("app") /"accounts" -> handler(accountsByApp),
+      Method.GET / "service" / "app" / string("app") /"users"    -> handler(usersByApp(testServiceToken)),
+      Method.GET / "service" / "app" / string("app") /"accounts" -> handler(accountsByApp(testServiceToken)),
     ).sandbox
 
     private def regular = Routes(
@@ -674,6 +697,6 @@ object router {
       Method.POST / "app" / string("app") / "account" / "users"                 -> handler(protect(provisionUsers))
     ).sandbox
 
-    override def routes = Echo.routes ++ regular ++ serviceRoutes @@ cors(corsConfig)
+    override def routes = Echo.routes ++ managerRoutes ++ regular ++ serviceRoutes @@ cors(corsConfig)
   }
 }
