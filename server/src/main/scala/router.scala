@@ -643,7 +643,7 @@ object router {
       entitiesByValidate(validateToken)(request, FindUsersByApp(ApplicationCode.of(app)))
     }
 
-    private def managerGetUsers(validateToken: ValidateToken)(app: String, id: Long, request: Request) = {
+    private def managerGetUsers(app: String, id: Long, request: Request) = {
       entitiesByValidate(requireRootAccount)(request, UsersByAccount(ApplicationCode.of(app), AccountId.of(id)))
     }
 
@@ -661,7 +661,7 @@ object router {
 
 //      Method.POST   / "app" / string("app") / "manager/account" / long("id") / "user" -> handler(xxxMethodUsers(requireRootAccount)),
 //      Method.DELETE / "app" / string("app") / "manager/account" / long("id") / "user" -> handler(xxxMethodUsers(requireRootAccount)),
-      Method.GET    / "app" / string("app") / "manager/account" / long("id") / "users" -> handler(managerGetUsers(requireRootAccount)),
+      Method.GET    / "app" / string("app") / "manager/account" / long("id") / "users" -> handler(managerGetUsers),
     ).sandbox
 
     private def serviceRoutes = Routes(
