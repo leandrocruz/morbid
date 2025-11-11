@@ -483,7 +483,7 @@ object repo {
         def insertWithId(row: AccountRow) = {
           inline def stmt = quote { accounts.insertValue(lift(row)) }
           for
-            _  <- ZIO.log(s"Creating new account '${row.name}' with id ${row.id}")
+            _ <- ZIO.log(s"Creating new account '${row.name}' with id ${row.id}")
             _ <- exec(run(stmt))
           yield raw
         }
@@ -497,9 +497,29 @@ object repo {
           yield raw.copy(id = id)
         }
 
+        def update(row: AccountRow) = {
+          inline def stmt = quote {
+            accounts.filter(_.id == lift(row.id))
+              .update(
+                _.name    -> lift(row.name),
+                _.deleted -> lift(row.deleted),
+                _.active  -> lift(row.active)
+              )
+          }
+
+          for
+            _ <- ZIO.log(s"Updating account '${row.id}' - '${row.name}'")
+            _ <- exec(run(stmt))
+          yield raw
+        }
+
         val row = raw.into[AccountRow].transform
-        if(AccountId.value(raw.id) <= 0) ZIO.fail(Exception(s"Account id '${raw.id}' is not valid"))
-        else                             insertWithId    (row)
+
+        (request.update, AccountId.value(request.id) == 0) match
+          case (true , true)  => ZIO.fail(Exception(s"Update without AccountId")) // Force exception
+          case (true , false) => update(row)
+          case (false, false) => insertWithId(row)
+          case (false, true)  => insertWithoutId(row)
       }
 
       def tenantById: Task[Option[RawTenant]] = {

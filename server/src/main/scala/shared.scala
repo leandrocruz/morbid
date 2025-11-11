@@ -177,10 +177,12 @@ object commands {
   case class DefineUserPin(user: UserId, pin: Sha256Hash) extends Command[Unit]
 
   case class StoreAccount(
-    id     : AccountId  , //Can't be 0
+    id     : AccountId  , // Maybe 0
     tenant : TenantId   ,
     code   : AccountCode,
     name   : AccountName,
+    active : Boolean,
+    update : Boolean,
   ) extends Command[RawAccount]
 
   case class StoreUser(

@@ -1,12 +1,18 @@
 # Morbid
 
- - Added manager routes for root account operations
- - Added `Presto` application code and `RootAccount` constants
+ - Enhanced account management system with root account operations:
+   - Replaced `CreateAccount` with `StoreAccountRequest` for unified account handling
+   - Added account update functionality with `update` and `active` fields
+   - Implemented `POST /app/{app}/manager/account` route for account creation/updates
+   - Added manager routes: `GET /app/{app}/manager/accounts` and `GET /app/{app}/manager/account/{id}/users`
+   - Added root account validation for all manager operations
+ - Improved legacy system integration:
+   - Enhanced `LegacyMorbid` interface with `accountById` and `createAccount` methods
+   - Renamed methods for clarity: `userBy` → `userByEmail`, `create` → `createUser`
+   - Added `CreateLegacyAccountRequest` and enhanced `LegacyAccount` with name field
+   - Better error handling and messaging in legacy operations
+ - Added `RootAccount` constant
  - Refactored `ReportUsersByAccount` to `UsersByAccount` command
- - Added root account validation for manager operations
- - New manager routes:
-   - `GET /app/{app}/manager/accounts`
-   - `GET /app/{app}/manager/account/{id}/users`
  - Improved token validation with `ValidateToken` type alias
  - Enhanced logging for entity operations
 
