@@ -722,7 +722,7 @@ object router {
         _  <- requireRootAccount(request)
         _  <- ZIO.logInfo(s"Delete account $acc || Requested by: ${tk.user.details.email}")
         _  <- repo.exec(RemoveAccount(AccountId.of(acc)))
-      yield Response.ok
+      yield Response.json(true.toJson)
     }
 
     private def managerStoreUser(app: String, acc: Long, request: Request) = {
@@ -742,7 +742,7 @@ object router {
         _  <- requireRootAccount(request)
         _  <- ZIO.logInfo(s"Delete user $code || Requested by: ${tk.user.details.email}")
         _  <- removeUserCommon(AccountId.of(acc), UserCode.of(code))
-      yield Response.ok
+      yield Response.json(true.toJson)
     }
 
     private def requireRootAccount(request: Request) = {

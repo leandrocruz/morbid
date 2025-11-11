@@ -1,5 +1,6 @@
 # Morbid
 
+ - Added new routes at MorbidClient
  - Enhanced account management system with root account operations:
    - Implemented CRUD operations for accounts
      - `GET /app/{app}/manager/accounts`
