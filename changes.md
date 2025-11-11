@@ -1,28 +1,14 @@
 # Morbid
 
  - Enhanced account management system with root account operations:
-   - Replaced `CreateAccount` with `StoreAccountRequest` for unified account handling
-   - Added account update functionality with `update` and `active` fields
    - Implemented CRUD operations for accounts
      - `GET /app/{app}/manager/accounts`
      - `POST /app/{app}/manager/account`
-     - `DELETE /app/{app}/manager/account/{id}`
+     - `DELETE /app/{app}/manager/account/{acc}`
    - Implemented CRUD operations for users
-     - `GET /app/{app}/manager/account/{id}/users`
-     - `POST /app/{app}/manager/account/{id}/user`
-   - Implemented `removeAccount` functionality with soft delete (sets deleted timestamp)
-   - Updated `RemoveAccount` command signature to use `AccountId` and `ApplicationCode`
-   - Added root account validation for all manager operations
-   - Added `RootAccount` constant
- - Improved legacy system integration:
-   - Enhanced `LegacyMorbid` interface with `accountById` and `createAccount` methods
-   - Renamed methods for clarity: `userBy` → `userByEmail`, `create` → `createUser`
-   - Added `CreateLegacyAccountRequest` and enhanced `LegacyAccount` with name field
-   - Better error handling and messaging in legacy operations
- - System improvements:
-   - Refactored `ReportUsersByAccount` to `UsersByAccount` command
-   - Improved token validation with `ValidateToken` type alias
-   - Enhanced logging for entity operations
+     - `GET /app/{app}/manager/account/{acc}/users`
+     - `POST /app/{app}/manager/account/{acc}/user`
+     - `DELETE /app/{app}/manager/account/{acc}/user/{id}`
 
 ## Release v1.6.0
 LTS: 07/10/2025

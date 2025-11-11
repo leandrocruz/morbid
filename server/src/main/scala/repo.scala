@@ -578,7 +578,11 @@ object repo {
 
         def update = {
           inline def stmt = quote {
-            users.filter(_.id == lift(row.id)).update(_.email -> lift(row.email), _.deleted -> lift(row.deleted), _.active -> lift(row.active))
+            users.filter(_.id == lift(row.id))
+              .update(
+                _.deleted -> lift(row.deleted),
+                _.active -> lift(row.active)
+              )
           }
           for
             _ <- ZIO.log(s"Updating user '${row.email}' id ${row.id}")

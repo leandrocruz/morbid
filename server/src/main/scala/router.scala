@@ -392,15 +392,21 @@ object router {
       )
     }
 
+    private def removeUserCommon(account: AccountId, code: UserCode) = {
+      for
+        _ <- repo.exec(RemoveUser(account, code))
+      yield ()
+    }
+
     private def removeUser: AppRoute = role("adm" or "user_adm") { request =>
 
       val token   = summon[SingleAppToken]
       val account = token.user.details.account
 
       for
-        req    <- request.body.parse[RemoveUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
-        result <- repo.exec(RemoveUser(account, req.code))
-      yield Response.json(result.toJson)
+        req <- request.body.parse[RemoveUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        _   <- removeUserCommon(account, req.code)
+      yield Response.ok
     }
 
     private def removeGroup: AppRoute = role("adm" or "group_adm") { request =>
@@ -633,8 +639,8 @@ object router {
       entitiesByValidate(validateToken)(request, FindUsersByApp(ApplicationCode.of(app)))
     }
 
-    private def managerGetUsers(app: String, id: Long, request: Request) = {
-      entitiesByValidate(requireRootAccount)(request, UsersByAccount(ApplicationCode.of(app), AccountId.of(id)))
+    private def managerGetUsers(app: String, acc: Long, request: Request) = {
+      entitiesByValidate(requireRootAccount)(request, UsersByAccount(ApplicationCode.of(app), AccountId.of(acc)))
     }
 
     private def createGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount) = {
@@ -710,24 +716,33 @@ object router {
       yield Response.json(acc.toJson)
     }
 
-    private def deleteAccount(app: String, id: Long, request: Request) = {
+    private def removeAccount(app: String, acc: Long, request: Request) = {
       for
         tk <- tokenFrom(request)
         _  <- requireRootAccount(request)
-        _  <- ZIO.logInfo(s"Delete account $id || Requested by: ${tk.user.details.email}")
-        _  <- repo.exec(RemoveAccount(AccountId.of(id)))
+        _  <- ZIO.logInfo(s"Delete account $acc || Requested by: ${tk.user.details.email}")
+        _  <- repo.exec(RemoveAccount(AccountId.of(acc)))
       yield Response.ok
     }
 
-    private def managerStoreUser(app: String, id: Long, request: Request) = {
+    private def managerStoreUser(app: String, acc: Long, request: Request) = {
       for
         _        <- requireRootAccount(request)
         response <- storeUserCommon(
           request,
-          () => repo.exec(FindAccountById(AccountId.of(id))).orFail(s"Can't find account '$id'"),
+          () => repo.exec(FindAccountById(AccountId.of(acc))).orFail(s"Can't find account '$acc'"),
           () => repo.exec(FindApplicationDetails(ApplicationCode.of(app))).orFail(s"Can't find application '$app'")
         )
       yield response
+    }
+
+    private def managerRemoveUser(app: String, acc: Long, code: String, request: Request) = {
+      for
+        tk <- tokenFrom(request)
+        _  <- requireRootAccount(request)
+        _  <- ZIO.logInfo(s"Delete user $code || Requested by: ${tk.user.details.email}")
+        _  <- removeUserCommon(AccountId.of(acc), UserCode.of(code))
+      yield Response.ok
     }
 
     private def requireRootAccount(request: Request) = {
@@ -738,13 +753,12 @@ object router {
     }
 
     private def managerRoutes = Routes(
-      Method.POST   / "app" / string("app") / "manager/account"              -> handler(storeAccount),
-      Method.DELETE / "app" / string("app") / "manager/account" / long("id") -> handler(deleteAccount),
-      Method.GET    / "app" / string("app") / "manager/accounts"             -> handler(accountsByApp(requireRootAccount)),
-
-      Method.POST   / "app" / string("app") / "manager/account" / long("id") / "user" -> handler(managerStoreUser),
-//      Method.DELETE / "app" / string("app") / "manager/account" / long("id") / "user" -> handler(xxxMethodUsers(requireRootAccount)),
-      Method.GET    / "app" / string("app") / "manager/account" / long("id") / "users" -> handler(managerGetUsers),
+      Method.POST   / "app" / string("app") / "manager/account"                                         -> handler(storeAccount),
+      Method.DELETE / "app" / string("app") / "manager/account" / long("acc")                           -> handler(removeAccount),
+      Method.GET    / "app" / string("app") / "manager/accounts"                                        -> handler(accountsByApp(requireRootAccount)),
+      Method.POST   / "app" / string("app") / "manager/account" / long("acc") / "user"                  -> handler(managerStoreUser),
+      Method.DELETE / "app" / string("app") / "manager/account" / long("acc") / "user" / string("code") -> handler(managerRemoveUser),
+      Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "users"                 -> handler(managerGetUsers),
     ).sandbox
 
     private def serviceRoutes = Routes(
