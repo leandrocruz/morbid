@@ -226,6 +226,7 @@ object commands {
 
   case class FindAccountByProvider(code: ProviderCode) extends Command[Option[RawAccount]]
   case class FindAccountByCode    (code: AccountCode)  extends Command[Option[RawAccount]]
+  case class FindAccountById      (id: AccountId)      extends Command[Option[RawAccount]]
 
   case class FindProviderByAccount(account: AccountId)                      extends Command[Option[RawIdentityProvider]]
   case class FindProviderByDomain(domain: Domain, code: Option[TenantCode]) extends Command[Option[RawIdentityProvider]]

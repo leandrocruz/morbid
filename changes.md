@@ -9,6 +9,7 @@
      - `DELETE /app/{app}/manager/account/{id}`
    - Implemented CRUD operations for users
      - `GET /app/{app}/manager/account/{id}/users`
+     - `POST /app/{app}/manager/account/{id}/user`
    - Implemented `removeAccount` functionality with soft delete (sets deleted timestamp)
    - Updated `RemoveAccount` command signature to use `AccountId` and `ApplicationCode`
    - Added root account validation for all manager operations

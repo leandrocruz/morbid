@@ -13,7 +13,7 @@ import morbid.domain.raw.*
 import morbid.domain.requests.*
 import morbid.domain.token.{SingleAppToken, SingleAppUser, Token}
 import morbid.gip.*
-import morbid.legacy.{CreateLegacyAccountRequest, LegacyMorbid}
+import morbid.legacy.{CreateLegacyAccountRequest, CreateLegacyUserRequest, LegacyMorbid}
 import morbid.passwords.PasswordGenerator
 import morbid.pins.PinManager
 import morbid.proto.*
@@ -302,24 +302,23 @@ object router {
       yield Response.json(created.toJson)).errorToResponse(Response.internalServerError("Error creating group"))
     }
 
-    private def storeUser: AppRoute = role("adm" or "user_adm") { request =>
-
-      val token       = summon[SingleAppToken]
-      val application = token.user.application
+    private def storeUserCommon(
+      request       : Request,
+      getAccount    : () => Task[RawAccount],
+      getApplication: () => Task[RawApplicationDetails]
+    ): Task[Response] = {
 
       def buildRequest(req: StoreUserRequest, account: RawAccount, code: String) =
         req
           .into[StoreUser]
           .withFieldConst(_.id     , req.id.getOrElse(UserId.of(0)))
           .withFieldConst(_.account, account)
-          .withFieldConst(_.code   , UserCode.of(code)) // From firebase
-          .withFieldConst(_.update , req.update.getOrElse(false))
+          .withFieldConst(_.code   , UserCode.of(code))
+          .withFieldConst(_.update , req.update)
           .transform
 
-      def whenNewUser(acc: RawAccount, user: RawUserEntry) = {
-
+      def whenNewUser(acc: RawAccount, user: RawUserEntry, application: RawApplicationDetails) = {
         def link(groupsByApp: Map[ApplicationCode, Seq[RawGroup]], user: RawUserEntry): Task[Unit] = {
-
           def linkTo(group: RawGroup): Task[Unit] = {
             repo.exec {
               LinkUsersToGroup(
@@ -344,22 +343,53 @@ object router {
 
       def handleFirebaseUser(req: StoreUserRequest, acc: RawAccount, pass: Password) = {
         (req.id, req.update) match
-          case (Some(_), Some(false)) | (Some(_), None) => identities.createUser(req.email, acc.tenantCode, pass).asCommonError(10011, "Error storing user identity")
-          case (Some(_), Some(true))                    => identities.getUserByEmail(req.email, acc.tenantCode)
-          case (None   , _)                             => ZIO.fail(Exception(s"User id not provided"))
+          case (Some(_), false) => identities.createUser(req.email, acc.tenantCode, pass).asCommonError(10011, "Error storing user identity")
+          case (Some(_), true)  => identities.getUserByEmail(req.email, acc.tenantCode)
+          case (None   , _)     => ZIO.fail(Exception(s"User id not provided"))
+      }
+
+      def handleLegacyMorbid(req: StoreUserRequest, account: RawAccount) = {
+        def createWithoutId = legacy.createUser(CreateLegacyUserRequest(account.id, "Provisioned by morbid", req.email, "user")).map(a => req.copy(Some(a.id)))
+        def createWithEmail = {
+          for
+            maybe <- legacy.userByEmail(req.email)
+            usr   <- maybe match
+              case Some(user) => ZIO.succeed(req.copy(id = Some(user.id)))
+              case None       => createWithoutId
+          yield usr
+        }
+
+        for
+          acc <- (req.update, req.id) match
+            case (false, _)        => createWithEmail
+            case (true , Some(id)) => ZIO.succeed(req)
+            case (true , None)     => ZIO.fail(Exception("Missing parameter 'id'"))
+        yield acc
       }
 
       for
         req    <- request.body.parse[StoreUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
-        acc    <- repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'")
+        acc    <- getAccount()
+        app    <- getApplication()
         pass   = Password.of(RandomStringUtils.secure().nextAlphanumeric(10))
-        fbUser <- handleFirebaseUser(req, acc, pass)
-        store  =  buildRequest(req, acc, fbUser.getUid)
+        legacy <- handleLegacyMorbid(req, acc)
+        fbUser <- handleFirebaseUser(legacy, acc, pass)
+        store  = buildRequest(legacy, acc, fbUser.getUid)
         _      <- ZIO.logInfo(s"Storing user ${store.id} - ${store.email} || Account ${store.account.id} || Tenant ${store.account.tenantCode} || Update: ${store.update}")
         user   <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")
         _      <- ZIO.logInfo(s"User ${user.id} - ${user.email} stored")
-        _      <- ZIO.when(req.id.isEmpty) { whenNewUser(acc, user) }
+        _      <- ZIO.when(req.id.isEmpty && !req.update) { whenNewUser(acc, user, app) }
       yield Response.json(user.toJson)
+    }
+
+    private def storeUser: AppRoute = role("adm" or "user_adm") { request =>
+      val token = summon[SingleAppToken]
+      val code  = summon[ApplicationCode]
+      storeUserCommon(
+        request,
+        () => repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'"),
+        () => repo.exec(FindApplicationDetails(code)).orFail(s"Can't find application '$code'")
+      )
     }
 
     private def removeUser: AppRoute = role("adm" or "user_adm") { request =>
@@ -629,26 +659,22 @@ object router {
     private def storeAccount(app: String, request: Request) = {
 
       def handleLegacyMorbid(req: StoreAccountRequest) = {
-        
+
+        def createWithoutId = legacy.createAccount(CreateLegacyAccountRequest(req.name, "regular")).map(a => req.copy(Some(a.id)))
+
         def createWithId(id: AccountId) = {
           for
             maybe <- legacy.accountById(id)
             acc   <- maybe match
               case Some(acc) => ZIO.succeed(req.copy(id = Some(acc.id)))
-              case None      => legacy.createAccount(CreateLegacyAccountRequest(req.name, "regular")).map(a => req.copy(Some(a.id)))
-          yield acc
-        }
-        
-        def createWithoutId = {
-          for
-            acc <- legacy.createAccount(CreateLegacyAccountRequest(req.name, "regular")).map(a => req.copy(Some(a.id)))
+              case None      => createWithoutId
           yield acc
         }
         
         for
           acc <- (req.update, req.id) match
             case (false, Some(id)) => createWithId(id)
-            case (false, None)     => createWithoutId
+            case (false, None)     => createWithoutId // TODO Verificar, se não validarmos corretamente, vai ocasionar contas duplicadas, caso a conta já exista no console4 e o usuário não tenha passado o id da conta no Presto por ex
             case (true , Some(id)) => ZIO.succeed(req) // Legacy morbid does not update accounts
             case (true , None)     => ZIO.fail(Exception("Missing parameter 'id'"))
         yield acc
@@ -679,7 +705,7 @@ object router {
         code    = ApplicationCode.of(app)
         maybe   <- repo.exec(FindApplicationDetails(code))
         details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$code'"))
-        acc     <- repo.exec(buildEntity(req))
+        acc     <- repo.exec(buildEntity(legacy))
         _       <- ZIO.unless(req.update) { afterInsert(details, acc, req) }
       yield Response.json(acc.toJson)
     }
@@ -693,11 +719,22 @@ object router {
       yield Response.ok
     }
 
+    private def managerStoreUser(app: String, id: Long, request: Request) = {
+      for
+        _        <- requireRootAccount(request)
+        response <- storeUserCommon(
+          request,
+          () => repo.exec(FindAccountById(AccountId.of(id))).orFail(s"Can't find account '$id'"),
+          () => repo.exec(FindApplicationDetails(ApplicationCode.of(app))).orFail(s"Can't find application '$app'")
+        )
+      yield response
+    }
+
     private def requireRootAccount(request: Request) = {
-      for {
+      for
         tk <- tokenFrom(request)
         _  <- ZIO.unless(tk.user.details.account == RootAccount) { ZIO.fail(ReturnResponseError(Response.forbidden("Operation required root account"))) }
-      } yield ()
+      yield ()
     }
 
     private def managerRoutes = Routes(
@@ -705,7 +742,7 @@ object router {
       Method.DELETE / "app" / string("app") / "manager/account" / long("id") -> handler(deleteAccount),
       Method.GET    / "app" / string("app") / "manager/accounts"             -> handler(accountsByApp(requireRootAccount)),
 
-//      Method.POST   / "app" / string("app") / "manager/account" / long("id") / "user" -> handler(xxxMethodUsers(requireRootAccount)),
+      Method.POST   / "app" / string("app") / "manager/account" / long("id") / "user" -> handler(managerStoreUser),
 //      Method.DELETE / "app" / string("app") / "manager/account" / long("id") / "user" -> handler(xxxMethodUsers(requireRootAccount)),
       Method.GET    / "app" / string("app") / "manager/account" / long("id") / "users" -> handler(managerGetUsers),
     ).sandbox

@@ -33,19 +33,33 @@ object legacy {
     def createAccount(request: CreateLegacyAccountRequest): Task[LegacyAccount]
     def createUser   (request: CreateLegacyUserRequest)   : Task[LegacyUser]
     def userByEmail  (email: Email)                       : Task[Option[LegacyUser]]
+    def userById     (id: UserId)                         : Task[Option[LegacyUser]]
   }
 
   case class LegacyMorbidImpl(url: URL, client: Client, scope: Scope) extends LegacyMorbid {
 
     private val headers = Headers(Header.ContentType(MediaType.application.json))
 
+    private def handleGetUserResponse[T](response: Response, key: T) = {
+      for
+        user <- response.status.code match
+          case 404  => ZIO.succeed(None)
+          case 200  => response.body.parse[LegacyUser]().map(Some(_)).mapError(err => Exception("Error parsing LegacyUser from body", err))
+          case code => ZIO.fail(Exception(s"Error retrieving legacy user '$key'. Result code from legacy is $code"))
+      yield user
+    }
+
     override def userByEmail(email: Email): Task[Option[LegacyUser]] = {
       for
         response <- client.url(url).get(s"/user/email/$email").provideSome(ZLayer.succeed(scope))
-        user     <- response.status.code match
-          case 404  => ZIO.succeed(None)
-          case 200  => response.body.parse[LegacyUser]().map(Some(_)).mapError(err => Exception("Error parsing LegacyUser from body", err))
-          case code => ZIO.fail(Exception(s"Error retrieving legacy user '$email'. Result code from legacy is $code"))
+        user     <- handleGetUserResponse(response, email)
+      yield user
+    }
+
+    override def userById(id: UserId): Task[Option[LegacyUser]] = {
+      for
+        response <- client.url(url).get(s"/user/id/$id").provideSome(ZLayer.succeed(scope))
+        user     <- handleGetUserResponse(response, id)
       yield user
     }
 

@@ -332,6 +332,7 @@ object repo {
         case r: DefineUserPin          => setUserPin(r)
         case r: GetUserPin             => getUserPin(r)
         case r: FindAccountByCode      => accountByCode(r)
+        case r: FindAccountById        => accountById(r)
         case r: FindAccountByProvider  => accountByProvider(r)
         case r: FindApplication        => applicationGiven(r)
         case r: FindApplicationDetails => applicationDetails(r)
@@ -556,16 +557,16 @@ object repo {
       def store(raw: RawUserEntry): Task[RawUserEntry] = {
         val row = raw.transformInto[UserRow]
 
-//        def insertWithoutId = { // temporarily disabled
-//          
-//          inline given InsertMeta[UserRow] = insertMeta[UserRow](_.id)
-//          inline def stmt = quote { users.insertValue(lift(row)).returning(_.id) }
-//          
-//          for {
-//            _  <- ZIO.log(s"Creating new user '${row.email}'")
-//            id <- exec(run(stmt))
-//          } yield raw.copy(id = id)
-//        }
+        def insertWithoutId = {
+
+          inline given InsertMeta[UserRow] = insertMeta[UserRow](_.id)
+          inline def stmt = quote { users.insertValue(lift(row)).returning(_.id) }
+
+          for {
+            _  <- ZIO.log(s"Creating new user '${row.email}'")
+            id <- exec(run(stmt))
+          } yield raw.copy(id = id)
+        }
 
         def insertWithId = {
           inline def stmt = quote { users.insertValue(lift(row)) }
@@ -586,9 +587,10 @@ object repo {
         }
 
         (req.update, UserId.value(req.id) == 0) match
-          case (true , _    ) => update
-          case (_    , false) => insertWithId
-          case (_    , true ) => ZIO.fail(Exception(s"User id not provided")) // Force exception
+          case (true, true)   => ZIO.fail(Exception(s"Update without UserId")) // Force exception
+          case (true, false)  => update
+          case (false, false) => insertWithId
+          case (false, true)  => insertWithoutId
        }
 
       for {
@@ -987,6 +989,21 @@ object repo {
       for {
         rows <- exec(run(query))
       } yield rows.headOption.map {
+        case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform
+      }
+    }
+
+    private def accountById(request: FindAccountById): Task[Option[RawAccount]] = {
+      inline def query = quote {
+        for
+          ten <- tenants                         if ten.active && ten.deleted.isEmpty
+          acc <- accounts.join(_.tenant == ten.id) if acc.active && acc.deleted.isEmpty && acc.id == lift(request.id)
+        yield (ten, acc)
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.headOption.map {
         case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform
       }
     }
