@@ -684,6 +684,15 @@ object router {
       yield Response.json(acc.toJson)
     }
 
+    private def deleteAccount(app: String, id: Long, request: Request) = {
+      for
+        tk <- tokenFrom(request)
+        _  <- requireRootAccount(request)
+        _  <- ZIO.logInfo(s"Delete account $id || Requested by: ${tk.user.details.email}")
+        _  <- repo.exec(RemoveAccount(AccountId.of(id)))
+      yield Response.ok
+    }
+
     private def requireRootAccount(request: Request) = {
       for {
         tk <- tokenFrom(request)
@@ -692,9 +701,9 @@ object router {
     }
 
     private def managerRoutes = Routes(
-      Method.POST   / "app" / string("app") / "manager/account" -> handler(storeAccount),
-//      Method.DELETE / "app" / string("app") / "manager/account" -> handler(xxxMethodAccounts(requireRootAccount)),
-      Method.GET    / "app" / string("app") / "manager/accounts" -> handler(accountsByApp(requireRootAccount)),
+      Method.POST   / "app" / string("app") / "manager/account"              -> handler(storeAccount),
+      Method.DELETE / "app" / string("app") / "manager/account" / long("id") -> handler(deleteAccount),
+      Method.GET    / "app" / string("app") / "manager/accounts"             -> handler(accountsByApp(requireRootAccount)),
 
 //      Method.POST   / "app" / string("app") / "manager/account" / long("id") / "user" -> handler(xxxMethodUsers(requireRootAccount)),
 //      Method.DELETE / "app" / string("app") / "manager/account" / long("id") / "user" -> handler(xxxMethodUsers(requireRootAccount)),

@@ -351,7 +351,7 @@ object repo {
         case r: UnlinkUsersFromGroup   => ZIO.fail(Exception("TODO"))
         case r: LinkGroupToRoles       => ZIO.fail(Exception("TODO"))
         case r: UnlinkGroupFromRoles   => ZIO.fail(Exception("TODO"))
-        case r: RemoveAccount          => ZIO.fail(Exception("TODO"))
+        case r: RemoveAccount          => removeAccount(r)
         case r: RemoveGroup            => removeGroup(r)
         case r: RemoveUser             => removeUser(r)
         case r: UsersByAccount         => usersByAccount(r)
@@ -618,6 +618,27 @@ object repo {
         result <- remove(Some(now))
       } yield result
 
+    }
+
+    private def removeAccount(request: RemoveAccount): Task[Unit] = {
+
+      def remove(now: Option[LocalDateTime]) = {
+        inline def stmt = quote {
+          accounts
+            .filter(_.id == lift(request.id))
+            .update(_.deleted -> lift(now))
+        }
+
+        for
+          count <- exec(run(stmt))
+          _     <- ZIO.when(count != 1) { ZIO.fail(Exception(s"Error removing account '${request.id}'")) }
+        yield ()
+      }
+
+      for
+        now    <- Clock.localDateTime
+        result <- remove(Some(now))
+      yield ()
     }
 
     private def storeGroup(request: StoreGroup): Task[RawGroup] = {
