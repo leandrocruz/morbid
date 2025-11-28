@@ -37,6 +37,7 @@ object cookies {
   val auth = Cookie.Response(
     name       = "morbid-auth",
     content    = "true",
+    maxAge     = Some(1.days),
     isHttpOnly = false,
     sameSite   = Some(SameSite.Lax),
     path       = Some(Path("/"))
@@ -45,6 +46,7 @@ object cookies {
   val token = Cookie.Response(
     name       = "morbid-token",
     content    = "",
+    maxAge     = Some(1.days),
     isHttpOnly = true,
     sameSite   = Some(SameSite.Lax),
     path       = Some(Path("/"))

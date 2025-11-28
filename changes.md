@@ -1,5 +1,7 @@
 # Morbid
 
+ - Added maxAge configuration to authentication cookies (1 day expiration)
+
 ## Release v1.6.0
 LTS: 07/10/2025
 
