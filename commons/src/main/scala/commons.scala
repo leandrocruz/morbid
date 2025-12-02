@@ -463,6 +463,8 @@ object domain {
     case class LoginViaEmailLinkResponse(link: Link)
     case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email)
     case class ImpersonationRequest(email: Email, magic: Magic)
+    case class ExpiryEmailsRequests(accountId: AccountId)
+
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
@@ -477,6 +479,8 @@ object domain {
     given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
     given JsonCodec[ImpersonationRequest]       = DeriveJsonCodec.gen
+    given JsonCodec[ExpiryEmailsRequests]       = DeriveJsonCodec.gen
+
   }
 }
 

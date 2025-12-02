@@ -345,6 +345,7 @@ object repo {
         case r: FindUserByEmail        => userGiven(r)
         case r: FindUserById           => userGiven(r)
         case r: FindUsersInGroup       => usersGiven(r)
+        case r: FindUserByAccounts     => emailsByAccounts(r)
         case r: LinkAccountToApp       => linkAccountToApp(r)
         case r: LinkUsersToGroup       => linkGroups(r)
         case r: UnlinkUsersFromGroup   => ZIO.fail(Exception("TODO"))
@@ -1150,6 +1151,23 @@ object repo {
         _    <- printQuery(query)
         rows <- exec(run(query))
       yield rows.map(_.transformInto[RawUserEntry])
+    }
+
+    private def emailsByAccounts(request: FindUserByAccounts): Task[Seq[Email]] = {
+      inline def query = {
+        quote {
+          for {
+            ten <- tenants if ten.deleted.isEmpty && ten.active
+            acc <- accounts.join(_.tenant == ten.id) if acc.deleted.isEmpty && acc.active && liftQuery(request.accountId).contains(acc.code)
+            usr <- users.join(_.account == acc.id) if usr.deleted.isEmpty && usr.active
+          } yield usr.email
+        }
+      }
+
+      for
+        _ <- printQuery(query)
+        rows <- exec(run(query))
+      yield rows
     }
   }
 }
