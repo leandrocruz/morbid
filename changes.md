@@ -1,5 +1,10 @@
 # Morbid
 
+- Added endpoint to get user emails by account IDs
+    - Add certificateExpiryEmails method to MorbidClient
+    - Add GET `/app/{app}/emails/accounts/{accounts}` route
+    - Add FindUserByAccounts command and repo implementation
+  
 ## Release v1.6.0
 LTS: 07/10/2025
 

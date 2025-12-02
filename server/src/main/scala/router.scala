@@ -80,7 +80,9 @@ object router {
     identities : Identities,
     pins       : PinManager,
     passGen    : PasswordGenerator,
-    tokens     : TokenGenerator
+    tokens     : TokenGenerator,
+    client     : Client,
+    scope      : Scope
   ) extends Router {
 
     private def protect(r: AppRoute)(app: String, request: Request): Task[Response] = {
@@ -259,6 +261,13 @@ object router {
         case ( Some(email), None ) => get(FindUserByEmail(email))
         case ( Some(_), Some(_)  ) => ZIO.succeed(Response.badRequest("Please provider an ID or EMAIL. Not both"))
         case ( None, None        ) => ZIO.succeed(Response.badRequest("Please provider an ID or EMAIL"))
+    }
+
+    private def emailsByAccounts(app: String, accounts: String, request: Request): Task[Response] = {
+      val accountIds = accounts.split(",").map(_.trim.toLong).map(AccountId.of).toSeq
+      for {
+        emails <- repo.exec(FindUserByAccounts(accountIds))
+      } yield Response.json(emails.toJson)
     }
 
     private def storeGroup: AppRoute = role("adm" or "group_adm") { request =>
@@ -647,31 +656,32 @@ object router {
     ).sandbox
 
     private def regular = Routes(
-      Method.GET  / "applications"                                              -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
-      Method.GET  / "application" / string("app")                               -> handler(applicationGiven),
-      Method.POST / "login" / "provider"                                        -> Handler.fromFunctionZIO[Request](loginProvider),
-      Method.GET  / "login" / "provider"                                        -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
-      Method.POST / "login"                                                     -> Handler.fromFunctionZIO[Request](login),
-      Method.POST / "logoff"                                                    -> Handler.fromFunctionZIO[Request](logoff),
-      Method.POST / "verify"                                                    -> Handler.fromFunctionZIO[Request](verify),
-      Method.POST / "impersonate"                                               -> Handler.fromFunctionZIO[Request](impersonate),
-      Method.POST / "emit"                                                      -> Handler.fromFunctionZIO[Request](emitToken),
-      Method.GET  / "user"                                                      -> Handler.fromFunctionZIO[Request](userBy),
-      Method.POST / "user" / "pin" / "validate"                                 -> Handler.fromFunctionZIO[Request](validateUserPin),
-      Method.POST / "app" / string("app") / "login" / "email"                   -> handler(loginViaEmailLink),
-      Method.POST / "app" / string("app") / "user" / "pin"                      -> handler(protect(setUserPin)),
-      Method.POST / "app" / string("app") / "password" / "reset"                -> handler(protect(passwordResetLink)),
-      Method.POST / "app" / string("app") / "password" / "change"               -> handler(protect(changePassword)),
-      Method.GET  / "app" / string("app") / "users"                             -> handler(protect(usersGiven)),
-      Method.POST / "app" / string("app") / "user"                              -> handler(protect(storeUser)),
-      Method.POST / "app" / string("app") / "user"  / "delete"                  -> handler(protect(removeUser)),
-      Method.GET  / "app" / string("app") / "groups"                            -> handler(groupsGiven),
-      Method.POST / "app" / string("app") / "group"                             -> handler(protect(storeGroup)),
-      Method.POST / "app" / string("app") / "group" / "delete"                  -> handler(protect(removeGroup)),
-      Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
-      Method.GET  / "app" / string("app") / "roles"                             -> handler(rolesGiven),
-      Method.POST / "app" / string("app") / "account"                           -> handler(protect(provisionAccount)),
-      Method.POST / "app" / string("app") / "account" / "users"                 -> handler(protect(provisionUsers))
+      Method.GET  / "applications"                                                     -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
+      Method.GET  / "application" / string("app")                                      -> handler(applicationGiven),
+      Method.POST / "login" / "provider"                                               -> Handler.fromFunctionZIO[Request](loginProvider),
+      Method.GET  / "login" / "provider"                                               -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
+      Method.POST / "login"                                                            -> Handler.fromFunctionZIO[Request](login),
+      Method.POST / "logoff"                                                           -> Handler.fromFunctionZIO[Request](logoff),
+      Method.POST / "verify"                                                           -> Handler.fromFunctionZIO[Request](verify),
+      Method.POST / "impersonate"                                                      -> Handler.fromFunctionZIO[Request](impersonate),
+      Method.POST / "emit"                                                             -> Handler.fromFunctionZIO[Request](emitToken),
+      Method.GET  / "user"                                                             -> Handler.fromFunctionZIO[Request](userBy),
+      Method.POST / "user" / "pin" / "validate"                                        -> Handler.fromFunctionZIO[Request](validateUserPin),
+      Method.POST / "app" / string("app") / "login" / "email"                          -> handler(loginViaEmailLink),
+      Method.POST / "app" / string("app") / "user" / "pin"                             -> handler(protect(setUserPin)),
+      Method.POST / "app" / string("app") / "password" / "reset"                       -> handler(protect(passwordResetLink)),
+      Method.POST / "app" / string("app") / "password" / "change"                      -> handler(protect(changePassword)),
+      Method.GET  / "app" / string("app") / "users"                                    -> handler(protect(usersGiven)),
+      Method.POST / "app" / string("app") / "user"                                     -> handler(protect(storeUser)),
+      Method.POST / "app" / string("app") / "user"  / "delete"                         -> handler(protect(removeUser)),
+      Method.GET  / "app" / string("app") / "groups"                                   -> handler(groupsGiven),
+      Method.POST / "app" / string("app") / "group"                                    -> handler(protect(storeGroup)),
+      Method.POST / "app" / string("app") / "group" / "delete"                         -> handler(protect(removeGroup)),
+      Method.GET  / "app" / string("app") / "group"  / string("code") / "users"        -> handler(groupUsers),
+      Method.GET  / "app" / string("app") / "roles"                                    -> handler(rolesGiven),
+      Method.POST / "app" / string("app") / "account"                                  -> handler(protect(provisionAccount)),
+      Method.POST / "app" / string("app") / "account" / "users"                        -> handler(protect(provisionUsers)),
+      Method.GET  / "app" / string("app") / "emails" / "accounts" / string("accounts") -> handler(emailsByAccounts)
     ).sandbox
 
     override def routes = Echo.routes ++ regular ++ serviceRoutes @@ cors(corsConfig)
