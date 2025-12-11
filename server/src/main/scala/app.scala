@@ -5,7 +5,6 @@ import guara.GuaraApp
 import guara.background.BackgroundServices
 import guara.processor.Processor
 import morbid.accounts.AccountManager
-import morbid.billing.Billing
 import morbid.config.MorbidConfig
 import morbid.gip.Identities
 import morbid.legacy.LegacyMorbid
@@ -31,7 +30,6 @@ object MorbidServer extends GuaraApp {
     Scope.default,
     LegacyMorbid.layer,
     AccountManager.layer,
-    Billing.layer,
     Identities.layer,
     MorbidRouter.layer,
     PasswordGenerator.layer,
