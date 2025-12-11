@@ -1,5 +1,8 @@
 # Morbid
 
+## Release v1.7.0
+LTS: 11/12/2025
+
  - Added new routes at MorbidClient
  - Enhanced account management system with root account operations:
    - Implemented CRUD operations for accounts
