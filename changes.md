@@ -1,5 +1,10 @@
 # Morbid
 
+## Release v1.7.1
+LTS: 11/12/2025
+
+ - Minor fix at router.scala: When registering a user, if the request is from a non-admin user, it must belong to the same account. 
+
 ## Release v1.7.0
 LTS: 11/12/2025
 

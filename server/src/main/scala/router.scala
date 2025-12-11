@@ -12,7 +12,7 @@ import morbid.domain.raw.*
 import morbid.domain.requests.*
 import morbid.domain.token.{SingleAppToken, SingleAppUser, Token}
 import morbid.gip.*
-import morbid.legacy.{CreateLegacyAccountRequest, CreateLegacyUserRequest, LegacyMorbid}
+import morbid.legacy.{CreateLegacyAccountRequest, CreateLegacyUserRequest, LegacyMorbid, LegacyUser}
 import morbid.passwords.PasswordGenerator
 import morbid.pins.PinManager
 import morbid.proto.*
@@ -303,9 +303,10 @@ object router {
     }
 
     private def storeUserCommon(
-      request       : Request,
-      getAccount    : () => Task[RawAccount],
-      getApplication: () => Task[RawApplicationDetails]
+      request             : Request,
+      getAccount          : ()         => Task[RawAccount],
+      getApplication      : ()         => Task[RawApplicationDetails],
+      validateSameAccount : LegacyUser => Task[Unit]
     ): Task[Response] = {
 
       def buildRequest(req: StoreUserRequest, account: RawAccount, code: String) =
@@ -354,8 +355,10 @@ object router {
           for
             maybe <- legacy.userByEmail(req.email)
             usr   <- maybe match
-              case Some(user) => ZIO.succeed(req.copy(id = Some(user.id)))
               case None       => createWithoutId
+              case Some(user) =>
+                validateSameAccount(user)
+                ZIO.succeed(req.copy(id = Some(user.id)))
           yield usr
         }
 
@@ -387,8 +390,9 @@ object router {
       val code  = summon[ApplicationCode]
       storeUserCommon(
         request,
-        () => repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'"),
-        () => repo.exec(FindApplicationDetails(code)).orFail(s"Can't find application '$code'")
+        ()   => repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'"),
+        ()   => repo.exec(FindApplicationDetails(code)).orFail(s"Can't find application '$code'"),
+        user => ZIO.whenDiscard(user.account.id != token.user.details.account) { ZIO.fail(ReturnResponseError(Response.badRequest(s"User already exists in another account || requested by: ${token.user.details.email}")))}
       )
     }
 
@@ -730,8 +734,9 @@ object router {
         _        <- requireRootAccount(request)
         response <- storeUserCommon(
           request,
-          () => repo.exec(FindAccountById(AccountId.of(acc))).orFail(s"Can't find account '$acc'"),
-          () => repo.exec(FindApplicationDetails(ApplicationCode.of(app))).orFail(s"Can't find application '$app'")
+          ()   => repo.exec(FindAccountById(AccountId.of(acc))).orFail(s"Can't find account '$acc'"),
+          ()   => repo.exec(FindApplicationDetails(ApplicationCode.of(app))).orFail(s"Can't find application '$app'"),
+          user => ZIO.unit
         )
       yield response
     }
