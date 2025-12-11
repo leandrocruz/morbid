@@ -6,7 +6,6 @@ object client {
 
   import guara.errors.{ReturnResponseError, ReturnResponseWithExceptionError}
   import guara.utils.{parse, queryParams}
-  import io.scalaland.chimney.dsl.*
   import morbid.domain.*
   import morbid.domain.raw.*
   import morbid.domain.requests.{*, given}
@@ -35,6 +34,13 @@ object client {
     def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode): Task[Boolean]
     def validatePin       (request: ValidateUserPin)           (using token: RawToken                      ): Task[Boolean]
     def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode): Task[LoginViaEmailLinkResponse]
+    
+    def managerGetUsers     (account: AccountId)                           (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
+    def managerStoreUser    (request: StoreUserRequest, account: AccountId)(using token: RawToken, app: ApplicationCode): Task[RawUserEntry]
+    def managerRemoveUser   (account: AccountId, code: UserCode)           (using token: RawToken, app: ApplicationCode): Task[Boolean]
+    def managerGetAccounts                                                 (using token: RawToken, app: ApplicationCode): Task[Seq[RawAccount]]
+    def managerStoreAccount (request: StoreAccountRequest)                 (using token: RawToken, app: ApplicationCode): Task[RawAccount]
+    def managerRemoveAccount(account: AccountId)                           (using token: RawToken, app: ApplicationCode): Task[Boolean]
   }
 
   case class MorbidClientConfig(url: String)
@@ -93,7 +99,8 @@ object client {
       } yield result
     }
 
-    private def get [T]   (token: Option[RawToken],url: URL)            (using dec: JsonDecoder[T])                     : Task[T] = exec(token, Request.get(url))
+    private def delete[T] (token: Option[RawToken], url: URL)           (using dec: JsonDecoder[T])                     : Task[T] = exec(token, Request.get(url))
+    private def get [T]   (token: Option[RawToken], url: URL)           (using dec: JsonDecoder[T])                     : Task[T] = exec(token, Request.get(url))
     private def post[R, T](token: Option[RawToken], url: URL, req: R)   (using dec: JsonDecoder[T], enc: JsonEncoder[R]): Task[T] = exec(token, Request.post(url, Body.fromString(req.toJson)).copy(headers = applicationJson))
 
     override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = get [Option[RawGroup]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "group")
@@ -111,6 +118,13 @@ object client {
     override def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode) = post[SetUserPin, Boolean]                                 (Some(token),  base / "app" / ApplicationCode.value(app) / "user" / "pin", request)
     override def validatePin       (request: ValidateUserPin)           (using token: RawToken                      ) = post[ValidateUserPin, Boolean]                            (Some(token),  base                                      / "user" / "pin" / "validate", request)
     override def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode) = post[LoginViaEmailLinkRequest, LoginViaEmailLinkResponse] (None       ,  base / "app" / ApplicationCode.value(app) / "login" / "email", request)
+
+    override def managerGetUsers     (account: AccountId)                           (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]               (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString / "users")
+    override def managerStoreUser    (request: StoreUserRequest, account: AccountId)(using token: RawToken, app: ApplicationCode) = post[StoreUserRequest, RawUserEntry] (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString / "user", request)
+    override def managerRemoveUser   (account: AccountId, code: UserCode)           (using token: RawToken, app: ApplicationCode) = delete[Boolean]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString / "user" / UserCode.value(code))
+    override def managerGetAccounts                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawAccount]]                 (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "accounts")
+    override def managerStoreAccount (request: StoreAccountRequest)                 (using token: RawToken, app: ApplicationCode) = post[StoreAccountRequest, RawAccount](Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account", request)
+    override def managerRemoveAccount(account: AccountId)                           (using token: RawToken, app: ApplicationCode) = delete[Boolean]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString)
   }
 
   case class FakeMorbidClient(appcode: ApplicationCode) extends MorbidClient {
@@ -182,5 +196,12 @@ object client {
         )
       )
     }
+    
+    override def managerGetUsers     (account: AccountId)                           (using token: RawToken, app: ApplicationCode) = ???
+    override def managerStoreUser    (request: StoreUserRequest, account: AccountId)(using token: RawToken, app: ApplicationCode) = ???
+    override def managerRemoveUser   (account: AccountId, code: UserCode)           (using token: RawToken, app: ApplicationCode) = ???
+    override def managerGetAccounts                                                 (using token: RawToken, app: ApplicationCode) = ???
+    override def managerStoreAccount (request: StoreAccountRequest)                 (using token: RawToken, app: ApplicationCode) = ???
+    override def managerRemoveAccount(account: AccountId)                           (using token: RawToken, app: ApplicationCode) = ???
   }
 }

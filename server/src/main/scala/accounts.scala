@@ -66,10 +66,10 @@ object accounts {
 
         def legacyUser(account: RawAccount): Task[LegacyUser] = {
 
-          def create = legacyMorbid.create(CreateLegacyUserRequest(account = account.id, name = "Provisioned by Morbid", email = identity.email, `type` = "user"))
+          def create = legacyMorbid.createUser(CreateLegacyUserRequest(account = account.id, name = "Provisioned by Morbid", email = identity.email, `type` = "user"))
 
           for {
-            maybe <- legacyMorbid.userBy(identity.email)
+            maybe <- legacyMorbid.userByEmail(identity.email)
             user  <- maybe.map(ZIO.succeed).getOrElse(create)
           } yield user
         }
@@ -123,7 +123,7 @@ object accounts {
 
         val email = Email.of(line)
         for {
-          legacy  <- legacyMorbid.userBy(email)
+          legacy  <- legacyMorbid.userByEmail(email)
           current <- repo.exec(FindUserByEmail(email))
           result  <- handle(email, legacy, current).either
         } yield (email, result.toTry)

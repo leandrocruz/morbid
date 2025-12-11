@@ -41,7 +41,9 @@ object utils {
   import zio.json.*
   import zio.http.{Body, Response, Header, Headers}
   import zio.http.Status.InternalServerError
+  import zio.http.Request
 
+  type ValidateToken = Request => Task[Unit]
 
   case class CommonError(
     origin  : String,
@@ -175,10 +177,12 @@ object commands {
   case class DefineUserPin(user: UserId, pin: Sha256Hash) extends Command[Unit]
 
   case class StoreAccount(
-    id     : AccountId  , //Can't be 0
+    id     : AccountId  , // Maybe 0
     tenant : TenantId   ,
     code   : AccountCode,
     name   : AccountName,
+    active : Boolean,
+    update : Boolean,
   ) extends Command[RawAccount]
 
   case class StoreUser(
@@ -222,14 +226,15 @@ object commands {
 
   case class FindAccountByProvider(code: ProviderCode) extends Command[Option[RawAccount]]
   case class FindAccountByCode    (code: AccountCode)  extends Command[Option[RawAccount]]
+  case class FindAccountById      (id: AccountId)      extends Command[Option[RawAccount]]
 
   case class FindProviderByAccount(account: AccountId)                      extends Command[Option[RawIdentityProvider]]
   case class FindProviderByDomain(domain: Domain, code: Option[TenantCode]) extends Command[Option[RawIdentityProvider]]
 
-  case class ReportUsersByAccount(app: ApplicationCode) extends Command[Map[RawAccount, Int]]
+  case class UsersByAccount(app: ApplicationCode, account: AccountId) extends Command[Seq[RawUserEntry]]
   case class UserExists(code: UserCode) extends Command[Boolean]
 
-  case class RemoveAccount (code: AccountCode)                                   extends Command[Long]
+  case class RemoveAccount (id: AccountId)                                       extends Command[Unit]
   case class RemoveUser    (acc: AccountId, code: UserCode)                      extends Command[Long]
   case class RemoveGroup   (acc: AccountId, app: ApplicationId, code: GroupCode) extends Command[Long]
 }

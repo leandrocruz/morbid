@@ -4,18 +4,19 @@ import zio.*
 
 object repo {
 
+  import commands.*
   import types.*
   import domain.*
   import domain.raw.*
-  import commands.*
-  import morbid.config.MorbidConfig
-  import utils.refineError
   import io.getquill.*
   import io.getquill.jdbczio.Quill
-  import javax.sql.DataSource
+  import io.scalaland.chimney.dsl.*
+  import morbid.config.MorbidConfig
+  import utils.refineError
+
   import java.sql.SQLException
   import java.time.LocalDateTime
-  import io.scalaland.chimney.dsl._
+  import javax.sql.DataSource
 
   /**
    *
@@ -231,11 +232,11 @@ object repo {
 
   private case class DatabaseRepo(config: MorbidConfig, ds: DataSource) extends Repo {
 
-    private type ApplicationGroups = (ApplicationId, GroupRow)
-    private type AppMap[T]         = Map[ApplicationCode, Seq[T]]
-
     import ctx._
     import extras._
+    
+    private type ApplicationGroups = (ApplicationId, GroupRow)
+    private type AppMap[T]         = Map[ApplicationCode, Seq[T]]
 
     private lazy val ctx = new PostgresZioJdbcContext(SnakeCase)
 
@@ -331,6 +332,7 @@ object repo {
         case r: DefineUserPin          => setUserPin(r)
         case r: GetUserPin             => getUserPin(r)
         case r: FindAccountByCode      => accountByCode(r)
+        case r: FindAccountById        => accountById(r)
         case r: FindAccountByProvider  => accountByProvider(r)
         case r: FindApplication        => applicationGiven(r)
         case r: FindApplicationDetails => applicationDetails(r)
@@ -350,10 +352,10 @@ object repo {
         case r: UnlinkUsersFromGroup   => ZIO.fail(Exception("TODO"))
         case r: LinkGroupToRoles       => ZIO.fail(Exception("TODO"))
         case r: UnlinkGroupFromRoles   => ZIO.fail(Exception("TODO"))
-        case r: RemoveAccount          => ZIO.fail(Exception("TODO"))
+        case r: RemoveAccount          => removeAccount(r)
         case r: RemoveGroup            => removeGroup(r)
         case r: RemoveUser             => removeUser(r)
-        case r: ReportUsersByAccount   => usersByAccount(r)
+        case r: UsersByAccount         => usersByAccount(r)
         case r: UserExists             => userExists(r)
     }
 
@@ -482,7 +484,7 @@ object repo {
         def insertWithId(row: AccountRow) = {
           inline def stmt = quote { accounts.insertValue(lift(row)) }
           for
-            _  <- ZIO.log(s"Creating new account '${row.name}' with id ${row.id}")
+            _ <- ZIO.log(s"Creating new account '${row.name}' with id ${row.id}")
             _ <- exec(run(stmt))
           yield raw
         }
@@ -496,9 +498,29 @@ object repo {
           yield raw.copy(id = id)
         }
 
+        def update(row: AccountRow) = {
+          inline def stmt = quote {
+            accounts.filter(_.id == lift(row.id))
+              .update(
+                _.name    -> lift(row.name),
+                _.deleted -> lift(row.deleted),
+                _.active  -> lift(row.active)
+              )
+          }
+
+          for
+            _ <- ZIO.log(s"Updating account '${row.id}' - '${row.name}'")
+            _ <- exec(run(stmt))
+          yield raw
+        }
+
         val row = raw.into[AccountRow].transform
-        if(AccountId.value(raw.id) <= 0) ZIO.fail(Exception(s"Account id '${raw.id}' is not valid"))
-        else                             insertWithId    (row)
+
+        (request.update, AccountId.value(request.id) == 0) match
+          case (true , true)  => ZIO.fail(Exception(s"Update without AccountId")) // Force exception
+          case (true , false) => update(row)
+          case (false, false) => insertWithId(row)
+          case (false, true)  => insertWithoutId(row)
       }
 
       def tenantById: Task[Option[RawTenant]] = {
@@ -535,16 +557,16 @@ object repo {
       def store(raw: RawUserEntry): Task[RawUserEntry] = {
         val row = raw.transformInto[UserRow]
 
-//        def insertWithoutId = { // temporarily disabled
-//          
-//          inline given InsertMeta[UserRow] = insertMeta[UserRow](_.id)
-//          inline def stmt = quote { users.insertValue(lift(row)).returning(_.id) }
-//          
-//          for {
-//            _  <- ZIO.log(s"Creating new user '${row.email}'")
-//            id <- exec(run(stmt))
-//          } yield raw.copy(id = id)
-//        }
+        def insertWithoutId = {
+
+          inline given InsertMeta[UserRow] = insertMeta[UserRow](_.id)
+          inline def stmt = quote { users.insertValue(lift(row)).returning(_.id) }
+
+          for {
+            _  <- ZIO.log(s"Creating new user '${row.email}'")
+            id <- exec(run(stmt))
+          } yield raw.copy(id = id)
+        }
 
         def insertWithId = {
           inline def stmt = quote { users.insertValue(lift(row)) }
@@ -556,7 +578,11 @@ object repo {
 
         def update = {
           inline def stmt = quote {
-            users.filter(_.id == lift(row.id)).update(_.email -> lift(row.email), _.deleted -> lift(row.deleted), _.active -> lift(row.active))
+            users.filter(_.id == lift(row.id))
+              .update(
+                _.deleted -> lift(row.deleted),
+                _.active -> lift(row.active)
+              )
           }
           for
             _ <- ZIO.log(s"Updating user '${row.email}' id ${row.id}")
@@ -565,9 +591,10 @@ object repo {
         }
 
         (req.update, UserId.value(req.id) == 0) match
-          case (true , _    ) => update
-          case (_    , false) => insertWithId
-          case (_    , true ) => ZIO.fail(Exception(s"User id not provided")) // Force exception
+          case (true, true)   => ZIO.fail(Exception(s"Update without UserId")) // Force exception
+          case (true, false)  => update
+          case (false, false) => insertWithId
+          case (false, true)  => insertWithoutId
        }
 
       for {
@@ -597,6 +624,27 @@ object repo {
         result <- remove(Some(now))
       } yield result
 
+    }
+
+    private def removeAccount(request: RemoveAccount): Task[Unit] = {
+
+      def remove(now: Option[LocalDateTime]) = {
+        inline def stmt = quote {
+          accounts
+            .filter(_.id == lift(request.id))
+            .update(_.deleted -> lift(now))
+        }
+
+        for
+          count <- exec(run(stmt))
+          _     <- ZIO.when(count != 1) { ZIO.fail(Exception(s"Error removing account '${request.id}'")) }
+        yield ()
+      }
+
+      for
+        now    <- Clock.localDateTime
+        result <- remove(Some(now))
+      yield ()
     }
 
     private def storeGroup(request: StoreGroup): Task[RawGroup] = {
@@ -949,6 +997,21 @@ object repo {
       }
     }
 
+    private def accountById(request: FindAccountById): Task[Option[RawAccount]] = {
+      inline def query = quote {
+        for
+          ten <- tenants                         if ten.active && ten.deleted.isEmpty
+          acc <- accounts.join(_.tenant == ten.id) if acc.active && acc.deleted.isEmpty && acc.id == lift(request.id)
+        yield (ten, acc)
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.headOption.map {
+        case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform
+      }
+    }
+
     private def applicationDetailsGiven(request: FindApplications): Task[Seq[RawApplicationDetails]] = {
 
       inline def query = quote {
@@ -1108,7 +1171,7 @@ object repo {
       inline def query = quote {
         (for {
           p <- pins if p.deleted.isEmpty && p.userId == lift(request.user)
-        } yield p).sortBy(_.created)(Ord.desc)
+        } yield p).sortBy(_.created)(using Ord.desc)
       }
 
       for {
@@ -1116,23 +1179,19 @@ object repo {
       } yield rows.headOption.map { _.pin }
     }
 
-    private def usersByAccount(request: ReportUsersByAccount): Task[Map[RawAccount, Int]] = {
+    private def usersByAccount(request: UsersByAccount): Task[Seq[RawUserEntry]] = {
       inline def query = quote {
-        (for {
+        for
           app <- applications                           if app.active && app.deleted.isEmpty && app.code == lift(request.app)
-          a2a <- account2app .join(_.app == app.id)     if               a2a.deleted.isEmpty
+          a2a <- account2app .join(_.app == app.id)     if               a2a.deleted.isEmpty && a2a.acc == lift(request.account)
           acc <- accounts    .join(_.id == a2a.acc)     if acc.active && acc.deleted.isEmpty
           usr <- users       .join(_.account == acc.id) if usr.active && usr.deleted.isEmpty
-        } yield (acc, usr)).groupBy(_._1).map {
-          case (acc, users) => (acc, users.size)
-        }
+        yield usr
       }
 
-      for {
+      for
         rows <- exec(run(query))
-      } yield rows.map {
-        case (account, count) => account.into[RawAccount].withFieldConst(_.tenantCode, TenantCode.of("")).transform -> count.toInt
-      }.toMap
+      yield rows.map(_.transformInto[RawUserEntry])
     }
 
     private def usersGiven(request: FindUsersByCode): Task[Seq[RawUserEntry]] = {

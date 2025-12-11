@@ -1,5 +1,22 @@
 # Morbid
 
+## Release v1.7.0
+LTS: 11/12/2025
+
+ - Added new routes at MorbidClient
+ - Enhanced account management system with root account operations:
+   - Implemented CRUD operations for accounts
+     - `GET /app/{app}/manager/accounts`
+     - `POST /app/{app}/manager/account`
+     - `DELETE /app/{app}/manager/account/{acc}`
+   - Implemented CRUD operations for users
+     - `GET /app/{app}/manager/account/{acc}/users`
+     - `POST /app/{app}/manager/account/{acc}/user`
+     - `DELETE /app/{app}/manager/account/{acc}/user/{id}`
+
+ - Removed the Billing trait
+ - Added maxAge configuration to authentication cookies (1 day expiration)
+
 ## Release v1.6.0
 LTS: 07/10/2025
 
