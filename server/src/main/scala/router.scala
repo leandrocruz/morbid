@@ -5,7 +5,6 @@ import guara.router.{Echo, Router}
 import guara.utils.{Origin, ensureResponse, parse}
 import io.scalaland.chimney.dsl.*
 import morbid.accounts.AccountManager
-import morbid.billing.Billing
 import morbid.commands.*
 import morbid.config.MorbidConfig
 import morbid.domain.*
@@ -38,6 +37,7 @@ object cookies {
   val auth = Cookie.Response(
     name       = "morbid-auth",
     content    = "true",
+    maxAge     = Some(1.days),
     isHttpOnly = false,
     sameSite   = Some(SameSite.Lax),
     path       = Some(Path("/"))
@@ -46,6 +46,7 @@ object cookies {
   val token = Cookie.Response(
     name       = "morbid-token",
     content    = "",
+    maxAge     = Some(1.days),
     isHttpOnly = true,
     sameSite   = Some(SameSite.Lax),
     path       = Some(Path("/"))
@@ -76,7 +77,6 @@ object router {
   case class MorbidRouter(
     repo       : Repo,
     accounts   : AccountManager,
-    billing    : Billing,
     cfg        : MorbidConfig,
     identities : Identities,
     pins       : PinManager,
