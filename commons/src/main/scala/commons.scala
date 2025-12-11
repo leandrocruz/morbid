@@ -187,7 +187,6 @@ object domain {
   import zio.json.internal.Write
   import java.time.{LocalDateTime, ZonedDateTime}
 
-  val Presto      = ApplicationCode.of("presto")
   val RootAccount = AccountId.of(1)
 
   trait HasEmail {
