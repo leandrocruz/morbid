@@ -1,5 +1,32 @@
 # Morbid
 
+ - Added endpoint to get user emails by account IDs
+   - Add certificateExpiryEmails method to MorbidClient
+   - Add GET `/app/{app}/emails/accounts/{accounts}` route
+   - Add FindUserByAccounts command and repo implementation
+ 
+## Release v1.7.1
+LTS: 11/12/2025
+
+ - Minor fix at router.scala: When registering a user, if the request is from a non-admin user, it must belong to the same account. 
+
+## Release v1.7.0
+LTS: 11/12/2025
+
+ - Added new routes at MorbidClient
+ - Enhanced account management system with root account operations:
+   - Implemented CRUD operations for accounts
+     - `GET /app/{app}/manager/accounts`
+     - `POST /app/{app}/manager/account`
+     - `DELETE /app/{app}/manager/account/{acc}`
+   - Implemented CRUD operations for users
+     - `GET /app/{app}/manager/account/{acc}/users`
+     - `POST /app/{app}/manager/account/{acc}/user`
+     - `DELETE /app/{app}/manager/account/{acc}/user/{id}`
+
+ - Removed the Billing trait
+ - Added maxAge configuration to authentication cookies (1 day expiration)
+
 ## Release v1.6.0
 LTS: 07/10/2025
 

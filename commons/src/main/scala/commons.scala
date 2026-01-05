@@ -187,6 +187,8 @@ object domain {
   import zio.json.internal.Write
   import java.time.{LocalDateTime, ZonedDateTime}
 
+  val RootAccount = AccountId.of(1)
+
   trait HasEmail {
     def email: Email
   }
@@ -451,7 +453,8 @@ object domain {
 
   object requests {
     case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
-    case class StoreUserRequest(id: Option[UserId], code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], active: Boolean, update: Option[Boolean] /* TODO: remove this as soon as we migrate all users from legacy */)
+    case class StoreUserRequest(id: Option[UserId], code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], active: Boolean, update: Boolean /* TODO: remove this as soon as we migrate all users from legacy */)
+    case class StoreAccountRequest(id: Option[AccountId], tenant: TenantId, name: AccountName, code: AccountCode, active: Boolean, update: Boolean)
     case class RequestPasswordRequestLink(email: Email) extends HasEmail
     case class ChangePasswordRequest(email: Email, password: Password) extends HasEmail
     case class PasswordResetLink(link: Link)
@@ -461,7 +464,6 @@ object domain {
     case class RemoveGroupRequest(code: GroupCode)
     case class LoginViaEmailLinkRequest(email: Email, url: String)
     case class LoginViaEmailLinkResponse(link: Link)
-    case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email)
     case class ImpersonationRequest(email: Email, magic: Magic)
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
@@ -474,7 +476,7 @@ object domain {
     given JsonCodec[RemoveGroupRequest]         = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
-    given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
+    given JsonCodec[StoreAccountRequest]        = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
     given JsonCodec[ImpersonationRequest]       = DeriveJsonCodec.gen
   }
