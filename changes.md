@@ -1,5 +1,8 @@
 # Morbid
 
+ - Using guara v1.1.11
+ - The endpoint for provisioning accounts has been added again.
+
 ## Release v1.7.1
 LTS: 11/12/2025
 
