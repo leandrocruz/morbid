@@ -1,9 +1,9 @@
 # Morbid
 
- - Added endpoint to get user emails by account IDs
-   - Add certificateExpiryEmails method to MorbidClient
-   - Add GET `/app/{app}/emails/accounts/{accounts}` route
-   - Add FindUserByAccounts command and repo implementation
+ - Add endpoint to get admin users by accounts
+   - `GET /service/app/{app}/accounts/adms`
+ - Refactoring security implementation of service and manager routes
+ - Implementation to call service routes for MorbidClient (client.scala)
  
 ## Release v1.7.1
 LTS: 11/12/2025
