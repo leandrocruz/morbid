@@ -175,7 +175,7 @@ object commands {
   case class FindUserByEmail(email: Email) extends Command[Option[RawUser]]
   case class GetUserPin(user: UserId) extends Command[Option[Sha256Hash]]
   case class DefineUserPin(user: UserId, pin: Sha256Hash) extends Command[Unit]
-  case class FindUserByAccounts(accountId: Seq[AccountId]) extends Command[Seq[Email]]
+  case class FindAdmsOfAccounts(app: ApplicationCode) extends Command[Seq[RawAccountAdmin]]
 
   case class StoreAccount(
     id     : AccountId  , // Maybe 0
