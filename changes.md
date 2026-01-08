@@ -4,7 +4,7 @@
    - `GET /service/app/{app}/accounts/adms`
  - Refactoring security implementation of service and manager routes
  - Implementation to call service routes for MorbidClient (client.scala)
- 
+
 ## Release v1.7.1
 LTS: 11/12/2025
 

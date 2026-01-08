@@ -83,8 +83,7 @@ object router {
     passGen    : PasswordGenerator,
     tokens     : TokenGenerator,
     legacy     : LegacyMorbid,
-    client     : Client,
-    scope      : Scope
+    client     : Client
   ) extends Router {
 
     private def protect(r: AppRoute)(app: String, request: Request): Task[Response] = {
@@ -809,6 +808,6 @@ object router {
       Method.POST / "app" / string("app") / "account" / "users"                 -> handler(protect(provisionUsers)),
     ).sandbox
 
-    override def routes = Echo.routes ++ regular ++ serviceRoutes @@ cors(corsConfig)
+    override def routes = Echo.routes ++ managerRoutes ++ regular ++ serviceRoutes @@ cors(corsConfig)
   }
 }
