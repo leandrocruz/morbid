@@ -313,6 +313,13 @@ object domain {
       roles   : Seq[RawRole] = Seq.empty
     )
 
+    case class RawUserGroup(
+      groupId   : GroupId,
+      groupName : GroupName,
+      userId    : UserId,
+      userEmail : Email
+    )
+
     case class RawPermission(
       id      : PermissionId,
       created : LocalDateTime,
@@ -345,6 +352,7 @@ object domain {
     given JsonCodec[RawUserData]           = DeriveJsonCodec.gen
     given JsonCodec[RawUserDetails]        = DeriveJsonCodec.gen
     given JsonCodec[RawGroup]              = DeriveJsonCodec.gen
+    given JsonCodec[RawUserGroup]          = DeriveJsonCodec.gen
     given JsonCodec[RawPermission]         = DeriveJsonCodec.gen
     given JsonCodec[RawRole]               = DeriveJsonCodec.gen
     given JsonCodec[RawUser]               = DeriveJsonCodec.gen
