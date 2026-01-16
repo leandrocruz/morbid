@@ -589,6 +589,56 @@ object router {
 
     }
 
+    private def provisionAccount: AppRoute = role("adm") { request =>
+
+      val Presto = summon[ApplicationCode]
+
+      def createGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount): Task[Seq[RawGroup]] = {
+
+        val groups = Seq(
+          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.all  , name = GroupName.of("Todos"), roles = Seq.empty),
+          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.admin, name = GroupName.of("Admin"), roles = Seq.empty)
+        )
+
+        val commands = groups.map { group =>
+          val roles = if(group.code == GroupCode.admin) Seq(RoleCode.of("adm")) else Seq.empty
+          StoreGroup(account = acc.id, accountCode = acc.code, application = app, group = group, users = Seq.empty, roles = roles)
+        }
+
+        ZIO.foreach(commands) {
+          repo.exec
+        }
+      }
+
+      for {
+        req     <- request.body.parse[CreateAccount]()
+        _       <- ZIO.logInfo(s"Account Provisioning '${req.email}'")
+        maybe   <- repo.exec(FindApplicationDetails(Presto))
+        details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$Presto'"))
+        acc     <- repo.exec {
+          req
+            .into[StoreAccount]
+            .withFieldConst(_.active, true)
+            .withFieldConst(_.update, false)
+            .transform
+        }
+        app     =  RawApplication(details)
+        _       <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
+        now     <- Clock.localDateTime
+        groups  <- createGroups(now, app, acc)
+        admin   <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find group 'admin' after account creation"))
+        all     <- ZIO.fromOption(groups.find(_.code == GroupCode.all)  .map(_.id)).mapError(_ => Exception("Can't find group 'all' after account creation"))
+        fbUser  <- identities.createUser(req.email, acc.tenantCode, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
+        store   = StoreUser(id = req.user, email = req.email, code = UserCode.of(fbUser.getUid), account = acc, kind = None, update = false, active = true)
+        user    <- repo.exec(store)
+        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = admin, users = Seq(user.id)))
+        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = all  , users = Seq(user.id)))
+        created <- repo.exec(FindUserById(user.id))
+      } yield created match
+        case None        => Response.internalServerError(s"Error provisioning account ${req.email}")
+        case Some(value) => Response.json(value.toJson)
+    }
+
     private def provisionUsers: AppRoute = role("adm") { request =>
 
       val appCode = summon[ApplicationCode]
@@ -742,7 +792,7 @@ object router {
     }
 
     // https://ziohttp.com/reference/aop/handler_aspect
-    def requireServiceToken = HandlerAspect.interceptIncomingHandler { 
+    def requireServiceToken = HandlerAspect.interceptIncomingHandler {
       Handler.fromFunctionZIO { request =>
         def test(value: String) = {
           for
@@ -805,7 +855,8 @@ object router {
       Method.POST / "app" / string("app") / "group" / "delete"                  -> handler(protect(removeGroup)),
       Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
       Method.GET  / "app" / string("app") / "roles"                             -> handler(rolesGiven),
-      Method.POST / "app" / string("app") / "account" / "users"                 -> handler(protect(provisionUsers)),
+      Method.POST / "app" / string("app") / "account"                           -> handler(protect(provisionAccount)),
+      Method.POST / "app" / string("app") / "account" / "users"                 -> handler(protect(provisionUsers))
     ).sandbox
 
     override def routes = Echo.routes ++ managerRoutes ++ regular ++ serviceRoutes @@ cors(corsConfig)
