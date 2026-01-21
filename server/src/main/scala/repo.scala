@@ -347,6 +347,7 @@ object repo {
         case r: FindUserByEmail        => userGiven(r)
         case r: FindUserById           => userGiven(r)
         case r: FindUsersInGroup       => usersGiven(r)
+        case r: FindAdmsOfAccounts     => admsOfAccounts(r)
         case r: LinkAccountToApp       => linkAccountToApp(r)
         case r: LinkUsersToGroup       => linkGroups(r)
         case r: UnlinkUsersFromGroup   => ZIO.fail(Exception("TODO"))
@@ -1209,6 +1210,35 @@ object repo {
         _    <- printQuery(query)
         rows <- exec(run(query))
       yield rows.map(_.transformInto[RawUserEntry])
+    }
+
+    private def admsOfAccounts(request: FindAdmsOfAccounts): Task[Seq[RawAccountAdmin]] = {
+      inline def query = {
+        quote {
+          for
+            app <- applications                      if app.deleted.isEmpty && app.code == lift(request.app)
+            ata <- account2app.join(_.app == app.id) if ata.deleted.isEmpty
+            acc <- accounts.join   (_.id == ata.acc) if acc.deleted.isEmpty && acc.active
+            grp <- groups.join     (_.acc == acc.id) if grp.deleted.isEmpty && grp.code == lift(GroupCode.admin)
+            utg <- user2group.join (_.grp == grp.id) if utg.deleted.isEmpty
+            usr <- users.join      (_.id == utg.usr) if usr.deleted.isEmpty && usr.active
+          yield (acc, usr)
+        }
+      }
+
+      def groupRows(rows: Seq[(AccountRow, UserRow)]) = {
+        rows.groupMap(_._1)(_._2).map { r =>
+          RawAccountAdmin(
+            id    = r._1.id,
+            name  = r._1.name,
+            users = r._2.map(_.transformInto[RawUserEntry])
+          )
+        }.toSeq
+      }
+      
+      for
+        rows <- exec(run(query))
+      yield groupRows(rows)
     }
   }
 }

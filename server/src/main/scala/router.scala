@@ -83,6 +83,7 @@ object router {
     passGen    : PasswordGenerator,
     tokens     : TokenGenerator,
     legacy     : LegacyMorbid,
+    client     : Client
   ) extends Router {
 
     private def protect(r: AppRoute)(app: String, request: Request): Task[Response] = {
@@ -90,20 +91,6 @@ object router {
     }
 
     private def forbidden(cause: Throwable) = ReturnResponseError(Response.forbidden(s"Error verifying token: ${cause.getMessage}"))
-
-    private def testServiceToken(request: Request) = {
-
-      def test(value: String) = {
-        for
-          _ <- ZIO.when(cfg.service.token != value) { ZIO.fail(ReturnResponseError(Response.unauthorized("Bad Authorization"))) }
-        yield ()
-      }
-
-      (request.headers.get("X-Morbid-Service-Token"), request.cookie("morbid-service-token")) match
-        case (None, None)      => ZIO.fail(ReturnResponseError(Response.unauthorized("Authorization cookie or header is missing")))
-        case (Some(header), _) => test(header)
-        case (_, Some(cookie)) => test(cookie.content)
-    }
 
     private def tokenFrom(request: Request): Task[Token] = {
       (request.headers.get("X-MorbidToken"), request.cookie("morbid-token")) match
@@ -372,13 +359,14 @@ object router {
 
       for
         req    <- request.body.parse[StoreUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        token  <- tokenFrom(request)
         acc    <- getAccount()
         app    <- getApplication()
         pass   = Password.of(RandomStringUtils.secure().nextAlphanumeric(10))
         legacy <- handleLegacyMorbid(req, acc)
         fbUser <- handleFirebaseUser(legacy, acc, pass)
         store  = buildRequest(legacy, acc, fbUser.getUid)
-        _      <- ZIO.logInfo(s"Storing user ${store.id} - ${store.email} || Account ${store.account.id} || Tenant ${store.account.tenantCode} || Update: ${store.update}")
+        _      <- ZIO.logInfo(s"Storing user ${store.id} - ${store.email} || Account ${store.account.id} || Tenant ${store.account.tenantCode} || Update: ${store.update} || requested by: ${token.user.details.email}")
         user   <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")
         _      <- ZIO.logInfo(s"User ${user.id} - ${user.email} stored")
         _      <- ZIO.when(req.id.isEmpty && !req.update) { whenNewUser(acc, user, app) }
@@ -676,25 +664,32 @@ object router {
       }
     }
 
-    private def entitiesByValidate[R](validateToken: ValidateToken)(request: Request, command: Command[R])(using JsonCodec[R]) = ensureResponse {
+    private def accountsByApp(app: String, request: Request): Task[Response] = {
       for
-        _   <- validateToken(request)
-        tk  <- tokenFrom(request)
-        _   <- ZIO.logInfo(s"Executing 'EntitiesByValidate' | Requested by: ${tk.user.details.email} | Command: ${command.getClass.toString}")
-        res <- repo.exec(command)
-      yield Response.json(res.toJson)
+        _     <- ZIO.logInfo(s"Service: Get all accounts by app: $app")
+        users <- repo.exec(FindAccountsByApp(ApplicationCode.of(app)))
+      yield Response.json(users.toJson)
     }
 
-    private def accountsByApp(validateToken: ValidateToken)(app: String, request: Request) = {
-      entitiesByValidate(validateToken)(request, FindAccountsByApp(ApplicationCode.of(app)))
+    private def usersByApp(app: String, request: Request): Task[Response] = {
+      for
+        _     <- ZIO.logInfo(s"Service: Get all users by app: $app")
+        users <- repo.exec(FindUsersByApp(ApplicationCode.of(app)))
+      yield Response.json(users.toJson)
     }
 
-    private def usersByApp(validateToken: ValidateToken)(app: String, request: Request) = {
-      entitiesByValidate(validateToken)(request, FindUsersByApp(ApplicationCode.of(app)))
+    private def admsOfAccounts(app: String, request: Request): Task[Response] = {
+      for
+        _     <- ZIO.logInfo(s"Service: Get all admin users by app: $app")
+        users <- repo.exec(FindAdmsOfAccounts(ApplicationCode.of(app)))
+      yield Response.json(users.toJson)
     }
 
     private def managerGetUsers(app: String, acc: Long, request: Request) = {
-      entitiesByValidate(requireRootAccount)(request, UsersByAccount(ApplicationCode.of(app), AccountId.of(acc)))
+      for
+        _     <- ZIO.logInfo(s"Manager: Get all users by app: $app and account: $acc")
+        users <- repo.exec(UsersByAccount(ApplicationCode.of(app), AccountId.of(acc)))
+      yield Response.json(users.toJson)
     }
 
     private def createGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount) = {
@@ -730,7 +725,7 @@ object router {
               case None      => createWithoutId
           yield acc
         }
-        
+
         for
           acc <- (req.update, req.id) match
             case (false, Some(id)) => createWithId(id)
@@ -758,9 +753,8 @@ object router {
 
       for
         tk      <- tokenFrom(request)
-        _       <- requireRootAccount(request)
         req     <- request.body.parse[StoreAccountRequest]()
-        _       <- ZIO.logInfo(s"Store account ${req.id} - ${req.name} || Requested by: ${tk.user.details.email}")
+        _       <- ZIO.logInfo(s"Manager: Store account ${req.id} - ${req.name} || Requested by: ${tk.user.details.email}")
         legacy  <- handleLegacyMorbid(req)
         code    = ApplicationCode.of(app)
         maybe   <- repo.exec(FindApplicationDetails(code))
@@ -773,15 +767,13 @@ object router {
     private def removeAccount(app: String, acc: Long, request: Request) = {
       for
         tk <- tokenFrom(request)
-        _  <- requireRootAccount(request)
-        _  <- ZIO.logInfo(s"Delete account $acc || Requested by: ${tk.user.details.email}")
+        _  <- ZIO.logInfo(s"Manager: Delete account $acc || Requested by: ${tk.user.details.email}")
         _  <- repo.exec(RemoveAccount(AccountId.of(acc)))
       yield Response.json(true.toJson)
     }
 
     private def managerStoreUser(app: String, acc: Long, request: Request) = {
       for
-        _        <- requireRootAccount(request)
         response <- storeUserCommon(
           request,
           ()   => repo.exec(FindAccountById(AccountId.of(acc))).orFail(s"Can't find account '$acc'"),
@@ -794,32 +786,50 @@ object router {
     private def managerRemoveUser(app: String, acc: Long, code: String, request: Request) = {
       for
         tk <- tokenFrom(request)
-        _  <- requireRootAccount(request)
-        _  <- ZIO.logInfo(s"Delete user $code || Requested by: ${tk.user.details.email}")
+        _  <- ZIO.logInfo(s"Manager: Delete user $code || Requested by: ${tk.user.details.email}")
         _  <- removeUserCommon(AccountId.of(acc), UserCode.of(code))
       yield Response.json(true.toJson)
     }
 
-    private def requireRootAccount(request: Request) = {
-      for
-        tk <- tokenFrom(request)
-        _  <- ZIO.unless(tk.user.details.account == RootAccount) { ZIO.fail(ReturnResponseError(Response.forbidden("Operation required root account"))) }
-      yield ()
+    // https://ziohttp.com/reference/aop/handler_aspect
+    def requireServiceToken = HandlerAspect.interceptIncomingHandler {
+      Handler.fromFunctionZIO { request =>
+        def test(value: String) = {
+          for
+            _ <- ZIO.when(cfg.service.token != value) { ZIO.fail(Response.unauthorized("Bad Authorization")) }
+          yield (request, ())
+        }
+
+        (request.headers.get("X-Morbid-Service-Token"), request.cookie("morbid-service-token")) match
+          case (None, None)      => ZIO.fail(Response.unauthorized("Authorization cookie or header is missing"))
+          case (Some(header), _) => test(header)
+          case (_, Some(cookie)) => test(cookie.content)
+      }
+    }
+
+    def requireRoot = HandlerAspect.interceptIncomingHandler {
+      Handler.fromFunctionZIO { request =>
+        for
+          tk <- tokenFrom(request).catchAll(_ => ZIO.fail(Response.forbidden("Invalid or missing token")))
+          _  <- ZIO.unless(tk.user.details.account == RootAccount) { ZIO.fail(Response.forbidden("Operation required root account")) }
+        yield (request, ())
+      }
     }
 
     private def managerRoutes = Routes(
       Method.POST   / "app" / string("app") / "manager/account"                                         -> handler(storeAccount),
       Method.DELETE / "app" / string("app") / "manager/account" / long("acc")                           -> handler(removeAccount),
-      Method.GET    / "app" / string("app") / "manager/accounts"                                        -> handler(accountsByApp(requireRootAccount)),
+      Method.GET    / "app" / string("app") / "manager/accounts"                                        -> handler(accountsByApp),
       Method.POST   / "app" / string("app") / "manager/account" / long("acc") / "user"                  -> handler(managerStoreUser),
       Method.DELETE / "app" / string("app") / "manager/account" / long("acc") / "user" / string("code") -> handler(managerRemoveUser),
       Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "users"                 -> handler(managerGetUsers),
-    ).sandbox
+    ).sandbox @@ requireRoot
 
     private def serviceRoutes = Routes(
-      Method.GET / "service" / "app" / string("app") /"users"    -> handler(usersByApp(testServiceToken)),
-      Method.GET / "service" / "app" / string("app") /"accounts" -> handler(accountsByApp(testServiceToken)),
-    ).sandbox
+      Method.GET / "service" / "app" / string("app") / "users"             -> handler(usersByApp),
+      Method.GET / "service" / "app" / string("app") / "accounts"          -> handler(accountsByApp),
+      Method.GET / "service" / "app" / string("app") / "accounts" / "adms" -> handler(admsOfAccounts)
+    ).sandbox @@ requireServiceToken
 
     private def regular = Routes(
       Method.GET  / "applications"                                              -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),

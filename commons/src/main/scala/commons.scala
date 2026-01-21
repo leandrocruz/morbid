@@ -230,6 +230,12 @@ object domain {
       name       : AccountName,
     )
 
+    case class RawAccountAdmin(
+      id    : AccountId,
+      name  : AccountName,
+      users : Seq[RawUserEntry]
+    )
+
     case class RawUserEntry(
       id      : UserId,
       created : LocalDateTime,
@@ -349,6 +355,7 @@ object domain {
     given JsonCodec[RawRole]               = DeriveJsonCodec.gen
     given JsonCodec[RawUser]               = DeriveJsonCodec.gen
     given JsonCodec[RawUserEntry]          = DeriveJsonCodec.gen
+    given JsonCodec[RawAccountAdmin]       = DeriveJsonCodec.gen
     given JsonCodec[RawAccount]            = DeriveJsonCodec.gen
     given JsonCodec[RawIdentityProvider]   = DeriveJsonCodec.gen
   }
@@ -359,14 +366,20 @@ object domain {
     import io.scalaland.chimney.Transformer
     import io.scalaland.chimney.dsl.*
 
-    opaque type RawToken = String
+    opaque type ServiceToken = String
+    opaque type RawToken     = String
+
+    object ServiceToken {
+      def of(value: String): ServiceToken = value
+      given JsonCodec[ServiceToken]       = JsonCodec.string
+    }
 
     object RawToken {
       def of(value: String): RawToken = value
       given JsonCodec[RawToken] = JsonCodec.string
     }
 
-    extension (it: RawToken)
+    extension (it: RawToken | ServiceToken)
       def string: String = it
 
     trait HasRoles {
@@ -466,6 +479,7 @@ object domain {
     case class LoginViaEmailLinkResponse(link: Link)
     case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email)
     case class ImpersonationRequest(email: Email, magic: Magic)
+    case class ExpiryEmailsRequests(accountId: AccountId)
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
@@ -481,6 +495,7 @@ object domain {
     given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
     given JsonCodec[ImpersonationRequest]       = DeriveJsonCodec.gen
+    given JsonCodec[ExpiryEmailsRequests]       = DeriveJsonCodec.gen
   }
 }
 

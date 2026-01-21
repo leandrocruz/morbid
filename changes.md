@@ -1,5 +1,10 @@
 # Morbid
 
+ - Add endpoint to get admin users by accounts
+   - `GET /service/app/{app}/accounts/adms`
+ - Refactoring security implementation of service and manager routes
+ - Implementation to call service routes for MorbidClient (client.scala)
+
 ## Release v1.8.0
 LTS: 16/01/2026
 
