@@ -678,7 +678,7 @@ object router {
 
     private def usersGroups: AppRoute = role("adm") { request =>
       val appCode = summon[ApplicationCode]
-
+      
       for
         tk  <- tokenFrom(request)
         seq <- repo.exec(FindGroupsUsers(tk.user.details.account, appCode))
