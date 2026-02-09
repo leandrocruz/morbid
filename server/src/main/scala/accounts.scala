@@ -121,7 +121,7 @@ object accounts {
             case (Some(user), None)    => store(user)
         }
 
-        val email = Email.of(line)
+        val email = Email.of(line).toLowerCase
         for {
           legacy  <- legacyMorbid.userByEmail(email)
           current <- repo.exec(FindUserByEmail(email))
