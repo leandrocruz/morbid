@@ -166,6 +166,8 @@ object types {
         case userFrom(value) => Some(EmailUser.of(value))
         case _ => None
       }
+      
+    def toLowerCase: Email = it.toLowerCase
   }
 
   extension (it: Password) {
