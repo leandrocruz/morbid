@@ -3,6 +3,16 @@
  - Added new route for reports
    - `GET /app/{app}/users/groups`
 
+## Release v1.8.2
+LTS: 09/02/2026
+
+ - Using guara v1.1.13
+
+## Release v1.8.1
+LTS: 09/02/2026
+
+- Force the use of lowercase letters in emails (Firebase saves users' emails in lowercase, avoiding case-sensitive discrepancies when the user tries to log in, since the select is case-sensitive).
+
 ## Release v1.8.0
 LTS: 16/01/2026
 
