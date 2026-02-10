@@ -1,5 +1,8 @@
 # Morbid
 
+ - Added new route for reports
+   - `GET /app/{app}/users/groups`
+
 ## Release v1.8.2
 LTS: 09/02/2026
 
