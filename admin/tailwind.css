@@ -1,0 +1,195 @@
+@import "tailwindcss";
+
+@source "./target/**/*.js";
+
+@theme {
+  --color-admin-bg:         #F2F3F0;
+  --color-admin-sidebar:    #E7E8E5;
+  --color-admin-accent:     #FF8400;
+  --color-admin-card:       #FFFFFF;
+  --color-admin-text:       #111111;
+  --color-admin-muted:      #666666;
+  --color-admin-border:     #CBCCC9;
+  --color-admin-hover:      #CBCCC9;
+  --color-admin-success-bg: #DFE6E1;
+  --color-admin-success-fg: #004D1A;
+  --color-admin-error-bg:   #E5DCDA;
+  --color-admin-error-fg:   #8C1C00;
+  --color-admin-warning-bg: #E9E3D8;
+  --color-admin-warning-fg: #804200;
+  --font-sans:    'Inter', 'sans-serif';
+  --font-mono:    'JetBrains Mono', 'monospace';
+}
+
+@layer base {
+    :root {
+        --bg-color-main    : #F2F3F0;
+        --border-color-main: #CBCCC9;
+    }
+}
+
+/* Medulla Grid Layout */
+div.medulla.simple.grid-layout {
+    @apply min-h-screen grid grid-cols-1 md:grid-cols-[280px_1fr] grid-rows-[64px_auto] text-admin-text font-sans bg-admin-bg;
+}
+
+div.medulla.simple.grid-layout .logo {
+    @apply hidden md:grid place-items-center bg-admin-sidebar border-r border-admin-border;
+}
+
+div.medulla.simple.grid-layout .top {
+    @apply sticky top-0 flex py-3 px-6 gap-x-4 justify-between items-center h-full border-b border-admin-border bg-white z-10;
+}
+
+div.medulla.simple.grid-layout .left {
+    @apply hidden md:block py-4 px-3 bg-admin-sidebar text-admin-text overflow-y-auto border-r border-admin-border;
+}
+
+div.medulla.simple.grid-layout .main {
+    @apply h-full w-full relative p-6 bg-admin-bg overflow-y-auto;
+}
+
+/* Medulla Buttons */
+button.medulla {
+    @apply py-2.5 px-4 rounded-full disabled:opacity-70 disabled:cursor-not-allowed transition-colors font-mono text-sm font-medium;
+}
+
+button.medulla.primary {
+    @apply bg-admin-accent text-admin-text hover:bg-orange-500;
+}
+
+button.medulla.secondary {
+    @apply bg-admin-bg text-admin-text hover:bg-admin-hover border border-admin-border;
+}
+
+/* Medulla Inputs */
+input.medulla,
+select.medulla,
+textarea.medulla {
+    @apply px-3 py-2 w-full focus:outline-hidden rounded-sm border border-admin-border font-sans text-sm;
+}
+
+/* Sidebar Navigation */
+div.sidebar-section {
+    @apply mb-1;
+}
+
+div.sidebar-section .section-header {
+    @apply flex items-center justify-between px-3 py-2.5 text-xs font-semibold text-admin-muted uppercase tracking-wider cursor-pointer rounded-sm hover:bg-admin-hover/50 transition-colors select-none;
+}
+
+div.sidebar-section .section-header .chevron {
+    @apply w-4 h-4 transition-transform duration-200;
+}
+
+div.sidebar-section .section-header .chevron.open {
+    @apply rotate-90;
+}
+
+div.sidebar-section .section-links {
+    @apply flex flex-col gap-0.5 mt-0.5;
+}
+
+div.sidebar-section .section-links a,
+div.sidebar-section .section-links .nav-link {
+    @apply flex items-center gap-3 px-3 py-2.5 text-sm text-admin-text rounded-sm cursor-pointer hover:bg-admin-hover/50 transition-colors;
+}
+
+div.sidebar-section .section-links a.active,
+div.sidebar-section .section-links .nav-link.active {
+    @apply bg-admin-hover font-medium;
+}
+
+/* Material Icons in nav */
+.nav-link .material-symbols-outlined {
+    @apply text-lg;
+}
+
+/* Admin Cards */
+div.admin-card {
+    @apply bg-admin-card rounded-none p-6 border border-admin-border shadow-xs;
+}
+
+div.admin-card h3 {
+    @apply font-mono font-semibold text-lg text-admin-text mb-4;
+}
+
+/* Page Header */
+div.page-header {
+    @apply mb-6 flex items-center justify-between;
+}
+
+div.page-header .info h1 {
+    @apply font-mono font-bold text-2xl text-admin-text;
+}
+
+div.page-header .info p {
+    @apply text-sm text-admin-muted mt-1;
+}
+
+/* Data Table */
+table.admin-table {
+    @apply w-full text-sm;
+}
+
+table.admin-table thead th {
+    @apply text-left py-3 px-4 text-xs font-mono font-semibold text-admin-muted uppercase tracking-wider border-b border-admin-border;
+}
+
+table.admin-table tbody td {
+    @apply py-3 px-4 border-b border-admin-border;
+}
+
+table.admin-table tbody tr:hover {
+    @apply bg-admin-hover/30;
+}
+
+/* Status Labels */
+span.status-label {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+span.status-label.active {
+    @apply bg-admin-success-bg text-admin-success-fg;
+}
+
+span.status-label.inactive {
+    @apply bg-admin-error-bg text-admin-error-fg;
+}
+
+/* Login Card */
+div.login-card {
+    @apply bg-white p-8 rounded-none border border-admin-border shadow-xs w-full max-w-md;
+}
+
+/* Mobile Sidebar Drawer */
+div.sidebar-drawer {
+    @apply fixed inset-0 z-40 md:hidden;
+}
+
+div.sidebar-drawer .backdrop {
+    @apply absolute inset-0 bg-black/50;
+}
+
+div.sidebar-drawer .drawer-content {
+    @apply absolute left-0 top-0 bottom-0 w-72 bg-admin-sidebar text-admin-text py-4 px-3 overflow-y-auto;
+}
+
+/* Hamburger Button */
+button.hamburger {
+    @apply md:hidden p-2 rounded-sm hover:bg-admin-hover transition-colors;
+}
+
+/* Logo in Sidebar */
+div.admin-logo {
+    @apply font-mono font-bold text-lg text-admin-text px-3 py-2;
+}
+
+/* Scrollbar Hide Utility */
+@utility scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    &::-webkit-scrollbar {
+        display: none;
+    }
+}

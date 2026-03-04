@@ -6,6 +6,7 @@ object BuildHelper {
   val ScalaVersion   = "3.7.2"
   val ZioVersion     = "2.1.16" //same as guara
   val ZioJsonVersion = "0.7.39" //same as guara
+  val MedullaVersion = "v0.0.1-SNAPSHOT"
 
   lazy val dependencies = new {
     val betterFiles     = "com.github.pathikrit" %% "better-files"      % "3.9.2"

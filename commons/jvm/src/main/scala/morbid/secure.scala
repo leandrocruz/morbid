@@ -1,0 +1,54 @@
+package morbid
+
+object secure {
+
+  import morbid.types.ApplicationCode
+  import morbid.domain.token.{SingleAppToken, Token}
+  import morbid.roles.Role
+  import guara.utils.{ensureResponse, Origin}
+  import guara.errors.*
+  import zio.http.*
+  import zio.*
+
+  type AppRoute       = (SingleAppToken, ApplicationCode) ?=> Request => Task[Response]
+  type TokenValidator = SingleAppToken => Either[String, Unit]
+
+  val AllowAll: TokenValidator = _ => Right(())
+
+  def role(role: Role, allow: TokenValidator = AllowAll)(fn: Request => Task[Response])(request: Request)(using token: SingleAppToken): Task[Response] = {
+
+    def forbidden(message: String) = ZIO.fail(ReturnResponseError(Response.forbidden(message)))
+
+    def test(token: SingleAppToken): Task[Unit] = {
+      if (role.isSatisfiedBy(token)) ZIO.unit
+      else                           forbidden(s"Required role '$role' is missing from user token (application: ${token.user.application.code})")
+    }
+
+    for {
+      _ <- allow(token) match
+             case Left(err) => forbidden(err)
+             case Right(_)  => test(token)
+      result <- fn(request)
+    } yield result
+  }
+
+  def appRoute(application: ApplicationCode, tokenFrom: Request => Task[Token])(route: AppRoute)(request: Request)(using Origin): Task[Response] = {
+
+    def execute(token: SingleAppToken) = {
+      given SingleAppToken  = token
+      given ApplicationCode = application
+      route(request)
+    }
+
+    ensureResponse {
+      for
+        _     <- ZIO.logInfo(s"Executing app route for app '${application}'")
+        token <- tokenFrom(request)
+        _     <- ZIO.logInfo(s"Token extracted ${token.user.details.email}")
+        sat   <- ZIO.fromOption(token.narrowTo(application)).mapError(_ => ReturnResponseError(Response.forbidden(s"User has no access to application '$application'")))
+        _     <- ZIO.logInfo(s"Token narrowed. Executing")
+        res   <- execute(sat)
+      yield res
+    }
+  }
+}

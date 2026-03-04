@@ -5,4 +5,5 @@ target
 .vscode
 .scala-build
 tmp
+node_modules
 *.csv
