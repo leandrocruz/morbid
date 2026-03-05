@@ -145,15 +145,15 @@ table.admin-table tbody tr:hover {
 }
 
 /* Status Labels */
-span.status-label {
+span.label {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
 }
 
-span.status-label.active {
+span.label.active {
     @apply bg-admin-success-bg text-admin-success-fg;
 }
 
-span.status-label.inactive {
+span.label.inactive {
     @apply bg-admin-error-bg text-admin-error-fg;
 }
 

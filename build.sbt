@@ -22,7 +22,8 @@ lazy val commons = crossProject(JVMPlatform, JSPlatform)
     fork := false,
     libraryDependencies ++= Seq(
       "io.github.cquiroz" %%% "scala-java-time"      % "2.5.0",
-      "io.github.cquiroz" %%% "scala-java-time-tzdb"  % "2.5.0",
+      "io.github.cquiroz" %%% "scala-java-time-tzdb" % "2.5.0",
+      "leandrocruz"       %%% "medulla-framework"    % BuildHelper.MedullaVersion changing(),
     )
   )
 

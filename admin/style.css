@@ -2,3 +2,8 @@ html, body, #app {
     height: 100%;
     background-color: #F2F3F0;
 }
+
+/* Tailwind v4 dropped bg-opacity-*, so bg-black bg-opacity-50 renders fully opaque */
+.bg-black.bg-opacity-50 {
+    background-color: rgb(0 0 0 / 0.5);
+}

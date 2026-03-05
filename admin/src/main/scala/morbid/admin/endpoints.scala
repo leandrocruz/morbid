@@ -1,17 +1,19 @@
 package morbid.admin
 
-import medulla.fetch.FetchRequest
-import morbid.types.*
+import medulla.fetch.{FetchRequest, RequestBuilder}
 import morbid.domain.raw.*
 import codec.given
+import morbid.protocol.{given, *}
+import morbid.types.*
 
 object Endpoints {
 
   private val AppCode = "presto"
 
-  def applications = FetchRequest(s"/applications").get[Seq[RawApplicationDetails]]
-  def accounts     = FetchRequest(s"/app/$AppCode/manager/accounts").get[Seq[RawAccount]]
-  def users        = FetchRequest(s"/app/$AppCode/users").get[Seq[RawUserEntry]]
-  def groups       = FetchRequest(s"/app/$AppCode/groups").get[Seq[RawGroup]]
+  def accounts          (req: GetAccountsRequest)       = FetchRequest("/accounts")     .post[GetAccountsRequest    , Seq[AccountWithApps]]       (req)
+  def applicationUpdate (req: UpdateApplicationRequest) = FetchRequest("/application")  .post[UpdateApplicationRequest, RawApplicationDetails]    (req)
+  def applications      (req: GetApplicationsRequest)   = FetchRequest("/applications") .post[GetApplicationsRequest, Seq[RawApplicationDetails]] (req)
+  def groups            (req: GetGroupsRequest)         = FetchRequest("/groups")       .post[GetGroupsRequest      , Seq[RawGroup]]              (req)
   def roles        = FetchRequest(s"/app/$AppCode/roles").get[Seq[RawRole]]
+  def users        = FetchRequest(s"/app/$AppCode/users").get[Seq[RawUserEntry]]
 }

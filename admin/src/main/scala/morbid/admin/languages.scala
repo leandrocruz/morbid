@@ -58,12 +58,16 @@ trait Dictionary {
   def groupsNew          = "New Group"
 
   // Table
-  def columnName         = "Name"
-  def columnCode         = "Code"
-  def columnEmail        = "Email"
-  def columnStatus       = "Status"
+  def columnApps         = "Applications"
   def columnActions      = "Actions"
+  def columnCode         = "Code"
   def columnCreated      = "Created"
+  def columnEmail        = "Email"
+  def columnGroups       = "Groups"
+  def columnId           = "Id"
+  def columnName         = "Name"
+  def columnRoles        = "Roles"
+  def columnStatus       = "Status"
 
   // Common
   def active             = "Active"
@@ -73,6 +77,10 @@ trait Dictionary {
   def save               = "Save"
   def cancel             = "Cancel"
   def close              = "Close"
+  def confirm            = "Confirm"
+  def deleteTitle        = "Delete Confirmation"
+  def deleteMessage(name: String) = s"Are you sure you want to delete '$name'? This action cannot be undone."
+  def groups             = "Groups"
   def search             = "Search..."
   def showing(n: Int)    = s"Showing $n records"
   def noRecords          = "No records found"
@@ -122,6 +130,7 @@ case class Portuguese(language: Language) extends Dictionary {
   override def groupsNew          = "Novo Grupo"
 
   // Table
+  override def columnApps         = "Applicativos"
   override def columnName         = "Nome"
   override def columnCode         = "Código"
   override def columnEmail        = "Email"
@@ -137,6 +146,9 @@ case class Portuguese(language: Language) extends Dictionary {
   override def save               = "Salvar"
   override def cancel             = "Cancelar"
   override def close              = "Fechar"
+  override def confirm            = "Confirmar"
+  override def deleteTitle        = "Confirmação de Exclusão"
+  override def deleteMessage(name: String) = s"Tem certeza que deseja excluir '$name'? Esta ação não pode ser desfeita."
   override def search             = "Buscar..."
   override def showing(n: Int)    = s"Exibindo $n registros"
   override def noRecords          = "Nenhum registro encontrado"

@@ -21,13 +21,17 @@ object PageHeader {
 }
 
 object StatusLabel {
-
-  def render(isActive: Boolean)(using dict: Dictionary): HtmlElement =
+  def render(isActive: Boolean)(using dict: Dictionary): HtmlElement = {
     span(
-      cls("status-label"),
+      cls("label"),
       cls(if isActive then "active" else "inactive"),
       if isActive then dict.active else dict.inactive
     )
+  }
+}
+
+object Pills {
+  def of(pills: Seq[Modifier[HtmlElement]]) = div(cls("flex gap-2"), pills.map(p => span(cls("label bg-green-300"), p)))
 }
 
 object DataTable {
@@ -38,41 +42,34 @@ object DataTable {
     cls     : String = ""
   )
 
-  def render[T](
-    items   : Signal[Seq[T]],
-    columns : Seq[Column[T]],
-  )(using dict: Dictionary): HtmlElement =
+  def render[T](items: Seq[T], columns: Seq[Column[T]])(using dict: Dictionary): HtmlElement = {
+
+    def body = {
+      if items.isEmpty then
+        Seq(tr(td(colSpan(columns.size), cls("text-center py-8 text-admin-muted"), dict.noRecords)))
+      else
+        items.map { item =>
+          tr(
+            columns.map(col =>
+              td(cls(col.cls), col.render(item))
+            )
+          )
+        }
+    }
+
     div(
       cls("admin-card"),
       table(
         cls("admin-table"),
-        thead(
-          tr(
-            columns.map(col =>
-              th(cls(col.cls), col.header)
-            )
-          )
-        ),
-        tbody(
-          children <-- items.map { rows =>
-            if rows.isEmpty then
-              Seq(tr(td(colSpan(columns.size), cls("text-center py-8 text-admin-muted"), dict.noRecords)))
-            else
-              rows.map { item =>
-                tr(
-                  columns.map(col =>
-                    td(cls(col.cls), col.render(item))
-                  )
-                )
-              }
-          }
-        )
+        thead(tr(columns.map(col => th(cls(col.cls), col.header)))),
+        tbody(body)
       ),
       div(
         cls("flex items-center justify-between px-4 py-3 text-sm text-admin-muted"),
-        child.text <-- items.map(rows => dict.showing(rows.size))
+        dict.showing(items.size)
       )
     )
+  }
 }
 
 object SearchBox {

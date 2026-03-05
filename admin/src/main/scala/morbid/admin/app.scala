@@ -10,19 +10,25 @@ import medulla.shared.types.{GlobalAppData, UserToken}
 import medulla.ui.layout.SimpleGridLayout
 import morbid.admin.views.*
 import com.raquo.airstream.core.EventStream
+import morbid.types.ApplicationId
+import zio.json.*
 
 import scala.util.Success
 
 // -- Page ADT --
 
+@jsonDiscriminator("type")
 sealed trait Page
-case object LoginPage                extends Page
-case object AccountsPage             extends Page
-case object UsersPage                extends Page
-case object GroupsPage               extends Page
-case object ApplicationsPage          extends Page
-case object RolesPage                extends Page
-case class  UnknownPage(path: String) extends Page
+case object LoginPage                      extends Page
+case object AccountsPage                   extends Page
+case object UsersPage                      extends Page
+case class  GroupsPage(app: ApplicationId) extends Page
+case object ApplicationsPage               extends Page
+case object RolesPage                      extends Page
+case object ProvidersPage                  extends Page
+case class  UnknownPage(path: String)      extends Page
+
+given JsonCodec[Page] = DeriveJsonCodec.gen
 
 // -- App Data --
 
@@ -46,34 +52,23 @@ case class AdminLoginHelper(fetcher: Fetcher) extends DefaultLoginHelper {
 object AdminRouter {
 
   given PageCodec[Page] = new PageCodec[Page] {
-
-    override def encodePage(page: Page) = page match
-      case LoginPage       => "login"
-      case AccountsPage    => "accounts"
-      case UsersPage       => "users"
-      case GroupsPage      => "groups"
-      case ApplicationsPage => "applications"
-      case RolesPage       => "roles"
-      case UnknownPage(s)  => s"unknown:$s"
-
-    override def decodePage(data: String) = data match
-      case "login"    => LoginPage
-      case "accounts"     => AccountsPage
-      case "users"        => UsersPage
-      case "groups"       => GroupsPage
-      case "applications" => ApplicationsPage
-      case "roles"        => RolesPage
-      case other      => UnknownPage(other)
+    override def encodePage(page: Page)   = page.toJson
+    override def decodePage(data: String) = data.fromJson[Page].getOrElse(UnknownPage(data))
   }
 
+  def accountGroups = Route[GroupsPage, Long](
+    encode  = page => ApplicationId.value(page.app),
+    decode  = app  => GroupsPage(ApplicationId.of(app)),
+    pattern = root / "application" / segment[Long] / "groups"
+  )
+
   val routes: Seq[Route[? <: Page, ?]] = Seq(
-    Route.static(LoginPage,    root / "login"),
-    Route.static(AccountsPage, root / "accounts"),
-    Route.static(UsersPage,    root / "users"),
-    Route.static(GroupsPage,        root / "groups"),
+    Route.static(LoginPage,        root / "login"),
+    Route.static(AccountsPage,     root / "accounts"),
+    Route.static(UsersPage,        root / "users"),
     Route.static(ApplicationsPage, root / "applications"),
     Route.static(RolesPage,        root / "roles"),
-    Route.static(AccountsPage, root),
+    accountGroups
   )
 
   val instance = new MedullaRouter[Page](UnknownPage.apply)(routes*) {
@@ -85,20 +80,33 @@ object AdminRouter {
 
 case class AdminAppRender(fetcher: Fetcher) extends BaseAppRender[AdminData, Long] {
 
+  given Fetcher = fetcher
+
   override def loadAppData = EventStream.delay(100).map(_ => Success(AdminData("Morbid Admin")))
 
-  override def whenLoggedOut = LoginView.render
+  private def render(fn: Dictionary ?=> HtmlElement) = {
+    div(
+      cls("contents"),
+      child <-- I18n.dictionary.map { dict =>
+        given Dictionary = dict
+        fn
+      }
+    )
+  }
+
+  override def whenLoggedOut = render(LoginView.render)
 
   override def appLoaded(data: AdminData)(using user: UserToken[Long]) = {
 
     def main = {
       AdminRouter.instance.render {
-        case LoginPage        => LoginView.render
-        case AccountsPage     => div(child <-- I18n.dictionary.map { dict => given Dictionary = dict; AccountsView.render })
-        case UsersPage        => div(child <-- I18n.dictionary.map { dict => given Dictionary = dict; UsersView.render })
-        case GroupsPage       => div(child <-- I18n.dictionary.map { dict => given Dictionary = dict; GroupsView.render })
-        case ApplicationsPage => div(child <-- I18n.dictionary.map { dict => given Dictionary = dict; ApplicationsView.render(fetcher) })
+        case ApplicationsPage => render(ApplicationsView.render)
+        case AccountsPage     => render(AccountsView.render)
+        case GroupsPage(app)  => render(ApplicationGroupsView.render(app))
+        case LoginPage        => render(LoginView.render)
         case RolesPage        => div("Roles")
+        case UsersPage        => render(UsersView.render)
+        case ProvidersPage    => div("Providers")
         case UnknownPage(p)   => div(s"Página não encontrada: $p")
       }
     }

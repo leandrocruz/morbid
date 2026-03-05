@@ -94,6 +94,11 @@ object domain {
       name    : ApplicationName,
     )
 
+    case class AccountWithApps(
+      account : RawAccount,
+      apps    : Seq[RawApplicationDetails]
+    )
+
     case class RawApplication(
       details : RawApplicationDetails,
       groups  : Seq[RawGroup] = Seq.empty
@@ -159,6 +164,7 @@ object domain {
     given JsonCodec[RawUserEntry]          = DeriveJsonCodec.gen
     given JsonCodec[RawAccount]            = DeriveJsonCodec.gen
     given JsonCodec[RawIdentityProvider]   = DeriveJsonCodec.gen
+    given JsonCodec[AccountWithApps]       = DeriveJsonCodec.gen
   }
 
   object token {

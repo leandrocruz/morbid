@@ -10,16 +10,21 @@ object Sidebar {
   def render(using dict: Dictionary): HtmlElement = {
 
     val sections = Seq(
-      SidebarSection(dict.sidebarManagement, Seq(
-        (dict.sidebarAccounts, "apartment",           AccountsPage),
-        (dict.sidebarUsers,    "group",               UsersPage),
-        (dict.sidebarGroups,   "workspaces",          GroupsPage),
-        (dict.sidebarApps,     "apps",                ApplicationsPage),
-      )),
-      SidebarSection(dict.sidebarSecurity, Seq(
-        (dict.sidebarProviders, "key",                  AccountsPage), // placeholder
-        (dict.sidebarRoles,     "admin_panel_settings", RolesPage),
-      )),
+      SidebarSection(
+        dict.sidebarManagement,
+        Seq(
+          (dict.sidebarApps,     "apps",      ApplicationsPage),
+          (dict.sidebarAccounts, "apartment", AccountsPage),
+          (dict.sidebarUsers,    "group",     UsersPage),
+        )
+      ),
+      SidebarSection(
+        dict.sidebarSecurity,
+        Seq(
+          (dict.sidebarProviders, "key",                  ProvidersPage),
+          (dict.sidebarRoles,     "admin_panel_settings", RolesPage),
+        )
+      ),
     )
 
     val openSections = sections.map(s => s.label -> Var(true)).toMap
