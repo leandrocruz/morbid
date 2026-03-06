@@ -14,11 +14,8 @@ import morbid.types.*
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
-import scala.scalajs.js.timers.setTimeout
 
 object ApplicationsView {
-
-  type States = (Option[Try[Seq[RawApplicationDetails]]], Option[String], Option[CrudEvent])
 
   sealed trait CrudEvent
   case class Created(item: RawApplicationDetails) extends CrudEvent
@@ -48,72 +45,64 @@ object ApplicationsView {
       )
     }
 
-    def renderTable(items: Seq[RawApplicationDetails], filter: Option[String], event: Option[CrudEvent], mode: Var[ModalMode]) = {
+    def rowsGiven(changes: Seq[CrudEvent], maybe: Option[Try[Seq[RawApplicationDetails]]]): Seq[RawApplicationDetails] = {
 
-      def highlight(flag: Signal[Boolean])(app: RawApplicationDetails): Signal[Boolean] = {
-        event match
-          case None                => Signals.and(flag, Signal.fromValue(false)) { _ && _ }
-          case Some(Deleted(_))    => Signals.and(flag, Signal.fromValue(false)) { _ && _ }
-          case Some(Created(item)) => Signals.and(flag, Signal.fromValue(app.id == item.id)) { _ && _ }
-          case Some(Updated(item)) => Signals.and(flag, Signal.fromValue(app.id == item.id)) { _ && _ }
+      def applyChanges(items: Seq[RawApplicationDetails]) = {
+        changes.foldLeft(items) { (buffer, change) =>
+          change match {
+            case Created(item) => buffer :+ item
+            case Updated(item) => buffer.filterNot(_.id == item.id) :+ item
+            case Deleted(id)   => buffer.filterNot(_.id == id)
+          }
+        }
       }
 
-      val flag = Var[Boolean](true)
-      DataTable
-        .render(items.sortBy(_.name), columns(mode), highlight(flag.signal))
-        .amend(
-          EventStream.delay(2500).mapTo(false) --> flag //clears the highlight
-        )
+      maybe match
+        case Some(Success(items)) => if(changes.isEmpty) items else applyChanges(items)
+        case _                    => Seq.empty
     }
 
-    def updateItems(items: Option[Try[Seq[RawApplicationDetails]]], event: Option[CrudEvent]): Option[Try[Seq[RawApplicationDetails]]] = {
-
-      def update(seq: Seq[RawApplicationDetails])(evt: CrudEvent): Seq[RawApplicationDetails] = {
-        evt match
-          case Created(item) => seq :+ item
-          case Updated(item) => seq.filterNot(_.id == item.id) :+ item
-          case Deleted(id)   => seq.filterNot(_.id == id)
-      }
-
-      items.map(_.map(seq => event.map(update(seq)).getOrElse(seq)))
-    }
-
-    val loaded  = Var(Option.empty[Try[Seq[RawApplicationDetails]]])
-    val filter  = Var(Option.empty[String])
+    val data    = Var(Option.empty[Try[Seq[RawApplicationDetails]]])
     val mode    = Var(Closed.asInstanceOf[ModalMode])
-    val event   = Var(Option.empty[CrudEvent])
-    val updates = loaded.signal.combineWith(event).map(updateItems).distinct
-    val states  = updates.signal.combineWith(filter).combineWith(event)
+    val events  = EventBus[CrudEvent]()
+    val changes = events.events.scanLeft(Seq.empty[CrudEvent])(_ :+ _)
+    val rows    = changes.combineWith(data).map(rowsGiven).map(_.sortBy(_.name))
     val opened  = mode.signal.map {
       case Closed => false
       case _      => true
     }
 
-    val results = states.map {
-      case (None                , _       , _  ) => div(dict.loading)
-      case (Some(Failure(err))  , _       , _  ) => div(s"Load Error: ${err.getMessage}")
-      case (Some(Success(items)), filterBy, evt) => renderTable(items, filterBy, evt, mode)
+    val status = data.signal.map {
+      case None               => (false, Some(div(dict.loading)))
+      case Some(Failure(err)) => (false, Some(div(s"Load Error: ${err.getMessage}")))
+      case _                  => (true , None)
     }
 
     val modalContent = mode.signal.map {
       case Closed          => div()
-      case EditMode(app)   => renderEditModal  (app, mode, event)
-      case DeleteMode(app) => renderDeleteModal(app, mode, event)
+      case EditMode(app)   => renderEditModal  (app, mode, events)
+      case DeleteMode(app) => renderDeleteModal(app, mode, events)
+    }
+
+    def renderTable(loaded: Boolean) = {
+      Option.when(loaded) {
+        DataTable.render(rows, columns(mode), _.id)
+      }
     }
 
     div(
-      fetcher.execute(Endpoints.applications(AllApplications())).map(Some(_)) --> loaded,
-      updates --> loaded,
+      fetcher.execute(Endpoints.applications(AllApplications())).map(Some(_)) --> data,
       PageHeader.render(dict.appsTitle, dict.appsSubtitle),
-      child       <-- results,
+      child.maybe <-- status.map(_._2),
+      child.maybe <-- status.map(_._1).map(renderTable),
       child.maybe <-- Modal(opened, modalContent),
     )
   }
 
   private def renderEditModal(
-    app   : RawApplicationDetails,
-    mode  : Var[ModalMode],
-    event : Var[Option[CrudEvent]]
+    app    : RawApplicationDetails,
+    mode   : Var[ModalMode],
+    events : EventBus[CrudEvent]
   )(using dict: Dictionary, fetcher: Fetcher): HtmlElement = {
 
     val name   = InputVar.of[ApplicationName](app.name)
@@ -129,7 +118,7 @@ object ApplicationsView {
 
     div(
       med.wire,
-      med.successes.map(_.map(Updated(_))) --> event, //fires when the item is updated
+      med.onlySuccesses.map(Updated(_)) --> events,
       med.onlySuccesses.mapTo(Closed) --> mode,
       cls("flex flex-col h-full"),
       div(
@@ -181,9 +170,9 @@ object ApplicationsView {
   }
 
   private def renderDeleteModal(
-    app   : RawApplicationDetails,
-    mode  : Var[ModalMode],
-    event : Var[Option[CrudEvent]]
+    app    : RawApplicationDetails,
+    mode   : Var[ModalMode],
+    events : EventBus[CrudEvent]
   )(using dict: Dictionary, fetcher: Fetcher): HtmlElement = {
     div(
       cls("flex flex-col h-full"),
@@ -216,7 +205,7 @@ object ApplicationsView {
           dict.confirm,
           onClick --> { _ =>
             mode.set(Closed)
-            event.set(Some(Deleted(app.id)))
+            events.emit(Deleted(app.id))
           }
         ),
       )

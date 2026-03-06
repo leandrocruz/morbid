@@ -2,6 +2,7 @@ package morbid.admin.views
 
 import com.raquo.laminar.api.L.*
 import morbid.admin.Dictionary
+import org.scalajs.dom.console
 
 object PageHeader {
 
@@ -44,32 +45,47 @@ object DataTable {
 
   def noHighlight[T](t: T): Signal[Boolean] = Signal.fromValue(false)
 
-  def render[T](items: Seq[T], columns: Seq[Column[T]], highlight: T => Signal[Boolean] = noHighlight)(using dict: Dictionary): HtmlElement = {
+  def render[T, K](
+    items     : Signal[Seq[T]],
+    columns   : Seq[Column[T]],
+    key       : T => K
+  )(using dict: Dictionary): HtmlElement = {
 
-    def body = {
-      if items.isEmpty then
-        Seq(tr(td(colSpan(columns.size), cls("text-center py-8 text-admin-muted"), dict.noRecords)))
-      else
-        items.map { item =>
-          tr(
-            cls.toggle("highlight") <-- highlight(item),
-            columns.map(col =>
-              td(cls(col.cls), col.render(item))
-            )
-          )
+    def renderRow(key: K, initial: T, item: Signal[T]): HtmlElement = {
+
+      def render(column: Column[T])(it: T) = {
+        console.log(s"Render Col (${column.header}): $it")
+        column.render(it)
+      }
+
+      console.log(s"Render Row ${key} / ${initial}")
+      tr(
+        //cls.toggle("highlight") <-- highlight(initial),
+        columns.map { col =>
+          td(cls(col.cls), child <-- item.map(render(col)))
         }
+      )
     }
-    
+
+    val rows  = items.split(key)(renderRow)
+    val empty = items.map(_.isEmpty)
+
     div(
       cls("admin-card"),
       table(
         cls("admin-table"),
         thead(tr(columns.map(col => th(cls(col.cls), col.header)))),
-        tbody(body)
+        tbody(
+          children <-- rows,
+          child.maybe <-- empty.map {
+            case true  => Some(tr(td(colSpan(columns.size), cls("text-center py-8 text-admin-muted"), dict.noRecords)))
+            case false => None
+          }
+        )
       ),
       div(
         cls("flex items-center justify-between px-4 py-3 text-sm text-admin-muted"),
-        dict.showing(items.size)
+        child.text <-- items.map(items => dict.showing(items.size))
       )
     )
   }

@@ -32,7 +32,7 @@ object AccountsView {
     )
 
     def renderData(accounts: Seq[AccountWithApps], filter: String) = {
-      DataTable.render(accounts, columns)
+      DataTable.render(Signal.fromValue(accounts), columns, _.account.id)
     }
 
     val accounts = Var(Option.empty[Try[Seq[AccountWithApps]]])
