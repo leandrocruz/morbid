@@ -140,6 +140,14 @@ table.admin-table tbody td {
     @apply py-3 px-4 border-b border-admin-border;
 }
 
+table.admin-table tbody tr {
+    @apply transition-colors duration-1000;
+}
+
+table.admin-table tbody tr.highlight {
+    @apply bg-yellow-200;
+}
+
 table.admin-table tbody tr:hover {
     @apply bg-admin-hover/30;
 }

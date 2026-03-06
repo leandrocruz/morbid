@@ -42,7 +42,9 @@ object DataTable {
     cls     : String = ""
   )
 
-  def render[T](items: Seq[T], columns: Seq[Column[T]])(using dict: Dictionary): HtmlElement = {
+  def noHighlight[T](t: T): Signal[Boolean] = Signal.fromValue(false)
+
+  def render[T](items: Seq[T], columns: Seq[Column[T]], highlight: T => Signal[Boolean] = noHighlight)(using dict: Dictionary): HtmlElement = {
 
     def body = {
       if items.isEmpty then
@@ -50,13 +52,14 @@ object DataTable {
       else
         items.map { item =>
           tr(
+            cls.toggle("highlight") <-- highlight(item),
             columns.map(col =>
               td(cls(col.cls), col.render(item))
             )
           )
         }
     }
-
+    
     div(
       cls("admin-card"),
       table(

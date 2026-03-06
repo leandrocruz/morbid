@@ -39,6 +39,8 @@ object types {
   opaque type Magic           = String
   opaque type Link            = String
 
+  given Ordering[ApplicationName] = (x: ApplicationName, y: ApplicationName) => ApplicationName.value(x).compare(ApplicationName.value(y))
+
   given JsonCodec[TenantId]      = JsonCodec.long
   given JsonCodec[AccountId]     = JsonCodec.long
   given JsonCodec[UserId]        = JsonCodec.long
