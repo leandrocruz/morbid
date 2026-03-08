@@ -6,6 +6,7 @@ import morbid.admin.*
 import morbid.domain.raw.{AccountWithApps, RawAccount, RawGroup}
 import morbid.protocol.*
 import morbid.types.*
+import morbid.ui.DataTable
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
@@ -64,7 +65,7 @@ object GroupsView {
       child <-- groups.signal.map {
         case None                  => div("Carregando")
         case Some(Failure(err))    => div(s"Erro ao carregar: ${err.getMessage}")
-        case Some(Success(result)) => DataTable.render(Signal.fromValue(result), columns, _.id)
+        case Some(Success(result)) => DataTable.of(columns, _.id).render(Signal.fromValue(result))
       }
     )
   }

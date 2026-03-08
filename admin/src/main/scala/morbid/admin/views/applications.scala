@@ -7,12 +7,15 @@ import medulla.ui.modal.Modal
 import medulla.ui.{Buttons, Input}
 import medulla.utils.{Mediator, Signals}
 import morbid.admin.*
+import morbid.ui.DataTable.Row
 import morbid.converters.given
 import morbid.domain.raw.RawApplicationDetails
 import morbid.protocol.{AllApplications, UpdateApplicationRequest}
 import morbid.types.*
+import morbid.ui.DataTable
 
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.scalajs.js
 import scala.util.{Failure, Success, Try}
 
 object ApplicationsView {
@@ -45,15 +48,18 @@ object ApplicationsView {
       )
     }
 
-    def rowsGiven(changes: Seq[CrudEvent], maybe: Option[Try[Seq[RawApplicationDetails]]]): Seq[RawApplicationDetails] = {
-
+    def rowsGiven(tbl: DataTable.Table[ApplicationId, RawApplicationDetails])(changes: Seq[CrudEvent], maybe: Option[Try[Seq[RawApplicationDetails]]]): Seq[RawApplicationDetails] = {
       def applyChanges(items: Seq[RawApplicationDetails]) = {
         changes.foldLeft(items) { (buffer, change) =>
-          change match {
-            case Created(item) => buffer :+ item
-            case Updated(item) => buffer.filterNot(_.id == item.id) :+ item
+          change match
             case Deleted(id)   => buffer.filterNot(_.id == id)
-          }
+            case Created(item) => buffer :+ item
+            case Updated(item) =>
+              tbl.row(item.id).foreach { row =>
+                row.highlight(true)
+                js.timers.setTimeout(1500)(row.highlight(false))
+              }
+              buffer.filterNot(_.id == item.id) :+ item
         }
       }
 
@@ -66,7 +72,8 @@ object ApplicationsView {
     val mode    = Var(Closed.asInstanceOf[ModalMode])
     val events  = EventBus[CrudEvent]()
     val changes = events.events.scanLeft(Seq.empty[CrudEvent])(_ :+ _)
-    val rows    = changes.combineWith(data).map(rowsGiven).map(_.sortBy(_.name))
+    val tbl     = DataTable.of(columns(mode), _.id)
+    val rows    = changes.combineWith(data).map(rowsGiven(tbl)).map(_.sortBy(_.name))
     val opened  = mode.signal.map {
       case Closed => false
       case _      => true
@@ -84,10 +91,11 @@ object ApplicationsView {
       case DeleteMode(app) => renderDeleteModal(app, mode, events)
     }
 
-    def renderTable(loaded: Boolean) = {
-      Option.when(loaded) {
-        DataTable.render(rows, columns(mode), _.id)
-      }
+    def renderTable(loaded: Boolean) = Option.when(loaded) {
+      div(
+        cls("admin-card"),
+        tbl.render(rows)
+      )
     }
 
     div(

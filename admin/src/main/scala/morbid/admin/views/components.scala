@@ -1,8 +1,8 @@
 package morbid.admin.views
 
+import com.raquo.laminar.api.L
 import com.raquo.laminar.api.L.*
 import morbid.admin.Dictionary
-import org.scalajs.dom.console
 
 object PageHeader {
 
@@ -33,62 +33,6 @@ object StatusLabel {
 
 object Pills {
   def of(pills: Seq[Modifier[HtmlElement]]) = div(cls("flex gap-2"), pills.map(p => span(cls("label bg-green-300"), p)))
-}
-
-object DataTable {
-
-  case class Column[T](
-    header  : String,
-    render  : T => HtmlElement,
-    cls     : String = ""
-  )
-
-  def noHighlight[T](t: T): Signal[Boolean] = Signal.fromValue(false)
-
-  def render[T, K](
-    items     : Signal[Seq[T]],
-    columns   : Seq[Column[T]],
-    key       : T => K
-  )(using dict: Dictionary): HtmlElement = {
-
-    def renderRow(key: K, initial: T, item: Signal[T]): HtmlElement = {
-
-      def render(column: Column[T])(it: T) = {
-        console.log(s"Render Col (${column.header}): $it")
-        column.render(it)
-      }
-
-      console.log(s"Render Row ${key} / ${initial}")
-      tr(
-        //cls.toggle("highlight") <-- highlight(initial),
-        columns.map { col =>
-          td(cls(col.cls), child <-- item.map(render(col)))
-        }
-      )
-    }
-
-    val rows  = items.split(key)(renderRow)
-    val empty = items.map(_.isEmpty)
-
-    div(
-      cls("admin-card"),
-      table(
-        cls("admin-table"),
-        thead(tr(columns.map(col => th(cls(col.cls), col.header)))),
-        tbody(
-          children <-- rows,
-          child.maybe <-- empty.map {
-            case true  => Some(tr(td(colSpan(columns.size), cls("text-center py-8 text-admin-muted"), dict.noRecords)))
-            case false => None
-          }
-        )
-      ),
-      div(
-        cls("flex items-center justify-between px-4 py-3 text-sm text-admin-muted"),
-        child.text <-- items.map(items => dict.showing(items.size))
-      )
-    )
-  }
 }
 
 object SearchBox {

@@ -8,6 +8,7 @@ import morbid.admin.*
 import morbid.domain.raw.AccountWithApps
 import morbid.protocol.*
 import morbid.types.*
+import morbid.ui.DataTable
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
@@ -32,7 +33,7 @@ object AccountsView {
     )
 
     def renderData(accounts: Seq[AccountWithApps], filter: String) = {
-      DataTable.render(Signal.fromValue(accounts), columns, _.account.id)
+      DataTable.of(columns, _.account.id).render(Signal.fromValue(accounts))
     }
 
     val accounts = Var(Option.empty[Try[Seq[AccountWithApps]]])

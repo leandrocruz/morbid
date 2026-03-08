@@ -128,27 +128,27 @@ div.page-header .info p {
 }
 
 /* Data Table */
-table.admin-table {
+table.medulla {
     @apply w-full text-sm;
 }
 
-table.admin-table thead th {
+table.medulla thead th {
     @apply text-left py-3 px-4 text-xs font-mono font-semibold text-admin-muted uppercase tracking-wider border-b border-admin-border;
 }
 
-table.admin-table tbody td {
+table.medulla tbody td {
     @apply py-3 px-4 border-b border-admin-border;
 }
 
-table.admin-table tbody tr {
+table.medulla tbody tr {
     @apply transition-colors duration-1000;
 }
 
-table.admin-table tbody tr.highlight {
+table.medulla tbody tr.highlight {
     @apply bg-yellow-200;
 }
 
-table.admin-table tbody tr:hover {
+table.medulla tbody tr:hover {
     @apply bg-admin-hover/30;
 }
 

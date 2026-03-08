@@ -5,6 +5,7 @@ import medulla.ui.Buttons
 import morbid.admin.*
 import morbid.types.*
 import morbid.domain.raw.RawUserEntry
+import morbid.ui.DataTable
 
 object UsersView {
 
@@ -41,7 +42,7 @@ object UsersView {
         cls("mb-4"),
         SearchBox.render(dict.search, v => searchFilter.set(v))
       ),
-      DataTable.render(Signal.fromValue(Seq.empty), columns, _.id),
+      DataTable.of(columns, _.id).render(Signal.fromValue(Seq.empty)),
     )
   }
 }
