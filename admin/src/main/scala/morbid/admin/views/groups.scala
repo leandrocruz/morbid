@@ -65,7 +65,7 @@ object GroupsView {
       child <-- groups.signal.map {
         case None                  => div("Carregando")
         case Some(Failure(err))    => div(s"Erro ao carregar: ${err.getMessage}")
-        case Some(Success(result)) => DataTable.of(columns, _.id).render(Signal.fromValue(result))
+        case Some(Success(result)) => DataTable.simple(columns, _.id).render(Signal.fromValue(result))
       }
     )
   }

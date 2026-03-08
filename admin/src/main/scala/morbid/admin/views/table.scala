@@ -2,10 +2,7 @@ package morbid.ui
 
 import com.raquo.laminar.api.L
 import com.raquo.laminar.api.L.*
-import org.scalajs.dom.console
-
 import scala.collection.mutable
-import scala.scalajs.js
 
 object DataTable {
 
@@ -17,10 +14,12 @@ object DataTable {
 
   trait Row[K, V] {
     def highlight(active: Boolean): Unit
+    def disable(active: Boolean): Unit
   }
 
-  case class RowState[K, V](key: K, highlighted: Var[Boolean]) extends Row[K, V] {
+  case class RowState[K, V](key: K, highlighted: Var[Boolean], disabled: Var[Boolean]) extends Row[K, V] {
     override def highlight(active: Boolean) = highlighted.set(active)
+    override def disable(active: Boolean)   = disabled.set(active)
   }
 
   trait Table[K, V] {
@@ -28,13 +27,17 @@ object DataTable {
     def row(key: K): Option[Row[K, V]]
   }
 
-  case class SimpleTable[K, V](columns: Seq[Column[V]], key: V => K) extends Table[K, V] {
+  def simple[K, V](columns: Seq[Column[V]], key: V => K): Table[K, V] = SimpleTable(columns, key)
+
+  private case class SimpleTable[K, V](columns: Seq[Column[V]], key: V => K) extends Table[K, V] {
 
     private val cache = mutable.Map.empty[K, RowState[K, V]]
 
     private def ensureRow(key: K): RowState[K, V] = {
-      cache.getOrElseUpdate(key, RowState(key, Var(false)))
+      cache.getOrElseUpdate(key, RowState(key, Var(false), Var(false)))
     }
+
+    override def row(key: K) = cache.get(key)
 
     override def render(items : Signal[Seq[V]]) = {
 
@@ -52,22 +55,21 @@ object DataTable {
         tr(
           cls("medulla"),
           cls.toggle("highlight") <-- state.highlighted,
+          cls.toggle("disabled")  <-- state.disabled,
           columns.map(renderColumn(state))
         )
       }
 
       table(
         cls("medulla"),
-        thead(tr(columns.map(col => th(cls(col.cls), col.header)))),
+        thead(
+          tr(columns.map(col => th(cls(col.cls), col.header)))
+        ),
         tbody(
           children <-- items.split(key)(renderRow)
         ),
       )
     }
-
-    override def row(key: K) = cache.get(key)
   }
-
-  def of[K, V](columns: Seq[Column[V]], key: V => K): Table[K, V] = SimpleTable(columns, key)
 
 }

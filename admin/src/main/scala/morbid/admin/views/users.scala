@@ -42,7 +42,7 @@ object UsersView {
         cls("mb-4"),
         SearchBox.render(dict.search, v => searchFilter.set(v))
       ),
-      DataTable.of(columns, _.id).render(Signal.fromValue(Seq.empty)),
+      DataTable.simple(columns, _.id).render(Signal.fromValue(Seq.empty)),
     )
   }
 }

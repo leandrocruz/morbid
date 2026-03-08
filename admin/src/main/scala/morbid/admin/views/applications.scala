@@ -5,9 +5,8 @@ import medulla.fetch.Fetcher
 import medulla.ui.inputs.{InputVar, given}
 import medulla.ui.modal.Modal
 import medulla.ui.{Buttons, Input}
-import medulla.utils.{Mediator, Signals}
+import medulla.utils.Mediator
 import morbid.admin.*
-import morbid.ui.DataTable.Row
 import morbid.converters.given
 import morbid.domain.raw.RawApplicationDetails
 import morbid.protocol.{AllApplications, UpdateApplicationRequest}
@@ -57,7 +56,10 @@ object ApplicationsView {
             case Updated(item) =>
               tbl.row(item.id).foreach { row =>
                 row.highlight(true)
-                js.timers.setTimeout(1500)(row.highlight(false))
+                js.timers.setTimeout(1500)({
+                  row.highlight(false)
+                  //row.disable(true)
+                })
               }
               buffer.filterNot(_.id == item.id) :+ item
         }
@@ -72,7 +74,7 @@ object ApplicationsView {
     val mode    = Var(Closed.asInstanceOf[ModalMode])
     val events  = EventBus[CrudEvent]()
     val changes = events.events.scanLeft(Seq.empty[CrudEvent])(_ :+ _)
-    val tbl     = DataTable.of(columns(mode), _.id)
+    val tbl     = DataTable.simple(columns(mode), _.id)
     val rows    = changes.combineWith(data).map(rowsGiven(tbl)).map(_.sortBy(_.name))
     val opened  = mode.signal.map {
       case Closed => false

@@ -148,7 +148,16 @@ table.medulla tbody tr.highlight {
     @apply bg-yellow-200;
 }
 
-table.medulla tbody tr:hover {
+table.medulla tbody tr.disabled {
+    @apply bg-admin-bg/50 text-admin-muted;
+}
+
+table.medulla tbody tr.disabled button,
+table.medulla tbody tr.disabled a {
+    @apply pointer-events-none opacity-40;
+}
+
+table.medulla tbody tr:hover:not(.disabled) {
     @apply bg-admin-hover/30;
 }
 
