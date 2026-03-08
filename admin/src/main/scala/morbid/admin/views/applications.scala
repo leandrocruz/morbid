@@ -11,7 +11,7 @@ import morbid.converters.given
 import morbid.domain.raw.RawApplicationDetails
 import morbid.protocol.{AllApplications, UpdateApplicationRequest}
 import morbid.types.*
-import morbid.ui.DataTable
+import medulla.ui.table.DataTable
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.scalajs.js

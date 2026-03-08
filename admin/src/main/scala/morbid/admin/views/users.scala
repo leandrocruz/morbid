@@ -5,7 +5,7 @@ import medulla.ui.Buttons
 import morbid.admin.*
 import morbid.types.*
 import morbid.domain.raw.RawUserEntry
-import morbid.ui.DataTable
+import medulla.ui.table.DataTable
 
 object UsersView {
 

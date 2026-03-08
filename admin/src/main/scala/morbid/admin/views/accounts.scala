@@ -8,7 +8,7 @@ import morbid.admin.*
 import morbid.domain.raw.AccountWithApps
 import morbid.protocol.*
 import morbid.types.*
-import morbid.ui.DataTable
+import medulla.ui.table.DataTable
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
