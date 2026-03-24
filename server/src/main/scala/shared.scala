@@ -161,6 +161,11 @@ object commands {
     filter  : Seq[GroupCode] = Seq.empty
   ) extends Command[Map[ApplicationCode, Seq[RawGroup]]]
 
+  case class FindGroupsUsers(
+    account     : AccountId,
+    application : ApplicationCode,
+  ) extends Command[Seq[RawUserGroup]]
+
   case class FindUsersInGroup(
     account : AccountCode,
     app     : ApplicationCode,

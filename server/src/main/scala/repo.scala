@@ -338,6 +338,7 @@ object repo {
         case r: FindApplicationDetails => applicationDetails(r)
         case r: FindApplications       => applicationDetailsGiven(r)
         case r: FindGroups             => groupsGiven(r)
+        case r: FindGroupsUsers        => groupsUsers(r)
         case r: FindProviderByAccount  => providerGiven(r)
         case r: FindProviderByDomain   => providerGiven(r)
         case r: FindRoles              => rolesGiven(r)
@@ -860,6 +861,29 @@ object repo {
         _    <- printQuery(query)
         rows <- exec(run(query))
       } yield merge(rows)
+    }
+
+    private def groupsUsers(request: FindGroupsUsers): Task[Seq[RawUserGroup]] = {
+      inline def query = {
+        quote {
+          for {
+            app <- applications if app.active && app.deleted.isEmpty && app.code == lift(request.application)
+            a2a <- account2app.join(_.app == app.id) if a2a.deleted.isEmpty && a2a.acc == lift(request.account)
+            grp <- groups.join(_.acc == a2a.acc)
+            usr <- users.join(_.account == a2a.acc)
+          } yield (grp, usr)
+        }
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.map(c => c
+        .into[RawUserGroup]
+        .withFieldConst(_.groupId, c._1.id)
+        .withFieldConst(_.groupName, c._1.name)
+        .withFieldConst(_.userId, c._2.id)
+        .withFieldConst(_.userEmail, c._2.email)
+        .transform)
     }
 
     private def rolesGiven(request: FindRoles): Task[Seq[RawRole]] = {

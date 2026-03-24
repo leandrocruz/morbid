@@ -676,6 +676,15 @@ object router {
       }
     }
 
+    private def usersGroups: AppRoute = role("adm") { request =>
+      val appCode = summon[ApplicationCode]
+      
+      for
+        tk  <- tokenFrom(request)
+        seq <- repo.exec(FindGroupsUsers(tk.user.details.account, appCode))
+      yield Response.json(seq.toJson)
+    }
+
     private def entitiesByValidate[R](validateToken: ValidateToken)(request: Request, command: Command[R])(using JsonCodec[R]) = ensureResponse {
       for
         _   <- validateToken(request)
@@ -846,6 +855,7 @@ object router {
       Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
       Method.GET  / "app" / string("app") / "roles"                             -> handler(rolesGiven),
       Method.POST / "app" / string("app") / "account"                           -> handler(protect(provisionAccount)),
+      Method.GET  / "app" / string("app") / "users" / "groups"                  -> handler(protect(usersGroups)),
       Method.POST / "app" / string("app") / "account" / "users"                 -> handler(protect(provisionUsers))
     ).sandbox
 
