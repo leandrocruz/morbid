@@ -3,6 +3,11 @@
  - Added new route for reports
    - `GET /app/{app}/users/groups`
 
+## Release v1.8.3
+LTS: 10/03/2026
+
+- Using guara v1.1.14
+
 ## Release v1.8.2
 LTS: 09/02/2026
 
