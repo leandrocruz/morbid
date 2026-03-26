@@ -30,6 +30,7 @@ case class UpdateApplicationRequest(
 
 case class DeleteApplicationRequest(id: ApplicationId)
 
+given JsonCodec[CreateApplicationRequest] = DeriveJsonCodec.gen
 given JsonCodec[UpdateApplicationRequest] = DeriveJsonCodec.gen
 given JsonCodec[GetAccountsRequest]       = DeriveJsonCodec.gen
 given JsonCodec[GetApplicationsRequest]   = DeriveJsonCodec.gen

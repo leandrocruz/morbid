@@ -51,6 +51,7 @@ trait Dictionary {
   // Applications
   def appsTitle          = "Applications"
   def appsSubtitle       = "Manage system applications"
+  def appsNew            = "New Application"
 
   // Groups
   def groupsTitle        = "Groups"
@@ -123,6 +124,7 @@ case class Portuguese(language: Language) extends Dictionary {
   // Applications
   override def appsTitle          = "Aplicações"
   override def appsSubtitle       = "Gerencie as aplicações do sistema"
+  override def appsNew            = "Nova Aplicação"
 
   // Groups
   override def groupsTitle        = "Grupos"

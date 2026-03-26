@@ -15,6 +15,7 @@ import morbid.gip.*
 import morbid.legacy.{CreateLegacyAccountRequest, CreateLegacyUserRequest, LegacyMorbid, LegacyUser}
 import morbid.passwords.PasswordGenerator
 import morbid.pins.PinManager
+import morbid.protocol.{given, *}
 import morbid.proto.*
 import morbid.repo.Repo
 import morbid.secure.{AppRoute, appRoute, role}
@@ -126,6 +127,24 @@ object router {
       } yield result match
         case None              => Response.notFound
         case Some(application) => Response.json(application.toJson)
+    }
+
+    private def createApplication(request: Request): Task[Response] = ensureResponse {
+      for
+        tk      <- tokenFrom(request)
+        req     <- request.body.parse[CreateApplicationRequest]().mapError(e => ReturnResponseError(Response.badRequest(e.getMessage)))
+        _       <- ZIO.logInfo(s"Creating application '${req.code}' - name: '${req.name}' || Requested by: ${tk.user.details.email}")
+        created <- repo.exec(CreateApplication(req.code, req.name))
+      yield Response.json(created.toJson)
+    }
+
+    private def updateApplication(request: Request): Task[Response] = ensureResponse {
+      for
+        tk      <- tokenFrom(request)
+        req     <- request.body.parse[UpdateApplicationRequest]().mapError(e => ReturnResponseError(Response.badRequest(e.getMessage)))
+        _       <- ZIO.logInfo(s"Updating application '${req.id}' - name: '${req.name}', active: ${req.active} || Requested by: ${tk.user.details.email}")
+        updated <- repo.exec(UpdateApplication(req.id, req.name, req.active))
+      yield Response.json(updated.toJson)
     }
 
     private def loginProvider(request: Request): Task[Response] = {
@@ -822,6 +841,8 @@ object router {
     ).sandbox
 
     private def regular = Routes(
+      Method.POST / "application"                                               -> Handler.fromFunctionZIO[Request](createApplication),
+      Method.PUT  / "application"                                               -> Handler.fromFunctionZIO[Request](updateApplication),
       Method.GET  / "applications"                                              -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
       Method.GET  / "application" / string("app")                               -> handler(applicationGiven),
       Method.POST / "login" / "provider"                                        -> Handler.fromFunctionZIO[Request](loginProvider),

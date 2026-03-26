@@ -9,7 +9,7 @@ import medulla.utils.Mediator
 import morbid.admin.*
 import morbid.converters.given
 import morbid.domain.raw.RawApplicationDetails
-import morbid.protocol.{AllApplications, UpdateApplicationRequest}
+import morbid.protocol.{AllApplications, CreateApplicationRequest, UpdateApplicationRequest}
 import morbid.types.*
 import medulla.ui.table.DataTable
 
@@ -25,7 +25,8 @@ object ApplicationsView {
   case class Deleted(id: ApplicationId)           extends CrudEvent
 
   private sealed trait ModalMode
-  private case object Closed extends ModalMode
+  private case object Closed     extends ModalMode
+  private case object CreateMode extends ModalMode
   private case class EditMode  (app: RawApplicationDetails) extends ModalMode
   private case class DeleteMode(app: RawApplicationDetails) extends ModalMode
 
@@ -89,6 +90,7 @@ object ApplicationsView {
 
     val modalContent = mode.signal.map {
       case Closed          => div()
+      case CreateMode      => renderCreateModal(mode, events)
       case EditMode(app)   => renderEditModal  (app, mode, events)
       case DeleteMode(app) => renderDeleteModal(app, mode, events)
     }
@@ -102,10 +104,69 @@ object ApplicationsView {
 
     div(
       fetcher.execute(Endpoints.applications(AllApplications())).map(Some(_)) --> data,
-      PageHeader.render(dict.appsTitle, dict.appsSubtitle),
+      PageHeader.render(dict.appsTitle, dict.appsSubtitle, Buttons.primary.amend(dict.appsNew, onClick.mapTo(CreateMode) --> mode)),
       child.maybe <-- status.map(_._2),
       child.maybe <-- status.map(_._1).map(renderTable),
       child.maybe <-- Modal(opened, modalContent),
+    )
+  }
+
+  private def renderCreateModal(
+    mode   : Var[ModalMode],
+    events : EventBus[CrudEvent]
+  )(using dict: Dictionary, fetcher: Fetcher): HtmlElement = {
+
+    val code = InputVar.of[ApplicationCode](ApplicationCode.of(""))
+    val name = InputVar.of[ApplicationName](ApplicationName.of(""))
+
+    val req = InputVar.combine(Failure(Exception("")))(code.must, name.must) { (theCode, theName) =>
+      (ApplicationCode.value(theCode).isBlank, ApplicationName.value(theName).isBlank) match
+        case (true, _) => Failure(Exception("Code is required"))
+        case (_, true) => Failure(Exception("Name is required"))
+        case _         => Success(CreateApplicationRequest(theCode, theName))
+    }
+
+    val med = Mediator.make(req, r => fetcher.execute(Endpoints.applicationCreate(r)))
+
+    div(
+      med.wire,
+      med.onlySuccesses.map(Created(_)) --> events,
+      med.onlySuccesses.mapTo(Closed) --> mode,
+      cls("flex flex-col h-full"),
+      div(
+        cls("flex items-center justify-between p-6 border-b border-gray-200"),
+        h2(cls("text-lg font-semibold text-admin-text"), dict.appsNew),
+        button(
+          cls("text-admin-muted hover:text-admin-text"),
+          MaterialIcon("close"),
+          onClick.mapTo(Closed) --> mode
+        )
+      ),
+      div(
+        cls("flex flex-col gap-4 p-6 flex-1"),
+        div(
+          label(cls("block text-sm font-medium text-admin-text mb-1"), dict.columnCode),
+          Input.basic(code)
+        ),
+        div(
+          label(cls("block text-sm font-medium text-admin-text mb-1"), dict.columnName),
+          Input.basic(name)
+        ),
+      ),
+      child <-- med.onlyErrors.map(err => div(cls("px-6 text-sm text-admin-error-fg"), s"Erro: ${err.getMessage}")),
+      div(
+        cls("flex items-center justify-end gap-2 p-6 border-t border-gray-200"),
+        Buttons.secondary.amend(
+          dict.cancel,
+          disabled <-- med.disabled,
+          onClick.mapTo(Closed) --> mode
+        ),
+        Buttons.primary.amend(
+          dict.save,
+          disabled <-- med.disabled,
+          onClick.mapToUnit --> med.trigger
+        ),
+      )
     )
   }
 

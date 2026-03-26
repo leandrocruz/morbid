@@ -132,6 +132,17 @@ object commands {
 
   sealed trait Command[R]
 
+  case class CreateApplication(
+    code : ApplicationCode,
+    name : ApplicationName,
+  ) extends Command[RawApplicationDetails]
+
+  case class UpdateApplication(
+    id     : ApplicationId,
+    name   : ApplicationName,
+    active : Boolean,
+  ) extends Command[RawApplicationDetails]
+
   case class FindApplications(account: AccountCode) extends Command[Seq[RawApplicationDetails]]
 
   case class FindApplicationDetails(

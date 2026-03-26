@@ -334,6 +334,8 @@ object repo {
         case r: FindAccountByCode      => accountByCode(r)
         case r: FindAccountById        => accountById(r)
         case r: FindAccountByProvider  => accountByProvider(r)
+        case r: CreateApplication      => createApplication(r)
+        case r: UpdateApplication      => updateApplication(r)
         case r: FindApplication        => applicationGiven(r)
         case r: FindApplicationDetails => applicationDetails(r)
         case r: FindApplications       => applicationDetailsGiven(r)
@@ -1068,6 +1070,36 @@ object repo {
       for
         rows <- exec(run(query))
       yield rows.headOption.map(_.transformInto[RawApplicationDetails])
+    }
+
+    private def createApplication(request: CreateApplication): Task[RawApplicationDetails] = {
+      inline def stmt(row: ApplicationRow) = quote {
+        applications.insertValue(lift(row)).returning(a => a)
+      }
+
+      for
+        now <- Clock.localDateTime
+        row =  ApplicationRow(ApplicationId.of(0), now, None, true, request.code, request.name)
+        _   <- ZIO.log(s"Creating application '${request.code}' - name: '${request.name}'")
+        res <- exec(run(stmt(row)))
+      yield res.transformInto[RawApplicationDetails]
+    }
+
+    private def updateApplication(request: UpdateApplication): Task[RawApplicationDetails] = {
+      inline def stmt = quote {
+        applications
+          .filter(a => a.id == lift(request.id) && a.deleted.isEmpty)
+          .update(
+            _.name   -> lift(request.name),
+            _.active -> lift(request.active)
+          )
+          .returning(a => a)
+      }
+
+      for
+        _   <- ZIO.log(s"Updating application '${request.id}' - name: '${request.name}', active: ${request.active}")
+        row <- exec(run(stmt))
+      yield row.transformInto[RawApplicationDetails]
     }
 
     private def linkAccountToApp(request: LinkAccountToApp): Task[Unit] = {
