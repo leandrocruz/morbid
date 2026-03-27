@@ -40,6 +40,9 @@ object BuildHelper {
   lazy val clientDependencies = Seq(
     dependencies.zio,
     dependencies.zioJson,
+    dependencies.jjwtApi,
+    dependencies.jjwtImpl,
+    dependencies.jjwtJackson,
   )
 
   lazy val allDependencies = Seq(
