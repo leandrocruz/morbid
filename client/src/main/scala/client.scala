@@ -13,28 +13,31 @@ object client {
   import morbid.types.*
   import zio.http.*
   import zio.json.*
+  import io.jsonwebtoken.{Jwts, Jws}
 
-  import java.time.{LocalDateTime, ZonedDateTime}
+  import java.nio.file.{Files, Paths}
+  import java.time.{LocalDateTime, ZoneId, ZonedDateTime}
+  import java.util.Base64
+  import javax.crypto.spec.SecretKeySpec
 
   trait MorbidClient {
-    def proxy             (request: Request)                                                                : Task[Response]
-    def tokenFrom         (token: RawToken)                                                                 : Task[Token]
-    def groups                                                 (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
-    def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
-    def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode): Task[Option[RawGroup]]
-    def usersByGroupByCode(group: GroupCode)                   (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
-    def users                                                  (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
-    def roles                                                  (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]
-    def storeGroup        (request: StoreGroupRequest)         (using token: RawToken, app: ApplicationCode): Task[RawGroup]
-    def removeGroup       (request: RemoveGroupRequest)        (using token: RawToken, app: ApplicationCode): Task[Long]
-    def storeUser         (request: StoreUserRequest)          (using token: RawToken, app: ApplicationCode): Task[RawUserEntry]
-    def removeUser        (request: RemoveUserRequest)         (using token: RawToken, app: ApplicationCode): Task[Long]
-    def passwordResetLink (request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode): Task[PasswordResetLink]
-    def passwordChange    (request: ChangePasswordRequest)     (using token: RawToken, app: ApplicationCode): Task[Boolean]
-    def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode): Task[Boolean]
-    def validatePin       (request: ValidateUserPin)           (using token: RawToken                      ): Task[Boolean]
-    def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode): Task[LoginViaEmailLinkResponse]
-    
+    def proxy             (request: Request)                                                                            : Task[Response]
+    def tokenFrom         (token: RawToken)                                                                             : Task[Token]
+    def groups                                                             (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
+    def groupsByCode      (groups: Seq[GroupCode])                         (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
+    def groupByCode       (group: GroupCode)                               (using token: RawToken, app: ApplicationCode): Task[Option[RawGroup]]
+    def usersByGroupByCode(group: GroupCode)                               (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
+    def users                                                              (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
+    def roles                                                              (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]
+    def storeGroup        (request: StoreGroupRequest)                     (using token: RawToken, app: ApplicationCode): Task[RawGroup]
+    def removeGroup       (request: RemoveGroupRequest)                    (using token: RawToken, app: ApplicationCode): Task[Long]
+    def storeUser         (request: StoreUserRequest)                      (using token: RawToken, app: ApplicationCode): Task[RawUserEntry]
+    def removeUser        (request: RemoveUserRequest)                     (using token: RawToken, app: ApplicationCode): Task[Long]
+    def passwordResetLink (request: RequestPasswordRequestLink)            (using token: RawToken, app: ApplicationCode): Task[PasswordResetLink]
+    def passwordChange    (request: ChangePasswordRequest)                 (using token: RawToken, app: ApplicationCode): Task[Boolean]
+    def setPin            (request: SetUserPin)                            (using token: RawToken, app: ApplicationCode): Task[Boolean]
+    def validatePin       (request: ValidateUserPin)                       (using token: RawToken                      ): Task[Boolean]
+    def emailLoginLink    (request: LoginViaEmailLinkRequest)              (using                  app: ApplicationCode): Task[LoginViaEmailLinkResponse]
     def managerGetUsers     (account: AccountId)                           (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
     def managerStoreUser    (request: StoreUserRequest, account: AccountId)(using token: RawToken, app: ApplicationCode): Task[RawUserEntry]
     def managerRemoveUser   (account: AccountId, code: UserCode)           (using token: RawToken, app: ApplicationCode): Task[Boolean]
@@ -43,7 +46,7 @@ object client {
     def managerRemoveAccount(account: AccountId)                           (using token: RawToken, app: ApplicationCode): Task[Boolean]
   }
 
-  case class MorbidClientConfig(url: String)
+  case class MorbidClientConfig(url: String, mode: String = "remote", key: Option[String] = None, timezone: Option[String] = None)
 
   object MorbidClient {
 
@@ -53,7 +56,11 @@ object client {
         scope  <- ZIO.service[Scope]
         client <- ZIO.service[Client]
         url    <- ZIO.fromEither(URL.decode(config.url))
-      } yield RemoteMorbidClient(url, client, scope)
+        remote =  RemoteMorbidClient(url, client, scope)
+        impl   <- config.mode match
+          case "local" => LocalMorbidClient.make(config, remote)
+          case _       => ZIO.succeed(remote)
+      } yield impl
     }
 
     def fake(app: ApplicationCode) = ZLayer.succeed(FakeMorbidClient(app))
@@ -125,6 +132,65 @@ object client {
     override def managerGetAccounts                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawAccount]]                 (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "accounts")
     override def managerStoreAccount (request: StoreAccountRequest)                 (using token: RawToken, app: ApplicationCode) = post[StoreAccountRequest, RawAccount](Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account", request)
     override def managerRemoveAccount(account: AccountId)                           (using token: RawToken, app: ApplicationCode) = delete[Boolean]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString)
+  }
+
+  case class LocalMorbidClient(parser: io.jsonwebtoken.JwtParser, zone: ZoneId, remote: RemoteMorbidClient) extends MorbidClient {
+
+    override def tokenFrom(token: RawToken): Task[Token] = {
+
+      def asToken(str: String): Task[Token] =
+        ZIO.fromEither(str.fromJson[Token]).mapError(new Exception(_))
+
+      def isExpired(token: Token, now: ZonedDateTime): Boolean =
+        token.expires.exists(now.isAfter)
+
+      for
+        _       <- ZIO.logDebug("Verifying token locally")
+        generic <- ZIO.attempt(parser.parse(token.string))
+        str     <- ZIO.attempt(generic.accept(Jws.CONTENT).getPayload)
+        token   <- asToken(new String(str))
+        now     <- Clock.localDateTime
+        expired =  isExpired(token, now.atZone(zone))
+        _       <- ZIO.when(expired) { ZIO.fail(Exception(s"Token is expired since '${token.expires.getOrElse("???")}'")) }
+      yield token
+    }
+
+    override def proxy             (request: Request)                                                                = remote.proxy(request)
+    override def groups                                                 (using token: RawToken, app: ApplicationCode) = remote.groups
+    override def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode) = remote.groupsByCode(groups)
+    override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = remote.groupByCode(group)
+    override def usersByGroupByCode(group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = remote.usersByGroupByCode(group)
+    override def users                                                  (using token: RawToken, app: ApplicationCode) = remote.users
+    override def roles                                                  (using token: RawToken, app: ApplicationCode) = remote.roles
+    override def storeGroup        (request: StoreGroupRequest)         (using token: RawToken, app: ApplicationCode) = remote.storeGroup(request)
+    override def removeGroup       (request: RemoveGroupRequest)        (using token: RawToken, app: ApplicationCode) = remote.removeGroup(request)
+    override def storeUser         (request: StoreUserRequest)          (using token: RawToken, app: ApplicationCode) = remote.storeUser(request)
+    override def removeUser        (request: RemoveUserRequest)         (using token: RawToken, app: ApplicationCode) = remote.removeUser(request)
+    override def passwordResetLink (request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode) = remote.passwordResetLink(request)
+    override def passwordChange    (request: ChangePasswordRequest)     (using token: RawToken, app: ApplicationCode) = remote.passwordChange(request)
+    override def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode) = remote.setPin(request)
+    override def validatePin       (request: ValidateUserPin)           (using token: RawToken                      ) = remote.validatePin(request)
+    override def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode) = remote.emailLoginLink(request)
+    override def managerGetUsers     (account: AccountId)                           (using token: RawToken, app: ApplicationCode) = remote.managerGetUsers(account)
+    override def managerStoreUser    (request: StoreUserRequest, account: AccountId)(using token: RawToken, app: ApplicationCode) = remote.managerStoreUser(request, account)
+    override def managerRemoveUser   (account: AccountId, code: UserCode)           (using token: RawToken, app: ApplicationCode) = remote.managerRemoveUser(account, code)
+    override def managerGetAccounts                                                 (using token: RawToken, app: ApplicationCode) = remote.managerGetAccounts
+    override def managerStoreAccount (request: StoreAccountRequest)                 (using token: RawToken, app: ApplicationCode) = remote.managerStoreAccount(request)
+    override def managerRemoveAccount(account: AccountId)                           (using token: RawToken, app: ApplicationCode) = remote.managerRemoveAccount(account)
+  }
+
+  object LocalMorbidClient {
+    def make(config: MorbidClientConfig, remote: RemoteMorbidClient): Task[LocalMorbidClient] = {
+      for
+        path    <- ZIO.fromOption(config.key).orElseFail(Exception("MorbidClientConfig.key is required for local mode"))
+        zone    =  ZoneId.of(config.timezone.getOrElse("America/Sao_Paulo"))
+        _       <- ZIO.logInfo(s"Loading JWT key from '$path' for local token verification")
+        bytes   <- ZIO.attempt(Files.readAllBytes(Paths.get(path)))
+        decoded <- ZIO.attempt(Base64.getDecoder.decode(bytes))
+        key     =  new SecretKeySpec(decoded, 0, decoded.length, "HmacSHA512")
+        parser  =  Jwts.parser().verifyWith(key).build()
+      yield LocalMorbidClient(parser, zone, remote)
+    }
   }
 
   case class FakeMorbidClient(appcode: ApplicationCode) extends MorbidClient {

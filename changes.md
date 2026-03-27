@@ -1,5 +1,12 @@
 # Morbid
 
+## Release v1.10.0
+LTS: 27/03/2026
+
+ - [Leandro] Added local JWT verification mode to MorbidClient (mode: "local" | "remote")
+ - [Leandro] Added JJWT dependencies to morbid-client module
+ - [Leandro] MorbidClientConfig now supports key, mode and timezone fields
+
 ## Release v1.9.0
 LTS: 27/03/2026
 
