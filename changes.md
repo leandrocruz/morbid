@@ -1,5 +1,9 @@
 # Morbid
 
+ - Added tracking.account
+ - Logging some protected requests
+ - Using account logging (separate log files for each account)
+
 ## Release v1.8.3
 LTS: 10/03/2026
 
