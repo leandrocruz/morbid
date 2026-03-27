@@ -41,6 +41,9 @@ object BuildHelper {
   lazy val clientDependencies = Seq(
     dependencies.zio,
     dependencies.zioJson,
+    dependencies.jjwtApi,
+    dependencies.jjwtImpl,
+    dependencies.jjwtJackson,
   )
 
   lazy val allDependencies = Seq(
@@ -73,7 +76,7 @@ object BuildHelper {
     ThisBuild / scalaVersion                 := ScalaVersion,
     ThisBuild / scalacOptions                := commonSettings(scalaVersion.value),
     ThisBuild / organization                 := "morbid",
-    ThisBuild / version                      := "v1.9.0",
+    ThisBuild / version                      := "v1.10.0",
     ThisBuild / doc / sources                := Seq.empty,
     ThisBuild / packageDoc / publishArtifact := false,
     ThisBuild / resolvers                    += Resolver.mavenLocal,
