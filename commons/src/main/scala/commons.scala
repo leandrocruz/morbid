@@ -486,6 +486,15 @@ object domain {
   }
 }
 
+object track {
+
+  import morbid.types.*
+  import morbid.domain.token.SingleAppToken
+  import zio.ZIOAspect
+
+  def account(token: SingleAppToken) = zio.logging.loggerName("account") @@ ZIOAspect.annotated("account", AccountId.value(token.user.details.account).toString)
+}
+
 object roles {
 
   import types.{ApplicationCode, RoleCode}
@@ -525,6 +534,7 @@ object roles {
 
 object secure {
 
+  import domain.raw.RawUserDetails
   import types.ApplicationCode
   import domain.token.{SingleAppToken, Token}
   import roles.Role
@@ -547,12 +557,26 @@ object secure {
       else                           forbidden(s"Required role '$role' is missing from user token (application: ${token.user.application.code})")
     }
 
-    for {
-      _ <- allow(token) match
-             case Left(err) => forbidden(err)
-             case Right(_)  => test(token)
-      result <- fn(request)
-    } yield result
+    def execute = {
+      def log(maybe: Option[RawUserDetails]) = {
+        maybe match
+          case Some(imp) => ZIO.logWarning(s"Executing impersonated request at '${request.url.path.encode}' by '${imp.id}/${imp.email}' on behalf of '${token.user.details.id}/${token.user.details.email}' on app '${token.user.application.code}'")
+          case None      => ZIO.logInfo   (s"Executing request at '${request.url.path.encode}' by '${token.user.details.id}/${token.user.details.email}' on app '${token.user.application.code}'")
+      }
+
+      for
+        _      <- log(token.user.impersonatedBy)
+        result <- fn(request)
+      yield result
+    }
+
+    for
+      _      <- allow(token) match {
+               case Left(err) => forbidden(err)
+               case Right(_)  => test(token)
+             }
+      result <- execute @@ morbid.track.account(token)
+    yield result
   }
 
   def appRoute(application: ApplicationCode, tokenFrom: Request => Task[Token])(route: AppRoute)(request: Request)(using Origin): Task[Response] = {

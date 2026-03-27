@@ -296,7 +296,9 @@ object router {
         req     <- request.body.parse[StoreGroupRequest]().mapError(err => ReturnResponseError(Response.badRequest(err.getMessage)))
         app     <- repo.exec(FindApplication(token.user.details.accountCode, application)).orFail(s"Can't find application '${application}'")
         code    <- req.code.map(ZIO.succeed).getOrElse(uniqueCode)
-        _       <- ZIO.logInfo(s"Storing group '${req.name} (${req.id}/$code)' in app '${app.details.code}' in account '${token.user.details.account}' in tenant '${token.user.details.tenant}'")
+        _       <- ZIO.logInfo(s"Storing group '${req.name} (${req.id}/$code)' with '${req.users.length}' users, '${req.roles.length}' roles, app '${app.details.code}', account '${token.user.details.account}', tenant '${token.user.details.tenant}'")
+        _       <- ZIO.foreach(req.roles) { code => ZIO.logInfo(s"role: $code") }
+        _       <- ZIO.foreach(req.users) { code => ZIO.logInfo(s"user: $code") }
         create  =  build(req, app, code, now)
         created <- repo.exec(create)
       yield Response.json(created.toJson)).errorToResponse(Response.internalServerError("Error creating group"))
@@ -409,6 +411,7 @@ object router {
 
       for
         req <- request.body.parse[RemoveUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        _   <- ZIO.logWarning(s"Removing user '${req.code}'")
         _   <- removeUserCommon(account, req.code)
       yield Response.ok
     }
@@ -421,6 +424,7 @@ object router {
 
       for
         req    <- request.body.parse[RemoveGroupRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        _      <- ZIO.logWarning(s"Removing group '${req.code}'")
         result <- repo.exec(RemoveGroup(account, application, req.code))
       yield Response.json(result.toJson)
     }
@@ -622,7 +626,7 @@ object router {
         }
       }
 
-      for {
+      for
         req     <- request.body.parse[CreateAccount]()
         _       <- ZIO.logInfo(s"Account Provisioning '${req.email}'")
         maybe   <- repo.exec(FindApplicationDetails(Presto))
@@ -646,7 +650,7 @@ object router {
         _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = admin, users = Seq(user.id)))
         _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = all  , users = Seq(user.id)))
         created <- repo.exec(FindUserById(user.id))
-      } yield created match
+      yield created match
         case None        => Response.internalServerError(s"Error provisioning account ${req.email}")
         case Some(value) => Response.json(value.toJson)
     }
@@ -655,7 +659,7 @@ object router {
 
       val appCode = summon[ApplicationCode]
 
-      for {
+      for
         form    <- request.body.asMultipartForm
         code    <- ZIO.fromOption(form.get("account")).mapError(_ => Exception("No field called 'account'"))
         file    <- ZIO.fromOption(form.get("file"))   .mapError(_ => Exception("No field called 'file'"))
@@ -668,7 +672,7 @@ object router {
         entries <- accounts.parseCSV(acc, text)
         created =  entries.map(_._2).filter(_.isSuccess).map(_.get).map(_.id)
         _       <- repo.exec(LinkUsersToGroup(app.id, group.id, created))
-      } yield Response.json {
+      yield Response.json {
         entries.map {
           case (email, Success(user)) => (Email.value(email), s"[ok] ${user.id}")
           case (email, Failure(err))  => (Email.value(email), s"[err] ${err.getMessage}")
@@ -697,26 +701,26 @@ object router {
       entitiesByValidate(requireRootAccount)(request, UsersByAccount(ApplicationCode.of(app), AccountId.of(acc)))
     }
 
-    private def createGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount) = {
-
-      val groups = Seq(
-        RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.all, name = GroupName.of("Todos"), roles = Seq.empty),
-        RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.admin, name = GroupName.of("Admin"), roles = Seq.empty)
-      )
-
-      val commands = groups.map { group =>
-        val roles = if (group.code == GroupCode.admin) Seq(RoleCode.of("adm")) else Seq.empty
-        StoreGroup(account = acc.id, accountCode = acc.code, application = app, group = group, users = Seq.empty, roles = roles)
-      }
-
-      for
-        grps  <- ZIO.foreach(commands) { repo.exec }
-        admin <- ZIO.fromOption(grps.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find group 'admin' after account creation"))
-        all   <- ZIO.fromOption(grps.find(_.code == GroupCode.all).map(_.id)).mapError(_ => Exception("Can't find group 'all' after account creation"))
-      yield ()
-    }
-
     private def storeAccount(app: String, request: Request) = {
+
+      def createGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount) = {
+
+        val groups = Seq(
+          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.all, name = GroupName.of("Todos"), roles = Seq.empty),
+          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.admin, name = GroupName.of("Admin"), roles = Seq.empty)
+        )
+
+        val commands = groups.map { group =>
+          val roles = if (group.code == GroupCode.admin) Seq(RoleCode.of("adm")) else Seq.empty
+          StoreGroup(account = acc.id, accountCode = acc.code, application = app, group = group, users = Seq.empty, roles = roles)
+        }
+
+        for
+          grps  <- ZIO.foreach(commands) { repo.exec }
+          admin <- ZIO.fromOption(grps.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find group 'admin' after account creation"))
+          all   <- ZIO.fromOption(grps.find(_.code == GroupCode.all).map(_.id)).mapError(_ => Exception("Can't find group 'all' after account creation"))
+        yield ()
+      }
 
       def handleLegacyMorbid(req: StoreAccountRequest) = {
 
