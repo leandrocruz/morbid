@@ -1,7 +1,7 @@
 <configuration>
     <!-- Per-Account ID logging (for account-specific requests) -->
     <appender name="SIFT_ACCOUNT" class="ch.qos.logback.classic.sift.SiftingAppender">
-        <discriminator class="morbid.track.AccountDiscriminator">
+        <discriminator class="morbid.logback.AccountDiscriminator">
             <defaultValue>no-account</defaultValue>
         </discriminator>
         <sift>

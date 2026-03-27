@@ -490,19 +490,7 @@ object track {
 
   import morbid.types.*
   import morbid.domain.token.SingleAppToken
-  import ch.qos.logback.classic.spi.ILoggingEvent
-  import ch.qos.logback.core.sift.AbstractDiscriminator
   import zio.ZIOAspect
-  import scala.jdk.CollectionConverters.*
-
-  class AccountDiscriminator extends AbstractDiscriminator[ILoggingEvent] {
-
-    override def getDiscriminatingValue(e: ILoggingEvent): String = {
-      e.getKeyValuePairs.asScala.find(_.key == "account").map(_.value.toString).getOrElse("no-account")
-    }
-
-    override def getKey: String = "account"
-  }
 
   def account(token: SingleAppToken) = zio.logging.loggerName("account") @@ ZIOAspect.annotated("account", AccountId.value(token.user.details.account).toString)
 }
