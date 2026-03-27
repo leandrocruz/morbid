@@ -1,10 +1,10 @@
 package morbid.admin
 
-import medulla.fetch.{RequestEncoder, ResponseDecoder}
-import zio.json.{JsonEncoder, JsonDecoder}
-import scala.util.{Try, Success, Failure}
-
 object codec {
+
+  import medulla.fetch.{RequestEncoder, ResponseDecoder}
+  import zio.json.{JsonDecoder, JsonEncoder}
+  import scala.util.{Failure, Success, Try}
 
   given zioJsonRequestEncoder[T: JsonEncoder]: RequestEncoder[T] with
     def encode(i: T): Try[String] = Success(JsonEncoder[T].encodeJson(i, None).toString)
@@ -14,4 +14,16 @@ object codec {
       JsonDecoder[T].decodeJson(text) match
         case Right(v) => Success(v)
         case Left(e)  => Failure(new RuntimeException(s"JSON decode error: $e"))
+}
+
+object converters {
+
+  import morbid.types.ApplicationCode
+  import medulla.ui.inputs.SafeConverter
+  import scala.util.Try
+
+  given SafeConverter[ApplicationCode] = new SafeConverter[ApplicationCode] {
+    override def fromText(str: String)      = Try(ApplicationCode.of(str))
+    override def asText(t: ApplicationCode) = Try(ApplicationCode.value(t))
+  }
 }

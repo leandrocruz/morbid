@@ -14,7 +14,7 @@ lazy val commons = crossProject(JVMPlatform, JSPlatform)
     libraryDependencies ++= Seq(
       "dev.zio"      %% "zio"             % BuildHelper.ZioVersion,
       "dev.zio"      %% "zio-optics"      % "0.2.2",
-      "guara"        %% "guara-framework" % "v1.1.13",
+      "guara"        %% "guara-framework" % "v1.1.14",
       "io.scalaland" %% "chimney"         % "1.3.0",
     )
   )

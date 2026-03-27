@@ -7,6 +7,8 @@ import medulla.ui.modal.Modal
 import medulla.ui.{Buttons, Input}
 import medulla.utils.Mediator
 import morbid.admin.*
+import morbid.admin.converters.given
+import morbid.admin.codec.given
 import morbid.converters.given
 import morbid.domain.raw.RawApplicationDetails
 import morbid.protocol.{AllApplications, CreateApplicationRequest, UpdateApplicationRequest}
