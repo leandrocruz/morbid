@@ -3,7 +3,7 @@
 ## Release v1.10.1
 LTS: 30/03/2026
 
-- [Matheus] Updating guara-zio `v1.1.14` -> `v1.1.15`
+ - [Matheus] Updating guara-zio `v1.1.14` -> `v1.1.15`
 
 ## Release v1.10.0
 LTS: 27/03/2026
