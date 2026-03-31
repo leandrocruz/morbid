@@ -1,5 +1,8 @@
 # Morbid
 
+## Release v1.11.0
+LTS: 31/03/2026
+
  - [Leandro] Removed `ensureResponse` from `appRoute` — callers now handle response wrapping explicitly
  - [Leandro] Added `.toTask` to all `ensureResponse` call sites in morbid-server router
  - [Leandro] Updated guara dependency to v1.2.0-SNAPSHOT
