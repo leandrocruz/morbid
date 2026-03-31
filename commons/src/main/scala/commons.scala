@@ -538,7 +538,7 @@ object secure {
   import types.ApplicationCode
   import domain.token.{SingleAppToken, Token}
   import roles.Role
-  import guara.utils.{ensureResponse, Origin}
+  import guara.utils.Origin
   import guara.errors.*
   import zio.http.*
   import zio.*
@@ -587,15 +587,13 @@ object secure {
       route(request)
     }
 
-    ensureResponse {
-      for
-        _     <- ZIO.logInfo(s"Executing app route for app '${application}'")
-        token <- tokenFrom(request)                         //.mapError(e => ReturnResponseError(Response.forbidden(s"Error extracting token from request: ${e.getMessage}")))
-        _     <- ZIO.logInfo(s"Token extracted ${token.user.details.email}")
-        sat   <- ZIO.fromOption(token.narrowTo(application)).mapError(_ => ReturnResponseError(Response.forbidden(s"User has no access to application '$application'")))
-        _     <- ZIO.logInfo(s"Token narrowed. Executing")
-        res   <- execute(sat)
-      yield res
-    }
+    for
+      _     <- ZIO.logInfo(s"Executing app route for app '${application}'")
+      token <- tokenFrom(request)
+      _     <- ZIO.logInfo(s"Token extracted ${token.user.details.email}")
+      sat   <- ZIO.fromOption(token.narrowTo(application)).mapError(_ => ReturnResponseError(Response.forbidden(s"User has no access to application '$application'")))
+      _     <- ZIO.logInfo(s"Token narrowed. Executing")
+      res   <- execute(sat)
+    yield res
   }
 }
