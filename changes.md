@@ -1,5 +1,6 @@
 # Morbid
 
+## Release v1.11.1
 ## Release v1.11.0
 LTS: 31/03/2026
 
