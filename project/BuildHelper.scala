@@ -13,7 +13,7 @@ object BuildHelper {
     val commonsLang     = "org.apache.commons"   %  "commons-lang3"     % "3.17.0"
     val chimney         = "io.scalaland"         %% "chimney"           % "1.3.0"
     val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.6.0"
-    val guara           = "guara"                %% "guara-framework"   % "v1.2.0-SNAPSHOT" changing()
+    val guara           = "guara"                %% "guara-framework"   % "v1.2.0"
     val jjwtApi         = "io.jsonwebtoken"      % "jjwt-api"           % "0.12.3"
     val jjwtImpl        = "io.jsonwebtoken"      % "jjwt-impl"          % "0.12.3"
     val jjwtJackson     = "io.jsonwebtoken"      % "jjwt-jackson"       % "0.12.3"
