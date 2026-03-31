@@ -2,7 +2,8 @@ package morbid
 
 import guara.errors.*
 import guara.router.{Echo, Router}
-import guara.utils.{Origin, ensureResponse, parse}
+import guara.utils.{Origin, SafeResponse, ensureResponse, parse}
+import guara.utils.SafeResponse.*
 import io.scalaland.chimney.dsl.*
 import morbid.accounts.AccountManager
 import morbid.commands.*
@@ -86,7 +87,7 @@ object router {
   ) extends Router {
 
     private def protect(r: AppRoute)(app: String, request: Request): Task[Response] = {
-      appRoute(ApplicationCode.of(app), tokenFrom)(r)(request)
+      ensureResponse(appRoute(ApplicationCode.of(app), tokenFrom)(r)(request)).toTask
     }
 
     private def forbidden(cause: Throwable) = ReturnResponseError(Response.forbidden(s"Error verifying token: ${cause.getMessage}"))
@@ -117,7 +118,7 @@ object router {
         tk   <- tokenFrom(request)
         apps <- repo.exec(FindApplications(tk.user.details.accountCode))
       } yield Response.json(apps.toJson)
-    }
+    }.toTask
 
     private def applicationGiven(app: String, request: Request): Task[Response] = {
       for {
@@ -142,7 +143,7 @@ object router {
           req      <- request.body.parse[GetLoginMode]()
           provider <- identities.providerGiven(req.email, req.tenant)
         } yield Response.json(encode(provider))
-      }
+      }.toTask
     }
 
     private def loginProviderForAccount(request: Request): Task[Response] = {
@@ -189,7 +190,7 @@ object router {
           fn        =  ensureUser(identity)
           (tk, enc) <- tokenGiven(identity.email) { fn }
         yield loginResponse(tk, enc)
-      }
+      }.toTask
     }
 
     private def emitToken(request: Request) = {
@@ -215,7 +216,7 @@ object router {
           (_, enc) <- tokenGiven(req.email, req.days.getOrElse(365), Some(owner)) { ensureUser(req.email) }
           _        <- ZIO.logWarning(s"Service Account Token '${req.email}' created by '${owner.user.details.email}'")
         yield Response.text(enc)
-      }
+      }.toTask
     }
 
     private def tokenGiven(email: Email, days: Int = 1, owner: Option[Token] = None)(ensureUser: Option[RawUser] => Task[RawUser]): Task[(Token, String)] = {
@@ -236,7 +237,7 @@ object router {
           _         <- ZIO.fromOption(maybeUser)                         .mapError(_   => ReturnResponseError(Response.notFound(s"Can't find user '${req.email}'")))
           link      <- identities.signInWithEmailLink(req.email, req.url).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error generating login link for '${req.email}'")))
         } yield Response.json(LoginViaEmailLinkResponse(link).toJson)
-      }
+      }.toTask
     }
 
     private def logoff(request: Request): Task[Response] = {
@@ -445,14 +446,14 @@ object router {
         uid   =  token.impersonatedBy.map(_.id).getOrElse(token.user.details.id)
         valid <- pins.validate(uid, req.pin)
       } yield if(valid) res(Status.Ok, "true") else res(Status.Forbidden, "false")
-    }
+    }.toTask
 
     private def verify(request: Request): Task[Response] = ensureResponse {
       for {
         req   <- request.body.parse[VerifyMorbidTokenRequest]().mapError(forbidden)
         token <- tokens.verify(req.token)                      .mapError(forbidden)
       } yield Response.json(token.toJson)
-    }
+    }.toTask
 
     private def impersonate(request: Request): Task[Response] = ensureResponse {
       for {
@@ -469,14 +470,14 @@ object router {
         impersonated = token.copy(impersonatedBy = Some(impersonator.user.details))
         encoded      <- tokens.encode(impersonated)
       } yield loginResponse(impersonated, encoded)
-    }
+    }.toTask
 
     private def usersGiven(request: Request, application: ApplicationCode, group: Option[GroupCode] = None): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
         seq <- repo.exec(FindUsersInGroup(tk.user.details.accountCode, application, group))
       } yield Response.json(seq.toJson)
-    }
+    }.toTask
 
     private def groupUsers(app: String, group: String, request: Request): Task[Response] = usersGiven(request, ApplicationCode.of(app), Some(GroupCode.of(group)))
 
@@ -489,16 +490,16 @@ object router {
       } yield map.get(appCode) match
         case Some(groups) => Response.json(groups.toJson)
         case None         => Response.notFound(s"Can't find groups for '$app'")
-    }
+    }.toTask
 
     private def rolesGiven(app: String, request: Request): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
         seq <- repo.exec(FindRoles(tk.user.details.accountCode, ApplicationCode.of(app)))
       } yield Response.json(seq.toJson)
-    }
+    }.toTask
 
-    private def sameUserOr[T <: HasEmail, R](role: Role)(fn: (SingleAppUser, T) => Task[R])(request: Request)(using token: SingleAppToken)(using JsonDecoder[T], JsonEncoder[R]): Task[Response] = ensureResponse {
+    private def sameUserOr[T <: HasEmail, R](role: Role)(fn: (SingleAppUser, T) => Task[R])(request: Request)(using token: SingleAppToken)(using JsonDecoder[T], JsonEncoder[R]): Task[Response] = (ensureResponse {
 
       def ifAdmLoadUserSameAccount(token: SingleAppToken, req: T): Task[SingleAppUser] = {
 
@@ -523,7 +524,7 @@ object router {
         user   <- if (me) ZIO.succeed(token.user) else ifAdmLoadUserSameAccount(token, req)
         result <- fn(user, req)
       } yield Response.json(result.toJson)
-    }
+    }).toTask
 
     private def setUserPin: AppRoute = sameUserOr[SetUserPin, Boolean]("adm" or "user_adm") { (user, req) =>
       for {
@@ -548,7 +549,7 @@ object router {
       yield link
     }
 
-    private def setUserPinToBeRemoved(request: Request)(using application: ApplicationCode): Task[Response] = ensureResponse {
+    private def setUserPinToBeRemoved(request: Request)(using application: ApplicationCode): Task[Response] = (ensureResponse {
 
       def changeMyPin(token: Token): Task[UserId] = ZIO.succeed(token.user.details.id)
 
@@ -574,9 +575,9 @@ object router {
         id    <- if (me) changeMyPin(token) else changeSomebodyElse(token, req)
         _     <- pins.set(id, req.pin)
       } yield Response.json(true.toJson)
-    }
+    }).toTask
 
-    private def passwordResetLinkToBeRemoved(request: Request)(using application: ApplicationCode): Task[Response] = ensureResponse {
+    private def passwordResetLinkToBeRemoved(request: Request)(using application: ApplicationCode): Task[Response] = (ensureResponse {
 
       def changeMyPassword(token: Token, req: RequestPasswordRequestLink): Task[Email] = ZIO.succeed(token.user.details.email)
 
@@ -603,7 +604,7 @@ object router {
         link  <- identities.passwordResetLink(email)
       yield Response.json(PasswordResetLink(link).toJson)
 
-    }
+    }).toTask
 
     private def provisionAccount: AppRoute = role("adm") { request =>
 
@@ -687,7 +688,7 @@ object router {
         _   <- ZIO.logInfo(s"Executing 'EntitiesByValidate' | Requested by: ${tk.user.details.email} | Command: ${command.getClass.toString}")
         res <- repo.exec(command)
       yield Response.json(res.toJson)
-    }
+    }.toTask
 
     private def accountsByApp(validateToken: ValidateToken)(app: String, request: Request) = {
       entitiesByValidate(validateToken)(request, FindAccountsByApp(ApplicationCode.of(app)))
