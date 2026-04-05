@@ -1,13 +1,22 @@
-lazy val commons = (project in file("commons"))
-  .withId("morbid-commons")
+lazy val commons = (crossProject(JSPlatform, JVMPlatform) in file("commons"))
   .settings(
+    name := "morbid-commons",
     BuildHelper.stdSettings,
-    libraryDependencies := BuildHelper.commonsDependencies
+    libraryDependencies := Seq(
+      "io.scalaland" %%% "chimney"  % "1.9.0",
+      "dev.zio"      %%% "zio-json" % BuildHelper.ZioJsonVersion
+    )
+  )
+  .jvmSettings(
+    libraryDependencies ++= Seq(
+      "ch.qos.logback" %  "logback-classic" % "1.5.18",
+      "guara"          %% "guara-framework" % "v1.3.0"
+    )
   )
 
 lazy val client = (project in file("client"))
   .withId("morbid-client")
-  .dependsOn(commons)
+  .dependsOn(commons.jvm)
   .settings(
     BuildHelper.stdSettings,
     libraryDependencies := BuildHelper.clientDependencies
@@ -15,7 +24,7 @@ lazy val client = (project in file("client"))
 
 lazy val legacy = (project in file("legacy"))
   .withId("morbid-legacy-client")
-  .dependsOn(commons)
+  .dependsOn(commons.jvm)
   .settings(
     BuildHelper.stdSettings,
     libraryDependencies := BuildHelper.clientDependencies
@@ -23,7 +32,7 @@ lazy val legacy = (project in file("legacy"))
 
 lazy val root = (project in file("server"))
   .withId("morbid-server")
-  .dependsOn(commons, legacy)
+  .dependsOn(commons.jvm, legacy)
   .enablePlugins(JavaAppPackaging)
   .settings(
     BuildHelper.stdSettings,

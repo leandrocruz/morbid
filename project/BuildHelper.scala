@@ -9,17 +9,17 @@ object BuildHelper {
 
   lazy val dependencies = new {
     val betterFiles     = "com.github.pathikrit" %% "better-files"      % "3.9.2"
-    val commonsCodec    = "commons-codec"        %  "commons-codec"     % "1.17.0"
-    val commonsLang     = "org.apache.commons"   %  "commons-lang3"     % "3.17.0"
-    val chimney         = "io.scalaland"         %% "chimney"           % "1.3.0"
-    val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.6.0"
-    val guara           = "guara"                %% "guara-framework"   % "v1.2.0"
-    val jjwtApi         = "io.jsonwebtoken"      % "jjwt-api"           % "0.12.3"
-    val jjwtImpl        = "io.jsonwebtoken"      % "jjwt-impl"          % "0.12.3"
-    val jjwtJackson     = "io.jsonwebtoken"      % "jjwt-jackson"       % "0.12.3"
+    val commonsCodec    = "commons-codec"        %  "commons-codec"     % "1.21.0"
+    val commonsLang     = "org.apache.commons"   %  "commons-lang3"     % "3.20.0"
+    val chimney         = "io.scalaland"         %% "chimney"           % "1.9.0"
+    val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.8.0"
+    val guara           = "guara"                %% "guara-framework"   % "v1.3.0"
+    val jjwtApi         = "io.jsonwebtoken"      % "jjwt-api"           % "0.13.0"
+    val jjwtImpl        = "io.jsonwebtoken"      % "jjwt-impl"          % "0.13.0"
+    val jjwtJackson     = "io.jsonwebtoken"      % "jjwt-jackson"       % "0.13.0"
     val quillZio        = "io.getquill"          %% "quill-zio"         % "4.8.6"
     val quillZioJdbc    = "io.getquill"          %% "quill-jdbc-zio"    % "4.8.6"
-    val postgresql      = "org.postgresql"       %  "postgresql"        % "42.7.5"
+    val postgresql      = "org.postgresql"       %  "postgresql"        % "42.7.10"
     val scalaCsv        = "com.github.tototoshi" %% "scala-csv"         % "2.0.0"
     val zioOptics       = "dev.zio"              %% "zio-optics"        % "0.2.2"
     val zio             = "dev.zio"              %% "zio"               % ZioVersion
@@ -75,7 +75,7 @@ object BuildHelper {
     ThisBuild / scalaVersion                 := ScalaVersion,
     ThisBuild / scalacOptions                := commonSettings(scalaVersion.value),
     ThisBuild / organization                 := "morbid",
-    ThisBuild / version                      := "v1.11.1",
+    ThisBuild / version                      := "v2.0.0-SNAPSHOT",
     ThisBuild / doc / sources                := Seq.empty,
     ThisBuild / packageDoc / publishArtifact := false,
     ThisBuild / resolvers                    += Resolver.mavenLocal,
