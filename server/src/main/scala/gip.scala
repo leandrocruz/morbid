@@ -115,7 +115,7 @@ object gip {
       }
 
       for {
-        decoded    <- ZIO.attempt(auth.verifyIdToken(req.token))
+        decoded    <- ZIO.attempt(auth.verifyIdToken(JwtToken.value(req.token)))
         identity   <- ZIO.attempt(build(decoded))
         attributes <- valueFrom[java.util.Map[String, String]](decoded, "sign_in_attributes").map(_.asScala.toMap).orElse(ZIO.succeed(Map.empty))
         hint       <- valueFrom[String]                       (decoded, "sign_in_provider")

@@ -19,7 +19,7 @@ object tokens {
   import io.scalaland.chimney.dsl.*
 
   trait TokenGenerator {
-    def verify(payload: String)              : Task[Token]
+    def verify(payload: JwtToken)            : Task[Token]
     def asToken(user: RawUser, days: Int = 1): Task[Token]
     def encode(token: Token)                 : Task[String]
   }
@@ -63,7 +63,7 @@ object tokens {
       )
     }
 
-    override def verify(payload: String) : Task[Token]  = {
+    override def verify(payload: JwtToken) : Task[Token]  = {
 
       val roles = Seq(
         RawRole(
@@ -166,7 +166,7 @@ object tokens {
       } yield result
     }
 
-    override def verify(payload: String): Task[Token] = {
+    override def verify(payload: JwtToken): Task[Token] = {
 
       def asToken(str: String): Task[Token] = {
         ZIO.fromEither(str.fromJson[Token]).mapError(new Exception(_))
@@ -180,7 +180,7 @@ object tokens {
       }
 
       for {
-        generic <- ZIO.attempt(parser.parse(payload))
+        generic <- ZIO.attempt(parser.parse(JwtToken.value(payload)))
         str     <- ZIO.attempt(generic.accept(Jws.CONTENT).getPayload)
         token   <- asToken(new String(str))
         now     <- Clock.localDateTime

@@ -39,6 +39,7 @@ object types {
   opaque type Domain          = String
   opaque type Magic           = String
   opaque type Link            = String
+  opaque type JwtToken        = String
 
   given JsonCodec[TenantId]      = JsonCodec.long
   given JsonCodec[AccountId]     = JsonCodec.long
@@ -76,7 +77,8 @@ object types {
   given JsonEncoder      [Domain]          = JsonEncoder.string
   given JsonEncoder      [Magic]           = JsonEncoder.string
   given JsonEncoder      [Pin]             = JsonEncoder.string
-  given JsonEncoder      [Link]             = JsonEncoder.string
+  given JsonEncoder      [Link]            = JsonEncoder.string
+  given JsonCodec        [JwtToken]        = JsonCodec.string
 
   given JsonDecoder      [TenantName]      = JsonDecoder.string //safeLatinName(128)
   given JsonDecoder      [AccountName]     = JsonDecoder.string //safeLatinName(64)
@@ -132,6 +134,7 @@ object types {
   object GroupId         extends OpaqueOps[Long, GroupId]
   object GroupName       extends OpaqueOps[String, GroupName]
   object Link            extends OpaqueOps[String, Link]
+  object JwtToken        extends OpaqueOps[String, JwtToken]
   object Magic           extends OpaqueOps[String, Magic]
   object Password        extends OpaqueOps[String, Password]
   object PinId           extends OpaqueOps[Long, PinId]

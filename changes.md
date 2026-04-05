@@ -3,6 +3,7 @@
 
  - [Leandro] Cross Compiling Project
  - [Leandro] Code Reorg
+ - [Leandro] Added opaque type `JwtToken`
 
 ## Release v1.11.1
 ## Release v1.11.0

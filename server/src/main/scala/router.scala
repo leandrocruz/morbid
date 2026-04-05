@@ -109,8 +109,8 @@ object router {
     private def tokenFrom(request: Request): Task[Token] = {
       (request.headers.get("X-MorbidToken"), request.cookie("morbid-token")) match
         case (None, None     ) => ZIO.fail(Exception("Authorization cookie or header is missing"))
-        case (Some(header), _) => tokens.verify(header)         .mapError(forbidden)
-        case (_, Some(cookie)) => tokens.verify(cookie.content) .mapError(forbidden)
+        case (Some(header), _) => tokens.verify(JwtToken.of(header))         .mapError(forbidden)
+        case (_, Some(cookie)) => tokens.verify(JwtToken.of(cookie.content)) .mapError(forbidden)
     }
 
     private def applicationDetailsGiven(request: Request): Task[Response] = ensureResponse {
