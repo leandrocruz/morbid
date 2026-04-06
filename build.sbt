@@ -22,6 +22,13 @@ lazy val client = (project in file("client"))
     libraryDependencies := BuildHelper.clientDependencies
   )
 
+lazy val routes = (project in file("routes"))
+  .withId("morbid-routes")
+  .dependsOn(client)
+  .settings(
+    BuildHelper.stdSettings,
+  )
+
 lazy val legacy = (project in file("legacy"))
   .withId("morbid-legacy-client")
   .dependsOn(commons.jvm)
