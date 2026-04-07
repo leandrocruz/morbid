@@ -1,9 +1,9 @@
 package morbid
 
 import router.MorbidRouter
-import guara.GuaraApp
-import guara.background.BackgroundServices
-import guara.processor.Processor
+import guara.framework.GuaraApp
+import guara.framework.background.BackgroundServices
+import guara.framework.processor.Processor
 import morbid.accounts.AccountManager
 import morbid.config.MorbidConfig
 import morbid.gip.Identities

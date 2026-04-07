@@ -1,6 +1,6 @@
 package morbid
 
-import guara.utils.{safeCode, safeName}
+import guara.http.codec.{safeCode, safeName}
 import types.*
 import zio.*
 import zio.json.*

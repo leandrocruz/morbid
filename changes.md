@@ -1,5 +1,14 @@
 # Morbid
 
+ - [Leandro] Major refactoring:
+    - Added `morbid-types` module: contains all types, domain, roles — no guara dependency
+    - Moved `object types`, `object domain`, `object roles` from morbid-commons to morbid-types
+    - morbid-commons now only contains `object track` and `object secure` (guara-dependent)
+    - Inlined validation helpers (safeCode, safeLatinName, safeDecode) in morbid-types to avoid guara dependency
+    - Updated guara dependency to v2.0.0-SNAPSHOT (new package structure)
+    - Updated imports to match guara v2.0.0 package reorganization
+    - Bumped zio to 2.1.24, zio-json to 0.9.0
+
 ## Release v1.11.1
 ## Release v1.11.0
 LTS: 31/03/2026

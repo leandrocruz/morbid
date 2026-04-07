@@ -2,7 +2,7 @@ package morbid
 
 object legacy {
 
-  import guara.utils.parse
+  import guara.http.extensions.parse
   import morbid.types.{AccountId, AccountName, Email, UserId}
   import zio.*
   import zio.http.*
@@ -51,21 +51,21 @@ object legacy {
 
     override def userByEmail(email: Email): Task[Option[LegacyUser]] = {
       for
-        response <- client.url(url).get(s"/user/email/$email").provideSome(ZLayer.succeed(scope))
+        response <- client.url(url).get(s"/user/email/$email").provide(ZLayer.succeed(scope))
         user     <- handleGetUserResponse(response, email)
       yield user
     }
 
     override def userById(id: UserId): Task[Option[LegacyUser]] = {
       for
-        response <- client.url(url).get(s"/user/id/$id").provideSome(ZLayer.succeed(scope))
+        response <- client.url(url).get(s"/user/id/$id").provide(ZLayer.succeed(scope))
         user     <- handleGetUserResponse(response, id)
       yield user
     }
 
     override def accountById(id: AccountId): Task[Option[LegacyAccount]] = {
       for
-        response <- client.url(url).get(s"/account/id/$id").provideSome(ZLayer.succeed(scope))
+        response <- client.url(url).get(s"/account/id/$id").provide(ZLayer.succeed(scope))
         user     <- response.status.code match
           case 404  => ZIO.none
           case 200  => response.body.parse[LegacyAccount]().map(Some(_)).mapError(err => Exception("Error parsing LegacyAccount from body", err))
@@ -76,7 +76,7 @@ object legacy {
     override def createUser(request: CreateLegacyUserRequest): Task[LegacyUser] = {
       for
         body     <- ZIO.attempt(Body.fromString(request.toJson))
-        response <- client.url(url).addHeaders(headers).post("/user")(body).provideSome(ZLayer.succeed(scope))
+        response <- client.url(url).addHeaders(headers).post("/user")(body).provide(ZLayer.succeed(scope))
         user     <- response.status.code match
           case 200  => response.body.parse[LegacyUser]().mapError(err => Exception("Error parsing LegacyUser from body", err))
           case code => ZIO.fail(Exception(s"Error creating user '${request.email}' for account '${request.account}'. Result code from legacy is $code"))
@@ -86,7 +86,7 @@ object legacy {
     override def createAccount(request: CreateLegacyAccountRequest): Task[LegacyAccount] = {
       for
         body     <- ZIO.attempt(Body.fromString(request.toJson))
-        response <- client.url(url).addHeaders(headers).post("/user")(body).provideSome(ZLayer.succeed(scope))
+        response <- client.url(url).addHeaders(headers).post("/user")(body).provide(ZLayer.succeed(scope))
         account  <- response.status.code match
           case 200  => response.body.parse[LegacyAccount]().mapError(err => Exception("Error parsing LegacyUser from body", err))
           case code => ZIO.fail(Exception(s"Error creating account '${request.name}'. Result code from legacy is $code"))

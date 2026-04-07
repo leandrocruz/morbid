@@ -8,7 +8,7 @@ object gip {
   import morbid.types.*
   import morbid.proto.*
   import morbid.config.*
-  import morbid.domain.*
+  import morbid.domain.{*, given}
   import morbid.domain.raw.*
   import morbid.commands.*
   import morbid.utils.orFail

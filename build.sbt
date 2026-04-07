@@ -1,5 +1,13 @@
+lazy val types = (project in file("types"))
+  .withId("morbid-types")
+  .settings(
+    BuildHelper.stdSettings,
+    libraryDependencies := BuildHelper.typesDependencies
+  )
+
 lazy val commons = (project in file("commons"))
   .withId("morbid-commons")
+  .dependsOn(types)
   .settings(
     BuildHelper.stdSettings,
     libraryDependencies := BuildHelper.commonsDependencies
@@ -31,5 +39,6 @@ lazy val root = (project in file("server"))
     topLevelDirectory         := None,
     executableScriptName      := "run",
     Universal / packageName   := "package",
-    libraryDependencies       := BuildHelper.serverDependencies
+    libraryDependencies       := BuildHelper.serverDependencies,
+    dependencyOverrides       += "dev.zio" %% "zio-json" % BuildHelper.ZioJsonVersion,
   )

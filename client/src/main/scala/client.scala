@@ -4,8 +4,8 @@ import zio.*
 
 object client {
 
-  import guara.errors.{ReturnResponseError, ReturnResponseWithExceptionError}
-  import guara.utils.{parse, queryParams}
+  import guara.http.errors.{ReturnResponseError, ReturnResponseWithExceptionError}
+  import guara.http.extensions.{parse, queryParams}
   import morbid.domain.*
   import morbid.domain.raw.*
   import morbid.domain.requests.{*, given}
@@ -76,7 +76,7 @@ object client {
     private def morbidToken(token: RawToken) = Headers(Chunk(Header.Custom("X-MorbidToken", token.string)))
 
     private def perform(request: Request): Task[Response] = for {
-      response <- ZClient.request(request).provideSome(ZLayer.succeed(scope), ZLayer.succeed(client))
+      response <- ZClient.request(request).provide(ZLayer.succeed(scope), ZLayer.succeed(client))
     } yield response
 
     override def proxy(request: Request): Task[Response] = {
