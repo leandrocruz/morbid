@@ -1,9 +1,10 @@
 package morbid.router
 
+import guara.extensions.*
 import guara.framework.router.{Echo, Router}
 import guara.http.SafeResponse.*
 import guara.http.errors.*
-import guara.http.extensions.{get, parse}
+import guara.http.extensions.{get, parse, uef}
 import guara.http.{Origin, SafeResponse, ensureResponse}
 import io.scalaland.chimney.dsl.*
 import morbid.accounts.AccountManager
@@ -312,13 +313,13 @@ case class MorbidRouter(
 
       for
         groups <- repo.exec(FindGroups(acc.code, Seq(application.code), Seq(GroupAll)))
-        _      <- link(groups, user).asCommonError(10012, "Error adding user to group ALL")
+        _      <- link(groups, user).uef(10012, "Error adding user to group ALL")
       yield ()
     }
 
     def handleFirebaseUser(req: StoreUserRequest, acc: RawAccount, pass: Password) = {
       (req.id, req.update) match
-        case (Some(_), false) => identities.createUser(req.email, acc.tenantCode, pass).asCommonError(10011, "Error storing user identity")
+        case (Some(_), false) => identities.createUser(req.email, acc.tenantCode, pass).uef(10011, "Error storing user identity")
         case (Some(_), true)  => identities.getUserByEmail(req.email, acc.tenantCode)
         case (None   , _)     => ZIO.fail(Exception(s"User id not provided"))
     }
@@ -353,7 +354,7 @@ case class MorbidRouter(
       fbUser <- handleFirebaseUser(legacy, acc, pass)
       store  = buildRequest(legacy, acc, fbUser.getUid).copy(email = req.email.toLowerCase)
       _      <- ZIO.logInfo(s"Storing user ${store.id} - ${store.email} || Account ${store.account.id} || Tenant ${store.account.tenantCode} || Update: ${store.update}")
-      user   <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")
+      user   <- repo.exec(store).uef(10010, s"Error storing user '${store.email}'")
       _      <- ZIO.logInfo(s"User ${user.id} - ${user.email} stored")
       _      <- ZIO.when(req.id.isEmpty && !req.update) { whenNewUser(acc, user, app) }
     yield Response.json(user.toJson)

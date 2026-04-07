@@ -2,6 +2,7 @@ package morbid.accounts
 
 import zio.*
 
+import guara.extensions.orFail
 import morbid.commands.*
 import morbid.config.MorbidConfig
 import morbid.domain.*
