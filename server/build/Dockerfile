@@ -1,4 +1,4 @@
-FROM southamerica-east1-docker.pkg.dev/oystr-presto-test/docker-default/oystr-base-java:v2.0.0
+FROM southamerica-east1-docker.pkg.dev/oystr-presto-test/docker-default/oystr-base-java:v3.0.0
 
 ADD lib  /opt/morbid/service/lib
 ADD bin  /opt/morbid/service/bin
