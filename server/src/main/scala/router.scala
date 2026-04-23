@@ -92,6 +92,12 @@ object router {
 
     private def forbidden(cause: Throwable) = ReturnResponseError(Response.forbidden(s"Error verifying token: ${cause.getMessage}"))
 
+    private def ensureMagic(magic: Magic) = {
+      ZIO.when(!cfg.magic.isValid(magic)) {
+        ZIO.fail(ReturnResponseError(Response.forbidden("bad magic")))
+      }
+    }
+
     private def testServiceToken(request: Request) = {
 
       def test(value: String) = {
@@ -211,8 +217,7 @@ object router {
         for
           owner    <- tokenFrom(request)
           req      <- request.body.parse[EmitToken]() .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing request: ${err.getMessage}")))
-          same     =  req.magic.is(cfg.magic.password)
-          _        <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
+          _        <- ensureMagic(req.magic)
           (_, enc) <- tokenGiven(req.email, req.days.getOrElse(365), Some(owner)) { ensureUser(req.email) }
           _        <- ZIO.logWarning(s"Service Account Token '${req.email}' created by '${owner.user.details.email}'")
         yield Response.text(enc)
@@ -222,8 +227,7 @@ object router {
     private def swapToken(request: Request) = ensureResponse {
       for
         req     <- request.body.parse[SwapTokenRequest]().mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing swap request: ${err.getMessage}")))
-        same    =  req.magic.is(cfg.magic.password)
-        _       <- ZIO.when(!same) { ZIO.fail(ReturnResponseError(Response.forbidden("bad magic"))) }
+        _       <- ensureMagic(req.magic)
         _       <- ZIO.logInfo(s"Swap token request received")
         mlUser  <- legacy.userByToken(req.token).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error looking up legacy user by token: ${err.getMessage}")))
         user    <- ZIO.fromOption(mlUser).mapError(_ => ReturnResponseError(Response.notFound("Legacy user not found for the given token")))
@@ -473,8 +477,7 @@ object router {
       for {
         impersonator <- tokenFrom(request)
         req          <- request.body.parse[ImpersonationRequest]()
-        same         =  req.magic.is(cfg.magic.password)
-        _            <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
+        _            <- ensureMagic(req.magic)
         user         <- repo.exec(FindUserByEmail(req.email))
         token        <- user match {
                           case Some(usr) => tokens.asToken(usr)

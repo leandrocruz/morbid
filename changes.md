@@ -12,6 +12,8 @@
    - Supports remote and local (JWT) token verification
  - [Leandro] Added `MorbidHeaders` and `MorbidCookies` constants to `morbid-commons`
  - [Leandro] Replaced raw header/cookie strings with constants in server and client
+ - [Leandro] Changed `MagicConfig` to accept multiple passwords (`passwords` list instead of single `password`)
+ - [Leandro] Refactored magic validation into `ensureMagic` helper method
  - [Leandro] Added data reconciliation and migration tooling under `data/`
 
 ## Release v1.11.1
