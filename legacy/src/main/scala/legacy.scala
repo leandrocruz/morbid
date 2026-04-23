@@ -34,6 +34,7 @@ object legacy {
     def createUser   (request: CreateLegacyUserRequest)   : Task[LegacyUser]
     def userByEmail  (email: Email)                       : Task[Option[LegacyUser]]
     def userById     (id: UserId)                         : Task[Option[LegacyUser]]
+    def userByToken  (token: String)                      : Task[Option[LegacyUser]]
   }
 
   case class LegacyMorbidImpl(url: URL, client: Client, scope: Scope) extends LegacyMorbid {
@@ -60,6 +61,13 @@ object legacy {
       for
         response <- client.url(url).get(s"/user/id/$id").provideSome(ZLayer.succeed(scope))
         user     <- handleGetUserResponse(response, id)
+      yield user
+    }
+
+    override def userByToken(token: String): Task[Option[LegacyUser]] = {
+      for
+        response <- client.url(url).get(s"/user/token/${java.net.URLEncoder.encode(token, "UTF-8")}").provideSome(ZLayer.succeed(scope))
+        user     <- handleGetUserResponse(response, token)
       yield user
     }
 

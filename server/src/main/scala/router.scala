@@ -219,13 +219,27 @@ object router {
       }.toTask
     }
 
+    private def swapToken(request: Request) = ensureResponse {
+      for
+        req     <- request.body.parse[SwapTokenRequest]().mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing swap request: ${err.getMessage}")))
+        same    =  req.magic.is(cfg.magic.password)
+        _       <- ZIO.when(!same) { ZIO.fail(ReturnResponseError(Response.forbidden("bad magic"))) }
+        _       <- ZIO.logInfo(s"Swap token request received")
+        mlUser  <- legacy.userByToken(req.token).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error looking up legacy user by token: ${err.getMessage}")))
+        user    <- ZIO.fromOption(mlUser).mapError(_ => ReturnResponseError(Response.notFound("Legacy user not found for the given token")))
+        _       <- ZIO.logInfo(s"Legacy user found: ${user.email}")
+        result  <- tokenGiven(user.email) { maybe => ZIO.fromOption(maybe).mapError(_ => Exception(s"User '${user.email}' not found in morbid")) }
+        _       <- ZIO.logInfo(s"Token swapped for user '${user.email}'")
+      yield Response.text(result._2)
+    }.toTask
+
     private def tokenGiven(email: Email, days: Int = 1, owner: Option[Token] = None)(ensureUser: Option[RawUser] => Task[RawUser]): Task[(Token, String)] = {
       for
         maybeUser <- repo.exec(FindUserByEmail(email)).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error locating user '$email': ${err.getMessage}'")))
         user      <- ensureUser(maybeUser)            .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error ensuring user '$email': ${err.getMessage}'")))
         token     <- tokens.asToken(user, days)       .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error creating token '$email': ${err.getMessage}'")))
         result    =  token.copy(impersonatedBy = owner.map(_.user.details))
-        encoded   <- tokens.encode(result)             .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '$email': ${err.getMessage}'")))
+        encoded   <- tokens.encode(result)            .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '$email': ${err.getMessage}'")))
       yield (result, encoded)
     }
 
@@ -836,6 +850,7 @@ object router {
       Method.POST / "verify"                                                    -> Handler.fromFunctionZIO[Request](verify),
       Method.POST / "impersonate"                                               -> Handler.fromFunctionZIO[Request](impersonate),
       Method.POST / "emit"                                                      -> Handler.fromFunctionZIO[Request](emitToken),
+      Method.POST / "swap"                                                      -> Handler.fromFunctionZIO[Request](swapToken),
       Method.GET  / "user"                                                      -> Handler.fromFunctionZIO[Request](userBy),
       Method.POST / "user" / "pin" / "validate"                                 -> Handler.fromFunctionZIO[Request](validateUserPin),
       Method.POST / "app" / string("app") / "login" / "email"                   -> handler(loginViaEmailLink),
