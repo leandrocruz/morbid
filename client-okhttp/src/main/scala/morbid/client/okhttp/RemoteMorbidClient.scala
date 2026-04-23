@@ -24,8 +24,8 @@ class RemoteMorbidClient(baseUrl: String, httpClient: OkHttpClient = new OkHttpC
 
   private def getRequest(url: String, token: Option[String] = None, serviceToken: Option[String] = None): Request = {
     val builder = new Request.Builder().url(url).get()
-    token.foreach(t        => builder.addHeader("X-MorbidToken", t))
-    serviceToken.foreach(t => builder.addHeader("X-Morbid-Service-Token", t))
+    token.foreach(t        => builder.addHeader(Headers.MorbidToken, t))
+    serviceToken.foreach(t => builder.addHeader(Headers.MorbidServiceToken, t))
     builder.build()
   }
 
@@ -33,13 +33,13 @@ class RemoteMorbidClient(baseUrl: String, httpClient: OkHttpClient = new OkHttpC
     val builder = new Request.Builder()
       .url(url)
       .post(RequestBody.create(body, JSON_TYPE))
-    token.foreach(t => builder.addHeader("X-MorbidToken", t))
+    token.foreach(t => builder.addHeader(Headers.MorbidToken, t))
     builder.build()
   }
 
   private def deleteRequest(url: String, token: Option[String] = None): Request = {
     val builder = new Request.Builder().url(url).delete()
-    token.foreach(t => builder.addHeader("X-MorbidToken", t))
+    token.foreach(t => builder.addHeader(Headers.MorbidToken, t))
     builder.build()
   }
 

@@ -1,7 +1,7 @@
 scalaVersion := "2.12.20"
 organization := "morbid"
 name         := "morbid-client-okhttp"
-version      := "v1.0.0"
+version      := "v1.1.0-SNAPSHOT"
 
 libraryDependencies ++= Seq(
   "com.squareup.okhttp3" % "okhttp"       % "4.12.0",

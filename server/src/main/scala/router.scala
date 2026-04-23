@@ -36,7 +36,7 @@ import scala.util.{Failure, Random, Success}
 object cookies {
 
   val auth = Cookie.Response(
-    name       = "morbid-auth",
+    name       = morbid.MorbidCookies.Auth,
     content    = "true",
     maxAge     = Some(1.days),
     isHttpOnly = false,
@@ -45,7 +45,7 @@ object cookies {
   )
 
   val token = Cookie.Response(
-    name       = "morbid-token",
+    name       = morbid.MorbidCookies.Token,
     content    = "",
     maxAge     = Some(1.days),
     isHttpOnly = true,
@@ -100,14 +100,14 @@ object router {
         yield ()
       }
 
-      (request.headers.get("X-Morbid-Service-Token"), request.cookie("morbid-service-token")) match
+      (request.headers.get(morbid.MorbidHeaders.ServiceToken), request.cookie(morbid.MorbidCookies.ServiceToken)) match
         case (None, None)      => ZIO.fail(ReturnResponseError(Response.unauthorized("Authorization cookie or header is missing")))
         case (Some(header), _) => test(header)
         case (_, Some(cookie)) => test(cookie.content)
     }
 
     private def tokenFrom(request: Request): Task[Token] = {
-      (request.headers.get("X-MorbidToken"), request.cookie("morbid-token")) match
+      (request.headers.get(morbid.MorbidHeaders.Token), request.cookie(morbid.MorbidCookies.Token)) match
         case (None, None     ) => ZIO.fail(Exception("Authorization cookie or header is missing"))
         case (Some(header), _) => tokens.verify(header)         .mapError(forbidden)
         case (_, Some(cookie)) => tokens.verify(cookie.content) .mapError(forbidden)

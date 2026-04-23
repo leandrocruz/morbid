@@ -73,7 +73,7 @@ object client {
     given JsonEncoder[SimpleToken] = DeriveJsonEncoder.gen
 
     private val applicationJson = Headers(Chunk(Header.ContentType(MediaType("application", "json"))))
-    private def morbidToken(token: RawToken) = Headers(Chunk(Header.Custom("X-MorbidToken", token.string)))
+    private def morbidToken(token: RawToken) = Headers(Chunk(Header.Custom(morbid.MorbidHeaders.Token, token.string)))
 
     private def perform(request: Request): Task[Response] = for {
       response <- ZClient.request(request).provideSome(ZLayer.succeed(scope), ZLayer.succeed(client))

@@ -10,6 +10,8 @@
  - [Leandro] Added `client-okhttp` module — Scala 2.12 OkHttp3-based client for Java/Play services
    - Self-contained domain types (no dependency on morbid-commons or ZIO)
    - Supports remote and local (JWT) token verification
+ - [Leandro] Added `MorbidHeaders` and `MorbidCookies` constants to `morbid-commons`
+ - [Leandro] Replaced raw header/cookie strings with constants in server and client
  - [Leandro] Added data reconciliation and migration tooling under `data/`
 
 ## Release v1.11.1

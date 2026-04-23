@@ -8,6 +8,17 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties
  * These are Scala 2.12 compatible equivalents of the Scala 3 opaque types in morbid-commons.
  */
 
+object Headers {
+  val MorbidToken        = "X-MorbidToken"
+  val MorbidServiceToken = "X-Morbid-Service-Token"
+}
+
+object Cookies {
+  val MorbidAuth         = "morbid-auth"
+  val MorbidToken        = "morbid-token"
+  val MorbidServiceToken = "morbid-service-token"
+}
+
 // --- Raw domain types (server responses) ---
 
 @JsonIgnoreProperties(ignoreUnknown = true)
