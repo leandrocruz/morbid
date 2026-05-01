@@ -4,6 +4,7 @@ import zio.*
 
 object config {
 
+  import morbid.types.Magic
   import morbid.legacy.LegacyClientConfig
 
   import zio.config.*
@@ -14,7 +15,9 @@ object config {
   case class JwtConfig(key: String, fake: Boolean)
   case class IdentityConfig(key: String, database: String, provisionSAMLUsers: Boolean)
   case class ClockConfig(timezone: String)
-  case class MagicConfig(password: String)
+  case class MagicConfig(passwords: Seq[String]) {
+    def isValid(magic: Magic): Boolean = passwords.contains(magic.string)
+  }
   case class PinConfig(prefix: String, default: String)
   case class ServiceConfig(token: String)
   case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig, magic: MagicConfig, pin: PinConfig, legacy: LegacyClientConfig, printQueries: Boolean, service: ServiceConfig)
@@ -92,6 +95,7 @@ object proto {
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
   case class EmitToken(email: Email, magic: Magic, days: Option[Int]) derives JsonCodec
+  case class SwapTokenRequest(token: String, magic: Magic) derives JsonCodec
 
   given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen

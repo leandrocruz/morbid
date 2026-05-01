@@ -36,7 +36,7 @@ import scala.util.{Failure, Random, Success}
 object cookies {
 
   val auth = Cookie.Response(
-    name       = "morbid-auth",
+    name       = morbid.MorbidCookies.Auth,
     content    = "true",
     maxAge     = Some(1.days),
     isHttpOnly = false,
@@ -45,7 +45,7 @@ object cookies {
   )
 
   val token = Cookie.Response(
-    name       = "morbid-token",
+    name       = morbid.MorbidCookies.Token,
     content    = "",
     maxAge     = Some(1.days),
     isHttpOnly = true,
@@ -92,6 +92,12 @@ object router {
 
     private def forbidden(cause: Throwable) = ReturnResponseError(Response.forbidden(s"Error verifying token: ${cause.getMessage}"))
 
+    private def ensureMagic(magic: Magic) = {
+      ZIO.when(!cfg.magic.isValid(magic)) {
+        ZIO.fail(ReturnResponseError(Response.forbidden("bad magic")))
+      }
+    }
+
     private def testServiceToken(request: Request) = {
 
       def test(value: String) = {
@@ -100,14 +106,14 @@ object router {
         yield ()
       }
 
-      (request.headers.get("X-Morbid-Service-Token"), request.cookie("morbid-service-token")) match
+      (request.headers.get(morbid.MorbidHeaders.ServiceToken), request.cookie(morbid.MorbidCookies.ServiceToken)) match
         case (None, None)      => ZIO.fail(ReturnResponseError(Response.unauthorized("Authorization cookie or header is missing")))
         case (Some(header), _) => test(header)
         case (_, Some(cookie)) => test(cookie.content)
     }
 
     private def tokenFrom(request: Request): Task[Token] = {
-      (request.headers.get("X-MorbidToken"), request.cookie("morbid-token")) match
+      (request.headers.get(morbid.MorbidHeaders.Token), request.cookie(morbid.MorbidCookies.Token)) match
         case (None, None     ) => ZIO.fail(Exception("Authorization cookie or header is missing"))
         case (Some(header), _) => tokens.verify(header)         .mapError(forbidden)
         case (_, Some(cookie)) => tokens.verify(cookie.content) .mapError(forbidden)
@@ -211,13 +217,25 @@ object router {
         for
           owner    <- tokenFrom(request)
           req      <- request.body.parse[EmitToken]() .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing request: ${err.getMessage}")))
-          same     =  req.magic.is(cfg.magic.password)
-          _        <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
+          _        <- ensureMagic(req.magic)
           (_, enc) <- tokenGiven(req.email, req.days.getOrElse(365), Some(owner)) { ensureUser(req.email) }
           _        <- ZIO.logWarning(s"Service Account Token '${req.email}' created by '${owner.user.details.email}'")
         yield Response.text(enc)
       }.toTask
     }
+
+    private def swapToken(request: Request) = ensureResponse {
+      for
+        req     <- request.body.parse[SwapTokenRequest]().mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing swap request: ${err.getMessage}")))
+        _       <- ensureMagic(req.magic)
+        _       <- ZIO.logInfo(s"Swap token request received")
+        mlUser  <- legacy.userByToken(req.token).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error looking up legacy user by token: ${err.getMessage}")))
+        user    <- ZIO.fromOption(mlUser).mapError(_ => ReturnResponseError(Response.notFound("Legacy user not found for the given token")))
+        _       <- ZIO.logInfo(s"Legacy user found: ${user.email}")
+        result  <- tokenGiven(user.email) { maybe => ZIO.fromOption(maybe).mapError(_ => Exception(s"User '${user.email}' not found in morbid")) }
+        _       <- ZIO.logInfo(s"Token swapped for user '${user.email}'")
+      yield Response.text(result._2)
+    }.toTask
 
     private def tokenGiven(email: Email, days: Int = 1, owner: Option[Token] = None)(ensureUser: Option[RawUser] => Task[RawUser]): Task[(Token, String)] = {
       for
@@ -225,7 +243,7 @@ object router {
         user      <- ensureUser(maybeUser)            .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error ensuring user '$email': ${err.getMessage}'")))
         token     <- tokens.asToken(user, days)       .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error creating token '$email': ${err.getMessage}'")))
         result    =  token.copy(impersonatedBy = owner.map(_.user.details))
-        encoded   <- tokens.encode(result)             .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '$email': ${err.getMessage}'")))
+        encoded   <- tokens.encode(result)            .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '$email': ${err.getMessage}'")))
       yield (result, encoded)
     }
 
@@ -459,8 +477,7 @@ object router {
       for {
         impersonator <- tokenFrom(request)
         req          <- request.body.parse[ImpersonationRequest]()
-        same         =  req.magic.is(cfg.magic.password)
-        _            <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
+        _            <- ensureMagic(req.magic)
         user         <- repo.exec(FindUserByEmail(req.email))
         token        <- user match {
                           case Some(usr) => tokens.asToken(usr)
@@ -836,6 +853,7 @@ object router {
       Method.POST / "verify"                                                    -> Handler.fromFunctionZIO[Request](verify),
       Method.POST / "impersonate"                                               -> Handler.fromFunctionZIO[Request](impersonate),
       Method.POST / "emit"                                                      -> Handler.fromFunctionZIO[Request](emitToken),
+      Method.POST / "swap"                                                      -> Handler.fromFunctionZIO[Request](swapToken),
       Method.GET  / "user"                                                      -> Handler.fromFunctionZIO[Request](userBy),
       Method.POST / "user" / "pin" / "validate"                                 -> Handler.fromFunctionZIO[Request](validateUserPin),
       Method.POST / "app" / string("app") / "login" / "email"                   -> handler(loginViaEmailLink),

@@ -6,3 +6,4 @@ target
 .scala-build
 tmp
 *.csv
+data
