@@ -1,6 +1,9 @@
 # Morbid
 
-## Morbid Unification (feature/leandro/morbid-unification)
+## Release v1.12.0
+LTS 01/05/2026
+
+ ** Morbid Unification (part 1) **
 
  - [Leandro] Added `POST /swap` endpoint — exchanges a morbid-legacy token for a morbid token
    - Validates magic password
