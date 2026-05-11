@@ -5,6 +5,25 @@
  - [Leandro] Code Reorg
  - [Leandro] Added opaque type `JwtToken`
 
+## Release v1.12.0
+LTS 01/05/2026
+
+ ** Morbid Unification (part 1) **
+
+ - [Leandro] Added `POST /swap` endpoint — exchanges a morbid-legacy token for a morbid token
+   - Validates magic password
+   - Calls morbid-legacy to resolve the token to a user
+   - Issues a new morbid token for the same user (must exist in morbid)
+ - [Leandro] Added `userByToken` to `LegacyMorbid` trait
+ - [Leandro] Added `client-okhttp` module — Scala 2.12 OkHttp3-based client for Java/Play services
+   - Self-contained domain types (no dependency on morbid-commons or ZIO)
+   - Supports remote and local (JWT) token verification
+ - [Leandro] Added `MorbidHeaders` and `MorbidCookies` constants to `morbid-commons`
+ - [Leandro] Replaced raw header/cookie strings with constants in server and client
+ - [Leandro] Changed `MagicConfig` to accept multiple passwords (`passwords` list instead of single `password`)
+ - [Leandro] Refactored magic validation into `ensureMagic` helper method
+ - [Leandro] Added data reconciliation and migration tooling under `data/`
+
 ## Release v1.11.1
 ## Release v1.11.0
 LTS: 31/03/2026
