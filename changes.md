@@ -1,9 +1,10 @@
 # Morbid
 
-
  - [Leandro] Cross Compiling Project
  - [Leandro] Code Reorg
  - [Leandro] Added opaque type `JwtToken`
+ - [Leandro] Updating projects dependencies
+ - [Leandro] Updating sbt from 1.6.1 to 1.9.6
 
 ## Release v1.12.0
 LTS 01/05/2026
