@@ -90,8 +90,8 @@ object proto {
   import zio.json.*
   import types.*
 
-  case class VerifyGoogleTokenRequest(token: String)
-  case class VerifyMorbidTokenRequest(token: String)
+  case class VerifyGoogleTokenRequest(token: JwtToken)
+  case class VerifyMorbidTokenRequest(token: JwtToken)
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
   case class EmitToken(email: Email, magic: Magic, days: Option[Int]) derives JsonCodec

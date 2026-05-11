@@ -36,7 +36,7 @@ import scala.util.{Failure, Random, Success}
 object cookies {
 
   val auth = Cookie.Response(
-    name       = morbid.MorbidCookies.Auth,
+    name       = MorbidCookies.Auth,
     content    = "true",
     maxAge     = Some(1.days),
     isHttpOnly = false,
@@ -45,7 +45,7 @@ object cookies {
   )
 
   val token = Cookie.Response(
-    name       = morbid.MorbidCookies.Token,
+    name       = MorbidCookies.Token,
     content    = "",
     maxAge     = Some(1.days),
     isHttpOnly = true,
