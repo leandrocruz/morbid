@@ -53,9 +53,22 @@ object cookies {
     path       = Some(Path("/"))
   )
 
+  val original = Cookie.Response(
+    name       = morbid.MorbidCookies.OriginalToken,
+    content    = "",
+    maxAge     = Some(1.days),
+    isHttpOnly = true,
+    sameSite   = Some(SameSite.Lax),
+    path       = Some(Path("/"))
+  )
+
+  private val clearedOriginal = original.copy(maxAge = Some(0.seconds))
+
   extension (r: Response) {
-    def loggedIn(tk: String): Response = r.addCookie(auth).addCookie(token.copy(content = tk))
-    def logOff              : Response = r.addCookie(auth.copy(maxAge = Some(0.seconds))).addCookie(token.copy(maxAge = Some(0.seconds)))
+    def loggedIn(tk: String)        : Response = r.addCookie(auth).addCookie(token.copy(content = tk))
+    def stashOriginal(tk: String)   : Response = r.addCookie(original.copy(content = tk))
+    def clearOriginal               : Response = r.addCookie(clearedOriginal)
+    def logOff                      : Response = r.addCookie(auth.copy(maxAge = Some(0.seconds))).addCookie(token.copy(maxAge = Some(0.seconds))).addCookie(clearedOriginal)
   }
 }
 
@@ -112,11 +125,14 @@ object router {
         case (_, Some(cookie)) => test(cookie.content)
     }
 
+    private def rawTokenFrom(request: Request): Option[String] = {
+      request.headers.get(morbid.MorbidHeaders.Token).orElse(request.cookie(morbid.MorbidCookies.Token).map(_.content))
+    }
+
     private def tokenFrom(request: Request): Task[Token] = {
-      (request.headers.get(morbid.MorbidHeaders.Token), request.cookie(morbid.MorbidCookies.Token)) match
-        case (None, None     ) => ZIO.fail(Exception("Authorization cookie or header is missing"))
-        case (Some(header), _) => tokens.verify(header)         .mapError(forbidden)
-        case (_, Some(cookie)) => tokens.verify(cookie.content) .mapError(forbidden)
+      rawTokenFrom(request) match
+        case None      => ZIO.fail(Exception("Authorization cookie or header is missing"))
+        case Some(raw) => tokens.verify(raw).mapError(forbidden)
     }
 
     private def applicationDetailsGiven(request: Request): Task[Response] = ensureResponse {
@@ -195,7 +211,7 @@ object router {
           identity  <- identities.verify(vgt)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error verifying firebase token '${vgt.token}: ${err.getMessage}'")))
           fn        =  ensureUser(identity)
           (tk, enc) <- tokenGiven(identity.email) { fn }
-        yield loginResponse(tk, enc)
+        yield loginResponse(tk, enc).clearOriginal
       }.toTask
     }
 
@@ -259,9 +275,21 @@ object router {
     }
 
     private def logoff(request: Request): Task[Response] = {
-      ZIO.succeed {
-        Response.ok.logOff
+
+      def plainLogoff = ZIO.succeed(Response.json(LogoffResponse(restored = false).toJson).logOff)
+
+      def restore(raw: String): Task[Response] = {
+        tokens.verify(raw).foldZIO(
+          failure = err => ZIO.logWarning(s"Stashed impersonator token is invalid: ${err.getMessage}") *> plainLogoff,
+          success = impersonator =>
+            ZIO.logInfo(s"Restoring session for '${impersonator.user.details.email}' after impersonation logout") *>
+              ZIO.succeed(Response.json(LogoffResponse(restored = true).toJson).loggedIn(raw).clearOriginal)
+        )
       }
+
+      request.cookie(morbid.MorbidCookies.OriginalToken).map(_.content).filter(_.nonEmpty) match
+        case Some(raw) => restore(raw)
+        case None      => plainLogoff
     }
 
     private def userBy(request: Request): Task[Response] = {
@@ -475,18 +503,19 @@ object router {
 
     private def impersonate(request: Request): Task[Response] = ensureResponse {
       for {
-        impersonator <- tokenFrom(request)
-        req          <- request.body.parse[ImpersonationRequest]()
-        _            <- ensureMagic(req.magic)
-        user         <- repo.exec(FindUserByEmail(req.email))
-        token        <- user match {
-                          case Some(usr) => tokens.asToken(usr)
-                          case None      => ZIO.fail(ReturnResponseError(Response.notFound(s"user ${req.email} not found")))
-                        }
-        _            <- ZIO.logInfo(s"User '${token.user.details.email}' impersonated by ${impersonator.user.details.email}")
-        impersonated = token.copy(impersonatedBy = Some(impersonator.user.details))
-        encoded      <- tokens.encode(impersonated)
-      } yield loginResponse(impersonated, encoded)
+        impersonator    <- tokenFrom(request)
+        impersonatorRaw <- ZIO.fromOption(rawTokenFrom(request)).mapError(_ => ReturnResponseError(Response.unauthorized("Missing impersonator token")))
+        req             <- request.body.parse[ImpersonationRequest]()
+        _               <- ensureMagic(req.magic)
+        user            <- repo.exec(FindUserByEmail(req.email))
+        token           <- user match {
+                             case Some(usr) => tokens.asToken(usr)
+                             case None      => ZIO.fail(ReturnResponseError(Response.notFound(s"user ${req.email} not found")))
+                           }
+        _               <- ZIO.logInfo(s"User '${token.user.details.email}' impersonated by ${impersonator.user.details.email}")
+        impersonated    = token.copy(impersonatedBy = Some(impersonator.user.details))
+        encoded         <- tokens.encode(impersonated)
+      } yield loginResponse(impersonated, encoded).stashOriginal(impersonatorRaw)
     }.toTask
 
     private def usersGiven(request: Request, application: ApplicationCode, group: Option[GroupCode] = None): Task[Response] = ensureResponse {

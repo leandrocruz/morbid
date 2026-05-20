@@ -468,6 +468,7 @@ object domain {
     case class LoginViaEmailLinkResponse(link: Link)
     case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email)
     case class ImpersonationRequest(email: Email, magic: Magic)
+    case class LogoffResponse(restored: Boolean)
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
@@ -483,6 +484,7 @@ object domain {
     given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
     given JsonCodec[ImpersonationRequest]       = DeriveJsonCodec.gen
+    given JsonCodec[LogoffResponse]             = DeriveJsonCodec.gen
   }
 }
 
@@ -492,9 +494,10 @@ object MorbidHeaders {
 }
 
 object MorbidCookies {
-  val Auth         = "morbid-auth"
-  val Token        = "morbid-token"
-  val ServiceToken = "morbid-service-token"
+  val Auth          = "morbid-auth"
+  val Token         = "morbid-token"
+  val OriginalToken = "morbid-original-token"
+  val ServiceToken  = "morbid-service-token"
 }
 
 object track {
