@@ -1,5 +1,8 @@
 # Morbid
 
+## Release v1.14.0
+LTS 20/05/2026
+
  - [Leandro] Nova rota `POST /app/{app}/user/groups/find` que retorna os grupos a que um usuário pertence (user code vai no corpo via `GetUserGroupsRequest`)
    - Novo `GetUserGroupsRequest(user)` em `morbid-commons`
    - Novo comando de repositório `FindGroupsByUser` com query Quill correspondente
