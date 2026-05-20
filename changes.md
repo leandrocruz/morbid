@@ -1,5 +1,16 @@
 # Morbid
 
+
+## Release v1.13.0
+LTS 19/05/2026
+
+ - [Leandro] `POST /impersonate` now stashes the impersonator's JWT in a new `morbid-original-token` HttpOnly cookie
+ - [Leandro] `POST /logoff` detects the stash cookie and, when present, restores the impersonator's session (sets `morbid-token` to the stashed JWT, clears the stash) instead of fully logging out
+ - [Leandro] `/logoff` now returns `{"restored": Boolean}` so clients can decide whether to reload (restored) or proceed with the normal logout flow
+ - [Leandro] `POST /login` now also clears the stash cookie so a fresh login can't inherit a stale impersonator token
+ - [Leandro] Added `OriginalToken = "morbid-original-token"` to `MorbidCookies`
+ - [Leandro] Added `LogoffResponse(restored: Boolean)` to `morbid-commons` with a `JsonCodec`
+
 ## Release v1.12.0
 LTS 01/05/2026
 
