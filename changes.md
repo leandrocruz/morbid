@@ -1,5 +1,9 @@
 # Morbid
 
+ - [Leandro] Nova rota `GET /app/{app}/user/{code}/groups` que retorna os grupos a que um usuário pertence
+   - Novo comando de repositório `FindGroupsByUser` com query Quill correspondente
+   - Novo método `groupsByUserCode(user: UserCode)` no `MorbidClient` (trait, `RemoteMorbidClient`, `LocalMorbidClient` e `FakeMorbidClient`)
+
 ## Release v1.12.0
 LTS 01/05/2026
 

@@ -347,6 +347,7 @@ object repo {
         case r: FindUserByEmail        => userGiven(r)
         case r: FindUserById           => userGiven(r)
         case r: FindUsersInGroup       => usersGiven(r)
+        case r: FindGroupsByUser       => groupsByUser(r)
         case r: LinkAccountToApp       => linkAccountToApp(r)
         case r: LinkUsersToGroup       => linkGroups(r)
         case r: UnlinkUsersFromGroup   => ZIO.fail(Exception("TODO"))
@@ -944,6 +945,25 @@ object repo {
       yield rows.groupBy { (user, _) => user }.view.mapValues { data => data.map { (_, grp) => grp} }.toMap.map {
         (usr, groups) => usr.into[RawUserData].withFieldConst(_.groups, groups.map(_.into[RawGroup].withFieldConst(_.roles, Seq.empty).transform)).transform
       }.toSeq
+    }
+
+    private def groupsByUser(request: FindGroupsByUser): Task[Seq[RawGroup]] = {
+
+      inline def query = quote {
+        for {
+          ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
+          app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+          usr <- users        .join(_.account == acc.id) if usr.deleted.isEmpty && usr.code == lift(request.user)
+          u2g <- user2group   .join(_.usr    == usr.id)  if u2g.deleted.isEmpty && u2g.app  == app.id
+          grp <- groups       .join(_.id     == u2g.grp) if grp.deleted.isEmpty
+        } yield grp
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.map(_.into[RawGroup].withFieldConst(_.roles, Seq.empty).transform)
     }
 
     private def usersGiven(request: FindUsersInGroup): Task[Seq[RawUserEntry]] = {

@@ -498,6 +498,13 @@ object router {
 
     private def groupUsers(app: String, group: String, request: Request): Task[Response] = usersGiven(request, ApplicationCode.of(app), Some(GroupCode.of(group)))
 
+    private def groupsByUser(app: String, code: String, request: Request): Task[Response] = ensureResponse {
+      for {
+        tk  <- tokenFrom(request)
+        seq <- repo.exec(FindGroupsByUser(tk.user.details.accountCode, ApplicationCode.of(app), UserCode.of(code)))
+      } yield Response.json(seq.toJson)
+    }.toTask
+
     private def groupsGiven(app: String, request: Request): Task[Response] = ensureResponse {
       val appCode = ApplicationCode.of(app)
       for {
@@ -867,6 +874,7 @@ object router {
       Method.POST / "app" / string("app") / "group"                             -> handler(protect(storeGroup)),
       Method.POST / "app" / string("app") / "group" / "delete"                  -> handler(protect(removeGroup)),
       Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
+      Method.GET  / "app" / string("app") / "user"   / string("code") / "groups"-> handler(groupsByUser),
       Method.GET  / "app" / string("app") / "roles"                             -> handler(rolesGiven),
       Method.POST / "app" / string("app") / "account"                           -> handler(protect(provisionAccount)),
       Method.POST / "app" / string("app") / "account" / "users"                 -> handler(protect(provisionUsers))
