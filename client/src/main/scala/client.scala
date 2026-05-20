@@ -27,7 +27,8 @@ object client {
     def groupsByCode      (groups: Seq[GroupCode])                         (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
     def groupByCode       (group: GroupCode)                               (using token: RawToken, app: ApplicationCode): Task[Option[RawGroup]]
     def usersByGroupByCode(group: GroupCode)                               (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
-    def groupsByUserCode  (user: UserCode)                                 (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
+    def groupsByUser      (request: GetUserGroupsRequest)                  (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
+    def setUserGroups     (request: SetUserGroupsRequest)                  (using token: RawToken, app: ApplicationCode): Task[Boolean]
     def users                                                              (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
     def roles                                                              (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]
     def storeGroup        (request: StoreGroupRequest)                     (using token: RawToken, app: ApplicationCode): Task[RawGroup]
@@ -117,7 +118,8 @@ object client {
     override def groups                                                 (using token: RawToken, app: ApplicationCode) = get [Seq[RawGroup]]                                       (Some(token),  base / "app" / ApplicationCode.value(app) / "groups")
     override def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode) = get [Seq[RawGroup]]                                       (Some(token), (base / "app" / ApplicationCode.value(app) / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
     override def usersByGroupByCode(group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = get [Seq[RawUserEntry]]                                   (Some(token),  base / "app" / ApplicationCode.value(app) / "group" / GroupCode.value(group) / "users")
-    override def groupsByUserCode  (user: UserCode)                     (using token: RawToken, app: ApplicationCode) = get [Seq[RawGroup]]                                       (Some(token),  base / "app" / ApplicationCode.value(app) / "user"  / UserCode.value(user)   / "groups")
+    override def groupsByUser      (request: GetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode) = post[GetUserGroupsRequest, Seq[RawGroup]]                 (Some(token),  base / "app" / ApplicationCode.value(app) / "user"  / "groups" / "find", request)
+    override def setUserGroups     (request: SetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode) = post[SetUserGroupsRequest, Boolean]                       (Some(token),  base / "app" / ApplicationCode.value(app) / "user"  / "groups", request)
     override def storeUser         (request: StoreUserRequest)          (using token: RawToken, app: ApplicationCode) = post[StoreUserRequest, RawUserEntry]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "user", request)
     override def removeUser        (request: RemoveUserRequest)         (using token: RawToken, app: ApplicationCode) = post[RemoveUserRequest, Long]                             (Some(token),  base / "app" / ApplicationCode.value(app) / "user" / "delete", request)
     override def users                                                  (using token: RawToken, app: ApplicationCode) = get [Seq[RawUserEntry]]                                   (Some(token),  base / "app" / ApplicationCode.value(app) / "users")
@@ -162,7 +164,8 @@ object client {
     override def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode) = remote.groupsByCode(groups)
     override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = remote.groupByCode(group)
     override def usersByGroupByCode(group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = remote.usersByGroupByCode(group)
-    override def groupsByUserCode  (user: UserCode)                     (using token: RawToken, app: ApplicationCode) = remote.groupsByUserCode(user)
+    override def groupsByUser      (request: GetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode) = remote.groupsByUser(request)
+    override def setUserGroups     (request: SetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode) = remote.setUserGroups(request)
     override def users                                                  (using token: RawToken, app: ApplicationCode) = remote.users
     override def roles                                                  (using token: RawToken, app: ApplicationCode) = remote.roles
     override def storeGroup        (request: StoreGroupRequest)         (using token: RawToken, app: ApplicationCode) = remote.storeGroup(request)
@@ -226,7 +229,8 @@ object client {
     override def groupsByCode      (groups: Seq[GroupCode])              (using token: RawToken, app: ApplicationCode) = ZIO.succeed { _groups.filter(g => groups.contains(g.code)) }
     override def proxy             (request: Request)                                                                  = ZIO.fail(Exception("TODO"))
     override def usersByGroupByCode(group: GroupCode)                    (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
-    override def groupsByUserCode  (user: UserCode)                      (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_groups)
+    override def groupsByUser      (request: GetUserGroupsRequest)       (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_groups)
+    override def setUserGroups     (request: SetUserGroupsRequest)       (using token: RawToken, app: ApplicationCode) = ZIO.succeed(true)
     override def roles                                                   (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
     override def storeGroup        (request: StoreGroupRequest)          (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
     override def storeUser         (request: StoreUserRequest)           (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))

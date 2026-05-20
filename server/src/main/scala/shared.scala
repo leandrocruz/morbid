@@ -58,6 +58,12 @@ object utils {
 
   given JsonCodec[CommonError] = DeriveJsonCodec.gen
 
+  extension [T](maybe: Option[T]) {
+    def orFail(message: String): Task[T] = {
+      ZIO.fromOption(maybe).mapError(_ => Exception(message))
+    }
+  }
+
   extension [T](task: Task[Option[T]])
     def orFail(message: String): Task[T] = {
       for
@@ -176,6 +182,13 @@ object commands {
     app     : ApplicationCode,
     user    : UserCode
   ) extends Command[Seq[RawGroup]]
+
+  case class SetUserGroups(
+    account : AccountCode,
+    app     : ApplicationCode,
+    user    : UserCode,
+    groups  : Seq[GroupCode]
+  ) extends Command[Boolean]
 
   case class FindAccountsByApp(app: ApplicationCode) extends Command[Seq[RawAccount]]
   case class FindUsersByApp   (app: ApplicationCode) extends Command[Seq[RawUserData]]
