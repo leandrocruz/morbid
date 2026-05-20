@@ -1,6 +1,5 @@
 package morbid
 
-import morbid.utils.orFail
 import zio.*
 
 object repo {
@@ -13,7 +12,7 @@ object repo {
   import io.getquill.jdbczio.Quill
   import io.scalaland.chimney.dsl.*
   import morbid.config.MorbidConfig
-  import utils.refineError
+  import utils.{refineError, some}
 
   import java.sql.SQLException
   import java.time.LocalDateTime
@@ -997,9 +996,9 @@ object repo {
 
       for
         usrRows   <- exec(run(findUser))
-        usr       <- usrRows.headOption.orFail(s"User '${request.user}' not found")
+        usr       <- usrRows.headOption.some(s"User '${request.user}' not found")
         appRows   <- exec(run(findApp))
-        app       <- appRows.headOption.orFail(s"App '${request.app}' not found")
+        app       <- appRows.headOption.some(s"App '${request.app}' not found")
         targets   <- exec(run(findGroups))
         targetIds =  targets.map(_.id)
         current   <- exec(run(currentLinks(usr.id, app.id)))

@@ -59,7 +59,7 @@ object utils {
   given JsonCodec[CommonError] = DeriveJsonCodec.gen
 
   extension [T](maybe: Option[T]) {
-    def orFail(message: String): Task[T] = {
+    def some(message: String): Task[T] = {
       ZIO.fromOption(maybe).mapError(_ => Exception(message))
     }
   }
