@@ -1,5 +1,17 @@
 # Morbid
 
+## Release v1.14.0
+LTS 20/05/2026
+
+ - [Leandro] Nova rota `POST /app/{app}/user/groups/find` que retorna os grupos a que um usuário pertence (user code vai no corpo via `GetUserGroupsRequest`)
+   - Novo `GetUserGroupsRequest(user)` em `morbid-commons`
+   - Novo comando de repositório `FindGroupsByUser` com query Quill correspondente
+   - Novo método `groupsByUser(request: GetUserGroupsRequest)` no `MorbidClient` (trait, `RemoteMorbidClient`, `LocalMorbidClient` e `FakeMorbidClient`)
+ - [Leandro] Nova rota `POST /app/{app}/user/groups` para reatribuir os grupos de um usuário (user code vai no corpo via `SetUserGroupsRequest`; mesma dinâmica de diff add/remove usada em `storeGroup`)
+   - Novo `SetUserGroupsRequest(user, groups)` em `morbid-commons`
+   - Novo comando de repositório `SetUserGroups` (diffa contra o conjunto atual e insere/deleta linhas em `user_to_group`)
+   - Novo método `setUserGroups(request: SetUserGroupsRequest): Task[Boolean]` no `MorbidClient`
+
 
 ## Release v1.13.0
 LTS 19/05/2026

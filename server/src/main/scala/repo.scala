@@ -12,7 +12,7 @@ object repo {
   import io.getquill.jdbczio.Quill
   import io.scalaland.chimney.dsl.*
   import morbid.config.MorbidConfig
-  import utils.refineError
+  import utils.{refineError, some}
 
   import java.sql.SQLException
   import java.time.LocalDateTime
@@ -347,6 +347,8 @@ object repo {
         case r: FindUserByEmail        => userGiven(r)
         case r: FindUserById           => userGiven(r)
         case r: FindUsersInGroup       => usersGiven(r)
+        case r: FindGroupsByUser       => groupsByUser(r)
+        case r: SetUserGroups          => setUserGroups(r)
         case r: LinkAccountToApp       => linkAccountToApp(r)
         case r: LinkUsersToGroup       => linkGroups(r)
         case r: UnlinkUsersFromGroup   => ZIO.fail(Exception("TODO"))
@@ -944,6 +946,87 @@ object repo {
       yield rows.groupBy { (user, _) => user }.view.mapValues { data => data.map { (_, grp) => grp} }.toMap.map {
         (usr, groups) => usr.into[RawUserData].withFieldConst(_.groups, groups.map(_.into[RawGroup].withFieldConst(_.roles, Seq.empty).transform)).transform
       }.toSeq
+    }
+
+    private def setUserGroups(request: SetUserGroups): Task[Boolean] = {
+
+      inline def findUser = quote {
+        for
+          ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          usr <- users        .join(_.account == acc.id) if usr.deleted.isEmpty && usr.code == lift(request.user)
+        yield usr
+      }
+
+      inline def findApp = quote {
+        for
+          ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
+          app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+        yield app
+      }
+
+      inline def findGroups = quote {
+        for
+          ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
+          app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+          grp <- groups       .join(_.app    == a2a.app) if grp.deleted.isEmpty && grp.acc == acc.id && liftQuery(request.groups).contains(grp.code)
+        yield grp
+      }
+
+      def currentLinks(userId: UserId, appId: ApplicationId) = quote {
+        user2group.filter(u2g => u2g.deleted.isEmpty && u2g.usr == lift(userId) && u2g.app == lift(appId)).map(_.grp)
+      }
+
+      def insertLinks(userId: UserId, appId: ApplicationId, groupIds: Seq[GroupId], now: LocalDateTime): Task[Unit] = {
+        val rows = groupIds.map(gid => UserToGroupRow(usr = userId, app = appId, grp = gid, created = now))
+        inline def stmt = quote { liftQuery(rows).foreach(row => user2group.insertValue(row)) }
+        exec(run(stmt)).unit
+      }
+
+      def deleteLinks(userId: UserId, appId: ApplicationId, groupIds: Seq[GroupId]): Task[Unit] = {
+        inline def stmt = quote {
+          user2group.filter(u2g => u2g.usr == lift(userId) && u2g.app == lift(appId) && liftQuery(groupIds).contains(u2g.grp)).delete
+        }
+        exec(run(stmt)).unit
+      }
+
+      for
+        usrRows   <- exec(run(findUser))
+        usr       <- usrRows.headOption.some(s"User '${request.user}' not found")
+        appRows   <- exec(run(findApp))
+        app       <- appRows.headOption.some(s"App '${request.app}' not found")
+        targets   <- exec(run(findGroups))
+        targetIds =  targets.map(_.id)
+        current   <- exec(run(currentLinks(usr.id, app.id)))
+        toAdd     =  targetIds.diff(current)
+        toRemove  =  current.diff(targetIds)
+        now       <- Clock.localDateTime
+        _         <- ZIO.when(toAdd   .nonEmpty)(insertLinks(usr.id, app.id, toAdd   , now))
+        _         <- ZIO.when(toRemove.nonEmpty)(deleteLinks(usr.id, app.id, toRemove))
+      yield true
+    }
+
+    private def groupsByUser(request: FindGroupsByUser): Task[Seq[RawGroup]] = {
+
+      inline def query = quote {
+        for {
+          ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
+          app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+          usr <- users        .join(_.account == acc.id) if usr.deleted.isEmpty && usr.code == lift(request.user)
+          u2g <- user2group   .join(_.usr    == usr.id)  if u2g.deleted.isEmpty && u2g.app  == app.id
+          grp <- groups       .join(_.id     == u2g.grp) if grp.deleted.isEmpty
+        } yield grp
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.map(_.into[RawGroup].withFieldConst(_.roles, Seq.empty).transform)
     }
 
     private def usersGiven(request: FindUsersInGroup): Task[Seq[RawUserEntry]] = {
