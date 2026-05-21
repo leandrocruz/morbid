@@ -176,3 +176,13 @@ CREATE TABLE account_to_plan (
     deleted TIMESTAMP                                   ,
     PRIMARY KEY (acc, plan)
 );
+
+-- Supporting indexes for plan/feature lookups.
+--   account_to_plan PK(acc, plan)        already covers lookups by acc (FindPlansForAccount).
+--   plan_to_feature PK(plan, feature)    already covers lookups by plan (plan -> features join).
+-- The indexes below cover the *reverse* directions (plan -> accounts, feature -> plans)
+-- and the app-scoped lookups used to list plans/features per application.
+CREATE INDEX account_to_plan_plan_idx ON account_to_plan (plan);
+CREATE INDEX plan_to_feature_feature_idx ON plan_to_feature (feature);
+CREATE INDEX plans_app_idx ON plans (app);
+CREATE INDEX features_app_idx ON features (app);
