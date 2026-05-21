@@ -134,3 +134,45 @@ CREATE TABLE group_to_role (
     deleted TIMESTAMP                                  ,
     PRIMARY KEY (grp, rid)
 );
+
+CREATE TABLE features (
+    id          SERIAL                                            ,
+    created     TIMESTAMP    NOT NULL                             ,
+    deleted     TIMESTAMP                                         ,
+    app         BIGINT       NOT NULL REFERENCES applications(id) ,
+    code        VARCHAR(32)  NOT NULL                             ,
+    name        VARCHAR(128) NOT NULL                             ,
+    description TEXT                                              ,
+    UNIQUE      (app, code)                                       ,
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE plans (
+    id          SERIAL                                            ,
+    created     TIMESTAMP    NOT NULL                             ,
+    deleted     TIMESTAMP                                         ,
+    active      BOOLEAN      NOT NULL DEFAULT true                ,
+    app         BIGINT       NOT NULL REFERENCES applications(id) ,
+    code        VARCHAR(32)  NOT NULL                             ,
+    name        VARCHAR(128) NOT NULL                             ,
+    description TEXT                                              ,
+    UNIQUE      (app, code)                                       ,
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE plan_to_feature (
+    plan    BIGINT    NOT NULL REFERENCES plans    (id) ,
+    feature BIGINT    NOT NULL REFERENCES features (id) ,
+    value   BIGINT                                      ,
+    created TIMESTAMP NOT NULL                          ,
+    deleted TIMESTAMP                                   ,
+    PRIMARY KEY (plan, feature)
+);
+
+CREATE TABLE account_to_plan (
+    acc     BIGINT    NOT NULL REFERENCES accounts (id) ,
+    plan    BIGINT    NOT NULL REFERENCES plans    (id) ,
+    created TIMESTAMP NOT NULL                          ,
+    deleted TIMESTAMP                                   ,
+    PRIMARY KEY (acc, plan)
+);
