@@ -206,7 +206,7 @@ object router {
       def ensureUser(identity: CloudIdentity)(maybeUser: Option[RawUser]): Task[RawUser] = {
         maybeUser match
           case Some(user) => ZIO.succeed(user)
-          case None       => accounts.provision(identity)
+          case None       => accounts.provisionSSO(identity)
       }
 
       def errorHandler(e: Throwable) = e match {

@@ -23,7 +23,7 @@ object accounts {
   import scala.util.Try
 
   trait AccountManager {
-    def provision        (identity: CloudIdentity)          : Task[RawUser]
+    def provisionSSO     (identity: CloudIdentity)          : Task[RawUser]
     def provisionFreemium(request: SignupRequest)           : Task[RawUser]
     def parseCSV         (account: RawAccount, csv: String) : Task[Seq[(Email, Try[RawUserEntry])]]
   }
@@ -39,7 +39,7 @@ object accounts {
     private val DefaultGroupName = GroupName.of("Todos") //FIXME: this should not be here
     private val AdminGroupName   = GroupName.of("Todos") //FIXME: this should not be here
 
-    override def provision(identity: CloudIdentity): Task[RawUser] = {
+    override def provisionSSO(identity: CloudIdentity): Task[RawUser] = {
 
       def provisionSaml(id: ProviderCode): Task[RawUser] = {
 
@@ -100,98 +100,101 @@ object accounts {
 
     /**
      * Provision a self-registered Free user under the existing DEFAULT tenant.
-     *
-     * Caller is responsible for verifying the Firebase ID token before invoking this.
-     * Returns 409-mappable errors (SignupNameTaken / SignupEmailTaken) when the
-     * unique constraints on (tenant, name) or globally on the user code are hit.
      */
     override def provisionFreemium(request: SignupRequest): Task[RawUser] = {
 
-      def asNameTaken(err: Throwable): Throwable = err match
-        case e: SQLException if e.getSQLState == "23505" => SignupNameTaken(request.account)
-        case other                                       => other
+      case class LegacyContext(tenant: RawTenant, legacyAccount: LegacyAccount, legacyUser: LegacyUser, userRecord: UserRecord, details: RawApplicationDetails, plan: RawPlan)
 
-      def asEmailTaken(err: Throwable): Throwable = err match
-        case e: SQLException if e.getSQLState == "23505" => SignupEmailTaken(request.email)
-        case other                                       => other
-
-      def buildAccount(tenant: RawTenant, account: LegacyAccount) = {
-        StoreAccount(
-          id     = account.id,
-          tenant = tenant.id,
-          code   = AccountCode.of(s"freemium_${RandomStringUtils.secure.nextAlphanumeric(4)}"),
-          name   = account.name,
-          active = true,
-          update = false
-        )
+      // External calls (Firebase, legacy morbid) happen *before* the DB transaction because
+      // they cannot be rolled back. If the DB tx later fails, legacy/Firebase entries become
+      // orphans — compensation is a separate concern (see callers / cleanup jobs).
+      def prepareLegacy: Task[LegacyContext] = {
+        for
+          tenant        <- repo.exec(FindTenantByCode(request.tenant))                  .orFail(s"Tenant '${request.tenant}' not found")
+          details       <- repo.exec(FindApplicationDetails(request.application))       .orFail(s"Application '${request.application}' not found")
+          plan          <- repo.exec(FindPlanByCode(request.application, request.plan)) .orFail(s"Plan '${request.plan}' not found for app '${request.application}'")
+          legacyAccount <- legacyMorbid.createAccount(CreateLegacyAccountRequest(request.account, request.accountType))
+          userRecord    <- identities.createUser(request.email, tenant.code, request.password)
+          legacyUser    <- legacyMorbid.createUser(CreateLegacyUserRequest(legacyAccount.id, request.name, request.email, request.userType))
+        yield LegacyContext(tenant, legacyAccount, legacyUser, userRecord, details, plan)
       }
 
-      def buildUser(account: RawAccount, user: LegacyUser, code: String) = {
-        StoreUser(
-          id      = user.id,
-          email   = request.email,
-          code    = UserCode.of(code),
-          account = account,
-          kind    = None,
-          update  = false,
-          active  = true,
-        )
-      }
+      def provision(ctx: LegacyContext) = {
 
-      def linkGroup(now: LocalDateTime, account: RawAccount, application: RawApplication, user: UserCode)(code: GroupCode, roleCodes: Seq[RoleCode]): Task[(GroupCode, RawGroup)] = {
+        def asNameTaken(err: Throwable): Throwable = err match
+          case e: SQLException if e.getSQLState == "23505" => SignupNameTaken(request.account)
+          case other                                       => other
 
-        def build(roles: Seq[RawRole]) = {
-          val name = if code == AdminGroup then AdminGroupName else DefaultGroupName
+        def asEmailTaken(err: Throwable): Throwable = err match
+          case e: SQLException if e.getSQLState == "23505" => SignupEmailTaken(request.email)
+          case other                                       => other
 
-          val group = RawGroup(
-            id      = GroupId.of(0),
-            created = now,
-            deleted = None,
-            code    = code,
-            name    = name,
-            roles   = roles.filter(roleCodes.contains)
+        def buildAccount(tenant: RawTenant, account: LegacyAccount) = {
+          StoreAccount(
+            id     = account.id,
+            tenant = tenant.id,
+            code   = AccountCode.of(s"freemium_${RandomStringUtils.secure.nextAlphanumeric(4)}"),
+            name   = account.name,
+            active = true,
+            update = false
           )
+        }
 
-          StoreGroup(account = account.id, accountCode = account.code, application = application, group = group, users = Seq(user), roles = roleCodes)
+        def buildUser(account: RawAccount, user: LegacyUser, code: String) = {
+          StoreUser(
+            id      = user.id,
+            email   = request.email,
+            code    = UserCode.of(code),
+            account = account,
+            kind    = None,
+            update  = false,
+            active  = true,
+          )
+        }
+
+        def linkGroup(now: LocalDateTime, account: RawAccount, application: RawApplication, user: UserCode)(code: GroupCode, roleCodes: Seq[RoleCode]): Task[(GroupCode, RawGroup)] = {
+
+          def build(roles: Seq[RawRole]) = {
+            val name = if code == AdminGroup then AdminGroupName else DefaultGroupName
+
+            val group = RawGroup(
+              id      = GroupId.of(0),
+              created = now,
+              deleted = None,
+              code    = code,
+              name    = name,
+              roles   = roles.filter(roleCodes.contains)
+            )
+
+            StoreGroup(account = account.id, accountCode = account.code, application = application, group = group, users = Seq(user), roles = roleCodes)
+          }
+
+          for
+            roles <- repo.exec(FindRoles(account = account.code, app = application.details.code))
+            store =  build(roles)
+            group <- repo.exec(store)
+          yield (code, group)
         }
 
         for
-          roles <- repo.exec(FindRoles(account = account.code, app = application.details.code))
-          store =  build(roles)
-          group <- repo.exec(store)
-        yield (code, group)
-      }
-
-      def inTransaction(tenant: RawTenant, legacyAccount: LegacyAccount, legacyUser: LegacyUser, userRecord: UserRecord, details: RawApplicationDetails, plan: RawPlan) = {
-        for
           now         <- Clock.localDateTime
-          account     <- repo.exec(buildAccount(tenant, legacyAccount))              .mapError(asNameTaken)
-          user        <- repo.exec(buildUser(account, legacyUser, userRecord.getUid)).mapError(asEmailTaken)
-          _           <- repo.exec(LinkAccountToApp (acc = account.id, app = details.id))
-          _           <- repo.exec(LinkAccountToPlan(acc = account.id, plan = plan.id))
-          application <- repo.exec(FindApplication(account.code, details.code)).orFail(s"Application '${details.code}' for account '${account.id}' not found")
+          account     <- repo.exec(buildAccount(ctx.tenant, ctx.legacyAccount))              .mapError(asNameTaken)
+          user        <- repo.exec(buildUser(account, ctx.legacyUser, ctx.userRecord.getUid)).mapError(asEmailTaken)
+          _           <- repo.exec(LinkAccountToApp (acc = account.id, app = ctx.details.id))
+          _           <- repo.exec(LinkAccountToPlan(acc = account.id, plan = ctx.plan.id))
+          application <- repo.exec(FindApplication(account.code, ctx.details.code)).orFail(s"Application '${ctx.details.code}' for account '${account.id}' not found")
           _           <- ZIO.foreach(request.groups) { linkGroup(now, account, application, user.code) }
           reloaded    <- repo.exec(FindUserByEmail(user.email)).orFail(s"Error reading newly created user '${user.email}'")
         yield reloaded
 
       }
 
-      // External calls (Firebase, legacy morbid) happen *before* the DB transaction because
-      // they cannot be rolled back. If the DB tx later fails, legacy/Firebase entries become
-      // orphans — compensation is a separate concern (see callers / cleanup jobs).
-      //
-      // The morbid AccountId / UserId are inherited from the legacy system (see buildAccount /
-      // buildUser), so we can call legacyMorbid.createUser with legacyAccount.id directly,
-      // without waiting for the morbid account row to be persisted.
+      val tag = s"${request.accountType} account '${request.account}' for user '${request.email}' under tenant '${request.tenant}'"
       for
-        tenant        <- repo.exec(FindTenantByCode(request.tenant))                  .orFail(s"Tenant '${request.tenant}' not found")
-        details       <- repo.exec(FindApplicationDetails(request.application))       .orFail(s"Application '${request.application}' not found")
-        plan          <- repo.exec(FindPlanByCode(request.application, request.plan)) .orFail(s"Plan '${request.plan}' not found for app '${request.application}'")
-        legacyAccount <- legacyMorbid.createAccount(CreateLegacyAccountRequest(request.account, request.accountType))
-        userRecord    <- identities.createUser(request.email, tenant.code, request.password)
-        legacyUser    <- legacyMorbid.createUser(CreateLegacyUserRequest(legacyAccount.id, request.name, request.email, request.userType))
-        result        <- repo.transaction { inTransaction(tenant, legacyAccount, legacyUser, userRecord, details, plan) }
-        _             <- ZIO.logInfo(s"Provisioned Freemium account '${request.account}' (${result.details.account}) for user '${result.details.email}' under tenant ${tenant.code}")
+        _      <- ZIO.logInfo(s"Provisioning $tag")
+        ctx    <- prepareLegacy
+        result <- repo.transaction { provision(ctx) }
+        _      <- ZIO.logInfo(s"Provisioned $tag")
       yield result
     }
 
