@@ -15,6 +15,7 @@ object accounts {
   import morbid.repo.Repo
   import morbid.types.*
   import morbid.utils.*
+  import com.google.firebase.auth.UserRecord
   import org.apache.commons.lang3.RandomStringUtils
 
   import java.sql.SQLException
@@ -161,24 +162,36 @@ object accounts {
         yield (code, group)
       }
 
+      def inTransaction(tenant: RawTenant, legacyAccount: LegacyAccount, legacyUser: LegacyUser, userRecord: UserRecord, details: RawApplicationDetails, plan: RawPlan) = {
+        for
+          now         <- Clock.localDateTime
+          account     <- repo.exec(buildAccount(tenant, legacyAccount))              .mapError(asNameTaken)
+          user        <- repo.exec(buildUser(account, legacyUser, userRecord.getUid)).mapError(asEmailTaken)
+          _           <- repo.exec(LinkAccountToApp (acc = account.id, app = details.id))
+          _           <- repo.exec(LinkAccountToPlan(acc = account.id, plan = plan.id))
+          application <- repo.exec(FindApplication(account.code, details.code)).orFail(s"Application '${details.code}' for account '${account.id}' not found")
+          _           <- ZIO.foreach(request.groups) { linkGroup(now, account, application, user.code) }
+          reloaded    <- repo.exec(FindUserByEmail(user.email)).orFail(s"Error reading newly created user '${user.email}'")
+        yield reloaded
+
+      }
+
+      // External calls (Firebase, legacy morbid) happen *before* the DB transaction because
+      // they cannot be rolled back. If the DB tx later fails, legacy/Firebase entries become
+      // orphans — compensation is a separate concern (see callers / cleanup jobs).
+      //
+      // The morbid AccountId / UserId are inherited from the legacy system (see buildAccount /
+      // buildUser), so we can call legacyMorbid.createUser with legacyAccount.id directly,
+      // without waiting for the morbid account row to be persisted.
       for
-        now           <- Clock.localDateTime
-        tenant        <- repo.exec(FindTenantByCode(request.tenant))                  .orFail(s"Tenant '${TenantCode.DEFAULT}' not found")
+        tenant        <- repo.exec(FindTenantByCode(request.tenant))                  .orFail(s"Tenant '${request.tenant}' not found")
         details       <- repo.exec(FindApplicationDetails(request.application))       .orFail(s"Application '${request.application}' not found")
         plan          <- repo.exec(FindPlanByCode(request.application, request.plan)) .orFail(s"Plan '${request.plan}' not found for app '${request.application}'")
         legacyAccount <- legacyMorbid.createAccount(CreateLegacyAccountRequest(request.account, request.accountType))
-        storeAccount  =  buildAccount(tenant, legacyAccount)
-        account       <- repo.exec(storeAccount).mapError(asNameTaken)
         userRecord    <- identities.createUser(request.email, tenant.code, request.password)
-        legacyUser    <- legacyMorbid.createUser(CreateLegacyUserRequest(account.id, request.name, request.email, request.userType))
-        storeUser     =  buildUser(account, legacyUser, userRecord.getUid)
-        user          <- repo.exec(storeUser).mapError(asEmailTaken)
-        _             <- repo.exec(LinkAccountToApp (acc = account.id, app = details.id))
-        _             <- repo.exec(LinkAccountToPlan(acc = account.id, plan = plan.id))
-        application   <- repo.exec(FindApplication(account.code, details.code)).orFail(s"Application '${details.code}' for account '${account.id}' not found")
-        groups        <- ZIO.foreach(request.groups) { linkGroup(now, account, application, user.code) }
-        _             <- ZIO.logInfo(s"Provisioned Freemium account '${request.account}' (${account.id}) for user '${user.email}' under tenant ${tenant.code}")
-        result        <- repo.exec(FindUserByEmail(user.email)).orFail(s"Error reading newly created user '${user.email}'")
+        legacyUser    <- legacyMorbid.createUser(CreateLegacyUserRequest(legacyAccount.id, request.name, request.email, request.userType))
+        result        <- repo.transaction { inTransaction(tenant, legacyAccount, legacyUser, userRecord, details, plan) }
+        _             <- ZIO.logInfo(s"Provisioned Freemium account '${request.account}' (${result.details.account}) for user '${result.details.email}' under tenant ${tenant.code}")
       yield result
     }
 

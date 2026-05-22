@@ -243,9 +243,19 @@ object repo {
   )
 
   trait Repo {
-    
+
     def exec[R](command: Command[R]): Task[R]
-    
+
+    /**
+     * Run `action` inside a single JDBC transaction. Every `exec` invoked transitively
+     * inside the block shares the same connection (Quill tracks it via a `FiberRef`);
+     * on success the transaction commits, on failure it rolls back.
+     *
+     * Only DB operations participate. External calls (Firebase, legacy morbid, HTTP)
+     * cannot be rolled back — callers should keep those outside the transaction.
+     */
+    def transaction[R](action: Task[R]): Task[R]
+
     def get[R](command: Command[Option[R]])(msg: => String): Task[R] = {
       for {
         result <- exec(command)
@@ -375,6 +385,9 @@ object repo {
     private inline def account2plan = quote { querySchema[AccountToPlanRow]    ("account_to_plan")    }
 
     private def exec[T](zio: ZIO[DataSource, SQLException, T]): Task[T] = zio.provide(ZLayer.succeed(ds))
+
+    override def transaction[R](action: Task[R]): Task[R] =
+      ctx.transaction(action: ZIO[DataSource, Throwable, R]).provide(ZLayer.succeed(ds))
 
     override def exec[R](command: Command[R]): Task[R] = {
       command match
