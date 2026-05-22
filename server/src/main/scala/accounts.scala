@@ -38,7 +38,7 @@ object accounts {
     private val DefaultGroup     = GroupCode.of("all")   //FIXME: this should not be here
     private val AdminGroup       = GroupCode.of("admin") //FIXME: this should not be here
     private val DefaultGroupName = GroupName.of("Todos") //FIXME: this should not be here
-    private val AdminGroupName   = GroupName.of("Todos") //FIXME: this should not be here
+    private val AdminGroupName   = GroupName.of("Admin") //FIXME: this should not be here
 
     override def provisionSSO(identity: CloudIdentity): Task[RawUser] = {
 
@@ -122,13 +122,19 @@ object accounts {
 
       def provisionWith(ctx: LegacyContext) = {
 
+        // Distinguish the specific unique constraint that fired. Without the constraint
+        // name check, *any* 23505 (PK collision on accounts.id, accounts.code collision,
+        // users PK collision, etc.) would masquerade as "name_taken" or "email_taken".
+        // Other 23505s propagate as the original SQLException so the real cause stays visible.
         def asNameTaken(err: Throwable): Throwable = err match
-          case e: SQLException if e.getSQLState == "23505" => ProvisionNameTaken(request.account)
-          case other                                       => other
+          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("accounts_tenant_name_key") =>
+            ProvisionNameTaken(request.account)
+          case other => other
 
         def asEmailTaken(err: Throwable): Throwable = err match
-          case e: SQLException if e.getSQLState == "23505" => ProvisionEmailTaken(request.email)
-          case other                                       => other
+          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("users_account_email_key") =>
+            ProvisionEmailTaken(request.email)
+          case other => other
 
         def buildAccount(tenant: RawTenant, account: LegacyAccount) = {
           StoreAccount(
