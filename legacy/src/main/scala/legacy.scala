@@ -86,19 +86,21 @@ object legacy {
       for
         body     <- ZIO.attempt(Body.fromString(request.toJson))
         response <- client.url(url).addHeaders(headers).post("/user")(body).provideSome(ZLayer.succeed(scope))
+        text     <- response.body.asString
         user     <- response.status.code match
           case 200  => response.body.parse[LegacyUser]().mapError(err => Exception("Error parsing LegacyUser from body", err))
-          case code => ZIO.fail(Exception(s"Error creating user '${request.email}' for account '${request.account}'. Result code from legacy is $code"))
+          case code => ZIO.fail(Exception(s"Error creating user '${request.email}' for account '${request.account}'. Result code from legacy is $code. Body => $text"))
       yield user
     }
 
     override def createAccount(request: CreateLegacyAccountRequest): Task[LegacyAccount] = {
       for
         body     <- ZIO.attempt(Body.fromString(request.toJson))
-        response <- client.url(url).addHeaders(headers).post("/user")(body).provideSome(ZLayer.succeed(scope))
+        response <- client.url(url).addHeaders(headers).post("/account")(body).provideSome(ZLayer.succeed(scope))
+        text     <- response.body.asString
         account  <- response.status.code match
           case 200  => response.body.parse[LegacyAccount]().mapError(err => Exception("Error parsing LegacyUser from body", err))
-          case code => ZIO.fail(Exception(s"Error creating account '${request.name}'. Result code from legacy is $code"))
+          case code => ZIO.fail(Exception(s"Error creating account '${request.name}'. Result code from legacy is $code. Body => $text"))
       yield account
     }
   }
