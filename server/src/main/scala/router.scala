@@ -254,7 +254,7 @@ object router {
           maybeUser <- repo.exec(FindUserByEmail(req.email)).mapError(as500("Error checking existing user"))
           user      <- maybeUser match
                          case Some(_) => ZIO.fail(asSignupError(SignupEmailTaken(req.email)))
-                         case None    => accounts.provisionFreemium(req).mapError(asSignupError)
+                         case None    => accounts.provision(req).mapError(asSignupError)
           token     <- tokens.asToken(user).mapError(as500("Error minting token"))
           encoded   <- tokens.encode(token).mapError(as500("Error encoding token"))
         yield loginResponse(token, encoded).clearOriginal

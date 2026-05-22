@@ -23,9 +23,9 @@ object accounts {
   import scala.util.Try
 
   trait AccountManager {
-    def provisionSSO     (identity: CloudIdentity)          : Task[RawUser]
-    def provisionFreemium(request: SignupRequest)           : Task[RawUser]
-    def parseCSV         (account: RawAccount, csv: String) : Task[Seq[(Email, Try[RawUserEntry])]]
+    def provisionSSO (identity: CloudIdentity)          : Task[RawUser]
+    def provision    (request: SignupRequest)           : Task[RawUser]
+    def parseCSV     (account: RawAccount, csv: String) : Task[Seq[(Email, Try[RawUserEntry])]]
   }
 
   object AccountManager {
@@ -101,7 +101,7 @@ object accounts {
     /**
      * Provision a self-registered Free user under the existing DEFAULT tenant.
      */
-    override def provisionFreemium(request: SignupRequest): Task[RawUser] = {
+    override def provision(request: SignupRequest): Task[RawUser] = {
 
       case class LegacyContext(tenant: RawTenant, legacyAccount: LegacyAccount, legacyUser: LegacyUser, userRecord: UserRecord, details: RawApplicationDetails, plan: RawPlan)
 
@@ -119,7 +119,7 @@ object accounts {
         yield LegacyContext(tenant, legacyAccount, legacyUser, userRecord, details, plan)
       }
 
-      def provision(ctx: LegacyContext) = {
+      def provisionWith(ctx: LegacyContext) = {
 
         def asNameTaken(err: Throwable): Throwable = err match
           case e: SQLException if e.getSQLState == "23505" => SignupNameTaken(request.account)
@@ -193,7 +193,7 @@ object accounts {
       for
         _      <- ZIO.logInfo(s"Provisioning $tag")
         ctx    <- prepareLegacy
-        result <- repo.transaction { provision(ctx) }
+        result <- repo.transaction { provisionWith(ctx) }
         _      <- ZIO.logInfo(s"Provisioned $tag")
       yield result
     }
