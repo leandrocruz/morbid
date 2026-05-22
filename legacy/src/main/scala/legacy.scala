@@ -2,6 +2,7 @@ package morbid
 
 object legacy {
 
+  import java.util.Date
   import guara.utils.parse
   import morbid.types.{AccountId, AccountName, Email, UserId}
   import zio.*
@@ -105,10 +106,13 @@ object legacy {
     }
   }
 
+  val format = java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss")
+
+  given JsonEncoder[Date]                     = JsonEncoder.string.contramap(format.format)
+  given JsonDecoder[Date]                     = JsonDecoder.string.map(format.parse)
   given JsonCodec[LegacyAccount]              = DeriveJsonCodec.gen
   given JsonCodec[LegacyUser]                 = DeriveJsonCodec.gen
   given JsonCodec[LegacyToken]                = DeriveJsonCodec.gen
   given JsonCodec[CreateLegacyUserRequest]    = DeriveJsonCodec.gen
   given JsonCodec[CreateLegacyAccountRequest] = DeriveJsonCodec.gen
-
 }
