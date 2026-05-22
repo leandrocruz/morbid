@@ -121,6 +121,8 @@ object types {
   given JsonFieldDecoder[ApplicationName] = JsonFieldDecoder.string
   given JsonFieldEncoder[ApplicationCode] = JsonFieldEncoder.string
   given JsonFieldDecoder[ApplicationCode] = JsonFieldDecoder.string
+  given JsonFieldEncoder[GroupCode]        = JsonFieldEncoder.string
+  given JsonFieldDecoder[GroupCode]        = JsonFieldDecoder.string
   given JsonFieldEncoder[RoleName]        = JsonFieldEncoder.string
   given JsonFieldDecoder[RoleName]        = JsonFieldDecoder.string
   given JsonFieldEncoder[RoleCode]        = JsonFieldEncoder.string

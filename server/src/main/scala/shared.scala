@@ -103,10 +103,33 @@ object proto {
   case class EmitToken(email: Email, magic: Magic, days: Option[Int]) derives JsonCodec
   case class SwapTokenRequest(token: String, magic: Magic) derives JsonCodec
 
+  case class SignupRequest(
+    tenant      : TenantCode,
+    application : ApplicationCode,
+    plan        : PlanCode,
+    account     : AccountName,
+    name        : String,
+    email       : Email,
+    password    : Password,
+    groups      : Map[GroupCode, Seq[RoleCode]],
+    accountType : String,
+    userType    : String
+  )
+
+  case class SignupNameTaken (name: AccountName) extends Exception(s"Account name already taken: $name")
+  case class SignupEmailTaken(email: Email)      extends Exception(s"Email already registered: $email")
+  case class SignupBadIntent (intent: String)    extends Exception(s"Unsupported signup intent: '$intent'")
+
+  /** Thrown when /login sees a verified identity that does not map to any existing user and
+    * cannot be auto-provisioned (i.e. it's not a SAML identity for a known provider). The route
+    * translates this to a 404 directing the client to /signup. */
+  case class UnknownUser(email: Email) extends Exception(s"User not registered: $email")
+
   given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[SetClaimsRequest]         = DeriveJsonDecoder.gen
   given JsonDecoder[GetLoginMode]             = DeriveJsonDecoder.gen
+  given JsonDecoder[SignupRequest]            = DeriveJsonDecoder.gen
 }
 
 object passwords {
@@ -257,8 +280,10 @@ object commands {
   case class UsersByAccount(app: ApplicationCode, account: AccountId) extends Command[Seq[RawUserEntry]]
   case class UserExists(code: UserCode) extends Command[Boolean]
 
-  case class FindPlansForAccount(account: AccountId) extends Command[Map[ApplicationId, Seq[RawPlan]]]
-  case class LinkAccountToPlan(acc: AccountId, plan: PlanId)        extends Command[Unit]
+  case class FindPlansForAccount(account: AccountId)                   extends Command[Map[ApplicationId, Seq[RawPlan]]]
+  case class LinkAccountToPlan  (acc: AccountId, plan: PlanId)         extends Command[Unit]
+  case class FindTenantByCode   (code: TenantCode)                     extends Command[Option[RawTenant]]
+  case class FindPlanByCode     (app: ApplicationCode, code: PlanCode) extends Command[Option[RawPlan]]
 
   case class RemoveAccount (id: AccountId)                                       extends Command[Unit]
   case class RemoveUser    (acc: AccountId, code: UserCode)                      extends Command[Long]

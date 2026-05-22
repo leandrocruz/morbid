@@ -413,17 +413,42 @@ object repo {
         case r: UserExists             => userExists(r)
         case r: FindPlansForAccount    => plansForAccount(r)
         case r: LinkAccountToPlan      => linkAccountToPlan(r)
+        case r: FindTenantByCode       => tenantByCode(r)
+        case r: FindPlanByCode         => planByCode(r)
+    }
+
+    private def tenantByCode(request: FindTenantByCode): Task[Option[RawTenant]] = {
+      inline def query = quote {
+        tenants.filter(t => t.code == lift(request.code) && t.active && t.deleted.isEmpty)
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.headOption.map(_.transformInto[RawTenant])
+    }
+
+    private def planByCode(request: FindPlanByCode): Task[Option[RawPlan]] = {
+      inline def query = quote {
+        for
+          app <- applications if app.code == lift(request.app) && app.active && app.deleted.isEmpty
+          pln <- plans       if pln.app == app.id && pln.code == lift(request.code) && pln.active && pln.deleted.isEmpty
+        yield pln
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.headOption.map(_.into[RawPlan].withFieldConst(_.features, Seq.empty).transform)
     }
 
     private def plansForAccount(request: FindPlansForAccount): Task[Map[ApplicationId, Seq[RawPlan]]] = {
 
       inline def query = quote {
-        for {
+        for
           a2p <- account2plan                                                    if a2p.deleted.isEmpty && a2p.acc == lift(request.account)
           pln <- plans       .join    (_.id == a2p.plan)                         if pln.deleted.isEmpty && pln.active
           p2f <- plan2feature.leftJoin(_.plan == pln.id)                         if p2f.exists(_.deleted.isEmpty)
           ftr <- features    .leftJoin(f => p2f.exists(_.feature == f.id))       if ftr.exists(_.deleted.isEmpty)
-        } yield (pln, p2f, ftr)
+        yield (pln, p2f, ftr)
       }
 
       def merge(rows: Seq[(PlanRow, Option[PlanToFeatureRow], Option[FeatureRow])]): Map[ApplicationId, Seq[RawPlan]] = {
