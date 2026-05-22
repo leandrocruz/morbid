@@ -572,6 +572,20 @@ object domain {
     case class ImpersonationRequest(email: Email, magic: Magic)
     case class LogoffResponse(restored: Boolean)
 
+    case class ProvisionRequest(
+      tenant      : TenantCode,
+      application : ApplicationCode,
+      plan        : PlanCode,
+      account     : AccountName,
+      name        : String,
+      email       : Email,
+      password    : Password,
+      groups      : Map[GroupCode, Seq[RoleCode]],
+      accountType : String,
+      userType    : String,
+    )
+
+
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
     given JsonCodec[RequestPasswordRequestLink] = DeriveJsonCodec.gen
@@ -584,6 +598,7 @@ object domain {
     given JsonCodec[SetUserGroupsRequest]       = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
+    given JsonCodec[ProvisionRequest]              = DeriveJsonCodec.gen
     given JsonCodec[StoreAccountRequest]        = DeriveJsonCodec.gen
     given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen

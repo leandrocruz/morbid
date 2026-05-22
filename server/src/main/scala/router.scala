@@ -200,7 +200,7 @@ object router {
     private def login(request: Request): Task[Response] = {
 
       def asLoginError(err: Throwable): ReturnResponseError = err match
-        case UnknownUser(email) => ReturnResponseError(Response.json(s"""{"error":"unknown_user","email":"$email","signup":"/signup"}""").status(Status.NotFound))
+        case UnknownUser(email) => ReturnResponseError(Response.json(s"""{"error":"unknown_user","email":"$email","provision":"/provision"}""").status(Status.NotFound))
         case other              => ReturnResponseError(Response.internalServerError(other.getMessage))
 
       def ensureUser(identity: CloudIdentity)(maybeUser: Option[RawUser]): Task[RawUser] = {
@@ -228,33 +228,23 @@ object router {
       }.toTask
     }
 
-    /**
-     * Public self-registration endpoint. Verifies a Firebase ID token, then provisions
-     * a brand-new Free account under the DEFAULT tenant with the `2fa_freemium` plan.
-     *
-     * Errors map to HTTP status codes:
-     *   400 — malformed request or unsupported intent
-     *   401 — Firebase token verification failed
-     *   409 — account name (Nome) already taken under DEFAULT tenant
-     *   409 — email already registered (any account)
-     */
-    private def signup(request: Request): Task[Response] = {
+    private def provision(request: Request): Task[Response] = {
 
-      def asSignupError(err: Throwable): ReturnResponseError = err match
-        case _: SignupNameTaken  => ReturnResponseError(Response.json("""{"error":"name_taken"}""") .status(Status.Conflict))
-        case _: SignupEmailTaken => ReturnResponseError(Response.json("""{"error":"email_taken"}""").status(Status.Conflict))
-        case SignupBadIntent(i)  => ReturnResponseError(Response.badRequest(s"Unsupported intent: '$i'"))
-        case other               => ReturnResponseError(Response.internalServerError(other.getMessage))
+      def asProvisionError(err: Throwable): ReturnResponseError = err match
+        case _: ProvisionNameTaken  => ReturnResponseError(Response.json("""{"error":"name_taken"}""") .status(Status.Conflict))
+        case _: ProvisionEmailTaken => ReturnResponseError(Response.json("""{"error":"email_taken"}""").status(Status.Conflict))
+        case ProvisionBadIntent(i)  => ReturnResponseError(Response.badRequest(s"Unsupported intent: '$i'"))
+        case other                  => ReturnResponseError(Response.internalServerError(other.getMessage))
 
       def as500(prefix: String)(err: Throwable) = ReturnResponseWithExceptionError(err, Response.internalServerError(s"$prefix: ${err.getMessage}"))
 
       ensureResponse {
         for
-          req       <- request.body.parse[SignupRequest]()  .mapError(err => ReturnResponseWithExceptionError(err, Response.badRequest(s"Error parsing SignupRequest: ${err.getMessage}")))
-          maybeUser <- repo.exec(FindUserByEmail(req.email)).mapError(as500("Error checking existing user"))
+          req       <- request.body.parse[ProvisionRequest]().mapError(err => ReturnResponseWithExceptionError(err, Response.badRequest(s"Error parsing ProvisionRequest: ${err.getMessage}")))
+          maybeUser <- repo.exec(FindUserByEmail(req.email)) .mapError(as500("Error checking existing user"))
           user      <- maybeUser match
-                         case Some(_) => ZIO.fail(asSignupError(SignupEmailTaken(req.email)))
-                         case None    => accounts.provision(req).mapError(asSignupError)
+                         case Some(_) => ZIO.fail(asProvisionError(ProvisionEmailTaken(req.email)))
+                         case None    => accounts.provision(req).mapError(asProvisionError)
           token     <- tokens.asToken(user).mapError(as500("Error minting token"))
           encoded   <- tokens.encode(token).mapError(as500("Error encoding token"))
         yield loginResponse(token, encoded).clearOriginal
@@ -940,7 +930,7 @@ object router {
       Method.POST / "login" / "provider"                                         -> Handler.fromFunctionZIO[Request](loginProvider),
       Method.GET  / "login" / "provider"                                         -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
       Method.POST / "login"                                                      -> Handler.fromFunctionZIO[Request](login),
-      Method.POST / "signup"                                                     -> Handler.fromFunctionZIO[Request](signup),
+      Method.POST / "provision"                                                  -> Handler.fromFunctionZIO[Request](provision),
       Method.POST / "logoff"                                                     -> Handler.fromFunctionZIO[Request](logoff),
       Method.POST / "verify"                                                     -> Handler.fromFunctionZIO[Request](verify),
       Method.POST / "impersonate"                                                -> Handler.fromFunctionZIO[Request](impersonate),

@@ -22,6 +22,7 @@ object client {
 
   trait MorbidClient {
     def proxy             (request: Request)                                                                            : Task[Response]
+    def provision         (request: ProvisionRequest)                                                                   : Task[Token]
     def tokenFrom         (token: RawToken)                                                                             : Task[Token]
     def groups                                                             (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
     def groupsByCode      (groups: Seq[GroupCode])                         (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
@@ -87,7 +88,8 @@ object client {
       } yield resp
     }
 
-    override def tokenFrom(token: RawToken): Task[Token] = post[SimpleToken, Token](Some(token), base / "verify", SimpleToken(token))
+    override def provision(request: ProvisionRequest): Task[Token] = post[ProvisionRequest, Token](None,        base / "provision", request)
+    override def tokenFrom(token: RawToken)          : Task[Token] = post[SimpleToken     , Token](Some(token), base / "verify", SimpleToken(token))
 
     private def exec[T](token: Option[RawToken], req: Request)(using dec: JsonDecoder[T]): Task[T] = {
 
@@ -159,7 +161,8 @@ object client {
       yield token
     }
 
-    override def proxy             (request: Request)                                                                = remote.proxy(request)
+    override def proxy             (request: Request)                                                                 = remote.proxy(request)
+    override def provision         (request: ProvisionRequest)                                                        = remote.provision(request)
     override def groups                                                 (using token: RawToken, app: ApplicationCode) = remote.groups
     override def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode) = remote.groupsByCode(groups)
     override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = remote.groupByCode(group)
@@ -228,6 +231,7 @@ object client {
     override def groupByCode       (group: GroupCode)                    (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_groups.find(_.code == group))
     override def groupsByCode      (groups: Seq[GroupCode])              (using token: RawToken, app: ApplicationCode) = ZIO.succeed { _groups.filter(g => groups.contains(g.code)) }
     override def proxy             (request: Request)                                                                  = ZIO.fail(Exception("TODO"))
+    override def provision         (request: ProvisionRequest)                                                         = ZIO.fail(Exception("TODO"))
     override def usersByGroupByCode(group: GroupCode)                    (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
     override def groupsByUser      (request: GetUserGroupsRequest)       (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_groups)
     override def setUserGroups     (request: SetUserGroupsRequest)       (using token: RawToken, app: ApplicationCode) = ZIO.succeed(true)

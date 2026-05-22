@@ -11,7 +11,8 @@ object accounts {
   import morbid.gip.*
   import morbid.legacy.*
   import morbid.pins.PinManager
-  import morbid.proto.{SignupEmailTaken, SignupNameTaken, SignupRequest, UnknownUser}
+  import morbid.domain.requests.ProvisionRequest
+  import morbid.proto.{ProvisionEmailTaken, ProvisionNameTaken, UnknownUser}
   import morbid.repo.Repo
   import morbid.types.*
   import morbid.utils.*
@@ -24,7 +25,7 @@ object accounts {
 
   trait AccountManager {
     def provisionSSO (identity: CloudIdentity)          : Task[RawUser]
-    def provision    (request: SignupRequest)           : Task[RawUser]
+    def provision    (request: ProvisionRequest)           : Task[RawUser]
     def parseCSV     (account: RawAccount, csv: String) : Task[Seq[(Email, Try[RawUserEntry])]]
   }
 
@@ -94,14 +95,14 @@ object accounts {
       (identity.tenant, identity.kind, identity.provider) match
         case (None, ProviderKind.SAML, Some(id)) if config.identities.provisionSAMLUsers => provisionSaml(id)
         // Non-SAML identities (or SAML when provisioning is disabled) can no longer be
-        // auto-provisioned via /login. Self-registered Free accounts must go through /signup.
+        // auto-provisioned via /login. Self-registered Free accounts must go through /provision.
         case _ => ZIO.fail(UnknownUser(identity.email))
     }
 
     /**
      * Provision a self-registered Free user under the existing DEFAULT tenant.
      */
-    override def provision(request: SignupRequest): Task[RawUser] = {
+    override def provision(request: ProvisionRequest): Task[RawUser] = {
 
       case class LegacyContext(tenant: RawTenant, legacyAccount: LegacyAccount, legacyUser: LegacyUser, userRecord: UserRecord, details: RawApplicationDetails, plan: RawPlan)
 
@@ -122,11 +123,11 @@ object accounts {
       def provisionWith(ctx: LegacyContext) = {
 
         def asNameTaken(err: Throwable): Throwable = err match
-          case e: SQLException if e.getSQLState == "23505" => SignupNameTaken(request.account)
+          case e: SQLException if e.getSQLState == "23505" => ProvisionNameTaken(request.account)
           case other                                       => other
 
         def asEmailTaken(err: Throwable): Throwable = err match
-          case e: SQLException if e.getSQLState == "23505" => SignupEmailTaken(request.email)
+          case e: SQLException if e.getSQLState == "23505" => ProvisionEmailTaken(request.email)
           case other                                       => other
 
         def buildAccount(tenant: RawTenant, account: LegacyAccount) = {

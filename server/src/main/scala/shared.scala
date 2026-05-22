@@ -103,33 +103,19 @@ object proto {
   case class EmitToken(email: Email, magic: Magic, days: Option[Int]) derives JsonCodec
   case class SwapTokenRequest(token: String, magic: Magic) derives JsonCodec
 
-  case class SignupRequest(
-    tenant      : TenantCode,
-    application : ApplicationCode,
-    plan        : PlanCode,
-    account     : AccountName,
-    name        : String,
-    email       : Email,
-    password    : Password,
-    groups      : Map[GroupCode, Seq[RoleCode]],
-    accountType : String,
-    userType    : String
-  )
-
-  case class SignupNameTaken (name: AccountName) extends Exception(s"Account name already taken: $name")
-  case class SignupEmailTaken(email: Email)      extends Exception(s"Email already registered: $email")
-  case class SignupBadIntent (intent: String)    extends Exception(s"Unsupported signup intent: '$intent'")
+  case class ProvisionNameTaken (name: AccountName) extends Exception(s"Account name already taken: $name")
+  case class ProvisionEmailTaken(email: Email)      extends Exception(s"Email already registered: $email")
+  case class ProvisionBadIntent (intent: String)    extends Exception(s"Unsupported provision intent: '$intent'")
 
   /** Thrown when /login sees a verified identity that does not map to any existing user and
     * cannot be auto-provisioned (i.e. it's not a SAML identity for a known provider). The route
-    * translates this to a 404 directing the client to /signup. */
+    * translates this to a 404 directing the client to /provision. */
   case class UnknownUser(email: Email) extends Exception(s"User not registered: $email")
 
   given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[SetClaimsRequest]         = DeriveJsonDecoder.gen
   given JsonDecoder[GetLoginMode]             = DeriveJsonDecoder.gen
-  given JsonDecoder[SignupRequest]            = DeriveJsonDecoder.gen
 }
 
 object passwords {
