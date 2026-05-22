@@ -24,6 +24,7 @@ object legacy {
         url    <- ZIO.fromEither(URL.decode(cfg.url))
         client <- ZIO.service[Client]
         scope  <- ZIO.service[Scope]
+        _      <- ZIO.logInfo(s"Legacy Morbid URL is '${url.encode}'")
       } yield LegacyMorbidImpl(url, client, scope)
     }
   }
