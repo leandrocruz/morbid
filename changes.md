@@ -1,5 +1,13 @@
 # Morbid
 
+## Release v2.0.0
+LTS 01/06/2026
+
+ - [Leandro] Modelo de Planos e Features por aplicação (suporte ao freemium 2FA do presto)
+ - [Leandro] Provisionando contas de usuários
+ - [Leandro] Logando erros no `LegacyMorbidImpl`
+ - [Leandro] Corrigido conflito de UNIQUE(acc, app, name) em `AccountManager`: `AdminGroupName` agora é `"Admin"` (antes duplicava `"Todos"` com `DefaultGroupName`)
+
 ## Release v1.14.0
 LTS 20/05/2026
 

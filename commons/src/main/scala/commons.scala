@@ -16,6 +16,8 @@ object types {
   opaque type RoleId          = Long
   opaque type PermissionId    = Long
   opaque type PinId           = Long
+  opaque type PlanId          = Long
+  opaque type FeatureId       = Long
   opaque type TenantName      = String
   opaque type TenantCode      = String
   opaque type AccountName     = String
@@ -28,6 +30,10 @@ object types {
   opaque type RoleCode        = String
   opaque type PermissionName  = String
   opaque type PermissionCode  = String
+  opaque type PlanName        = String
+  opaque type PlanCode        = String
+  opaque type FeatureName     = String
+  opaque type FeatureCode     = String
   opaque type ProviderName    = String
   opaque type ProviderCode    = String
   opaque type UserCode        = String
@@ -47,6 +53,8 @@ object types {
   given JsonCodec[GroupId]       = JsonCodec.long
   given JsonCodec[RoleId]        = JsonCodec.long
   given JsonCodec[PermissionId]  = JsonCodec.long
+  given JsonCodec[PlanId]        = JsonCodec.long
+  given JsonCodec[FeatureId]     = JsonCodec.long
   given JsonCodec[ProviderId]    = JsonCodec.long
   given JsonCodec[Password]      = JsonCodec.string
 
@@ -69,6 +77,10 @@ object types {
   given JsonEncoder      [RoleCode]        = JsonEncoder.string
   given JsonEncoder      [PermissionName]  = JsonEncoder.string
   given JsonEncoder      [PermissionCode]  = JsonEncoder.string
+  given JsonEncoder      [PlanName]        = JsonEncoder.string
+  given JsonEncoder      [PlanCode]        = JsonEncoder.string
+  given JsonEncoder      [FeatureName]     = JsonEncoder.string
+  given JsonEncoder      [FeatureCode]     = JsonEncoder.string
   given JsonEncoder      [ProviderName]    = JsonEncoder.string
   given JsonEncoder      [ProviderCode]    = JsonEncoder.string
   given JsonEncoder      [UserCode]        = JsonEncoder.string
@@ -84,6 +96,8 @@ object types {
   given JsonDecoder      [GroupName]       = safeLatinName(64)
   given JsonDecoder      [RoleName]        = safeLatinName(32)
   given JsonDecoder      [PermissionName]  = safeLatinName(128)
+  given JsonDecoder      [PlanName]        = safeLatinName(128)
+  given JsonDecoder      [FeatureName]     = safeLatinName(128)
   given JsonDecoder      [ProviderName]    = safeLatinName(256)
 
   given JsonDecoder      [TenantCode]      = safeCode(64)
@@ -93,6 +107,8 @@ object types {
   given JsonDecoder      [UserCode]        = safeCode(128)
   given JsonDecoder      [RoleCode]        = safeCode(16)
   given JsonDecoder      [PermissionCode]  = safeCode(16)
+  given JsonDecoder      [PlanCode]        = safeCode(32)
+  given JsonDecoder      [FeatureCode]     = safeCode(32)
   given JsonDecoder      [ProviderCode]    = safeCode(128)
 
   given JsonDecoder      [Email]           = safeDecode(email, 256)
@@ -105,10 +121,16 @@ object types {
   given JsonFieldDecoder[ApplicationName] = JsonFieldDecoder.string
   given JsonFieldEncoder[ApplicationCode] = JsonFieldEncoder.string
   given JsonFieldDecoder[ApplicationCode] = JsonFieldDecoder.string
+  given JsonFieldEncoder[GroupCode]        = JsonFieldEncoder.string
+  given JsonFieldDecoder[GroupCode]        = JsonFieldDecoder.string
   given JsonFieldEncoder[RoleName]        = JsonFieldEncoder.string
   given JsonFieldDecoder[RoleName]        = JsonFieldDecoder.string
   given JsonFieldEncoder[RoleCode]        = JsonFieldEncoder.string
   given JsonFieldDecoder[RoleCode]        = JsonFieldDecoder.string
+  given JsonFieldEncoder[PlanCode]        = JsonFieldEncoder.string
+  given JsonFieldDecoder[PlanCode]        = JsonFieldDecoder.string
+  given JsonFieldEncoder[FeatureCode]     = JsonFieldEncoder.string
+  given JsonFieldDecoder[FeatureCode]     = JsonFieldDecoder.string
 
   trait OpaqueOps[N, T] {
     def of(n: N)     : T         = n.asInstanceOf[T]
@@ -125,6 +147,9 @@ object types {
   object Domain          extends OpaqueOps[String, Domain]
   object Email           extends OpaqueOps[String, Email]
   object EmailUser       extends OpaqueOps[String, EmailUser]
+  object FeatureCode     extends OpaqueOps[String, FeatureCode]
+  object FeatureId       extends OpaqueOps[Long, FeatureId]
+  object FeatureName     extends OpaqueOps[String, FeatureName]
   object GroupCode       extends OpaqueOps[String, GroupCode] {
     def all   = GroupCode.of("all")
     def admin = GroupCode.of("admin")
@@ -139,6 +164,9 @@ object types {
   object PermissionId    extends OpaqueOps[Long, PermissionId]
   object PermissionCode  extends OpaqueOps[String, PermissionCode]
   object PermissionName  extends OpaqueOps[String, PermissionName]
+  object PlanCode        extends OpaqueOps[String, PlanCode]
+  object PlanId          extends OpaqueOps[Long, PlanId]
+  object PlanName        extends OpaqueOps[String, PlanName]
   object ProviderCode    extends OpaqueOps[String, ProviderCode]
   object ProviderId      extends OpaqueOps[Long, ProviderId]
   object ProviderName    extends OpaqueOps[String, ProviderName]
@@ -291,7 +319,35 @@ object domain {
 
     case class RawApplication(
       details : RawApplicationDetails,
-      groups  : Seq[RawGroup] = Seq.empty
+      groups  : Seq[RawGroup] = Seq.empty,
+      plans   : Seq[RawPlan]  = Seq.empty
+    )
+
+    case class RawFeature(
+      id          : FeatureId,
+      created     : LocalDateTime,
+      deleted     : Option[LocalDateTime],
+      app         : ApplicationId,
+      code        : FeatureCode,
+      name        : FeatureName,
+      description : Option[String] = None,
+    )
+
+    case class RawPlanFeature(
+      feature : RawFeature,
+      value   : Option[Long] = None,
+    )
+
+    case class RawPlan(
+      id          : PlanId,
+      created     : LocalDateTime,
+      deleted     : Option[LocalDateTime],
+      active      : Boolean,
+      app         : ApplicationId,
+      code        : PlanCode,
+      name        : PlanName,
+      description : Option[String]         = None,
+      features    : Seq[RawPlanFeature]    = Seq.empty,
     )
 
     case class RawIdentityProvider(
@@ -343,6 +399,9 @@ object domain {
     )
 
     given JsonCodec[RawApplicationDetails] = DeriveJsonCodec.gen
+    given JsonCodec[RawFeature]            = DeriveJsonCodec.gen
+    given JsonCodec[RawPlanFeature]        = DeriveJsonCodec.gen
+    given JsonCodec[RawPlan]               = DeriveJsonCodec.gen
     given JsonCodec[RawApplication]        = DeriveJsonCodec.gen
     given JsonCodec[RawUserData]           = DeriveJsonCodec.gen
     given JsonCodec[RawUserDetails]        = DeriveJsonCodec.gen
@@ -384,10 +443,25 @@ object domain {
       def of(raw: RawGroup) = raw.transformInto[CompactGroup]
     }
 
+    case class CompactFeature(
+      code  : FeatureCode,
+      value : Option[Long] = None,
+    )
+
+    case class CompactPlan(
+      code     : PlanCode,
+      features : Seq[CompactFeature] = Seq.empty
+    )
+
+    object CompactPlan {
+      def of(raw: RawPlan) = raw.transformInto[CompactPlan]
+    }
+
     case class CompactApplication(
       id     : ApplicationId,
       code   : ApplicationCode,
-      groups : Seq[CompactGroup] = Seq.empty
+      groups : Seq[CompactGroup] = Seq.empty,
+      plans  : Seq[CompactPlan]  = Seq.empty
     )
 
     object CompactApplication {
@@ -406,13 +480,27 @@ object domain {
       impersonatedBy : Option[RawUserDetails] = None
     ) {
       private def roleByCode(code: RoleCode)(using app: ApplicationCode): Option[RoleCode] =
-        for {
+        for
           a <- user.applications.find(_.code == app)
           r <- a.groups.flatMap(_.roles).find(_ == code)
-        } yield r
+        yield r
 
-      def hasRole(code: RoleCode)(using ApplicationCode) =
-        roleByCode(code).isDefined
+      def hasRole(code: RoleCode)(using ApplicationCode) = roleByCode(code).isDefined
+
+      def features(using app: ApplicationCode): Seq[CompactFeature] =
+        user
+          .applications
+          .find(_.code == app)
+          .toSeq
+          .flatMap(_.plans.flatMap(_.features))
+
+      def featureCodes(using ApplicationCode): Set[FeatureCode] = features.map(_.code).toSet
+      def hasFeature(code: FeatureCode)(using ApplicationCode): Boolean = features.exists(_.code == code)
+
+      def featureValue(code: FeatureCode)(using ApplicationCode): Option[Long] = {
+        val values = features.filter(_.code == code).flatMap(_.value)
+        if values.isEmpty then None else Some(values.sum)
+      }
 
       def narrowTo(application: ApplicationCode): Option[SingleAppToken] =
         user
@@ -427,6 +515,8 @@ object domain {
           }
 
       //def compact = this.transformInto[CompactToken]
+
+      def isRoot = user.details.account == RootAccount
     }
     case class SingleAppUser(
       details        : RawUserDetails,
@@ -439,13 +529,25 @@ object domain {
       expires : Option[ZonedDateTime],
       user    : SingleAppUser
     ) {
-      def hasRole(code: RoleCode): Boolean = user.application.groups.flatMap(_.roles).contains(code)
+      def hasRole     (code: RoleCode)    : Boolean             = user.application.groups.flatMap(_.roles).contains(code)
+      def features                        : Seq[CompactFeature] = user.application.plans.flatMap(_.features)
+      def featureCodes                    : Set[FeatureCode]    = features.map(_.code).toSet
+      def hasFeature  (code: FeatureCode) : Boolean             = features.exists(_.code == code)
+
+      def featureValue(code: FeatureCode) : Option[Long] = {
+        val values = features.filter(_.code == code).flatMap(_.value)
+        if values.isEmpty then None else Some(values.sum)
+      }
     }
 
     given Transformer[RawGroup, CompactGroup]             = (original: RawGroup)       => CompactGroup(code = original.code, roles = original.roles.map(_.code))
-    given Transformer[RawApplication, CompactApplication] = (original: RawApplication) => CompactApplication(id = original.details.id, code = original.details.code, groups = original.groups.map(_.transformInto[CompactGroup]))
+    given Transformer[RawPlanFeature, CompactFeature]     = (original: RawPlanFeature) => CompactFeature(code = original.feature.code, value = original.value)
+    given Transformer[RawPlan, CompactPlan]               = (original: RawPlan)        => CompactPlan(code = original.code, features = original.features.map(_.transformInto[CompactFeature]))
+    given Transformer[RawApplication, CompactApplication] = (original: RawApplication) => CompactApplication(id = original.details.id, code = original.details.code, groups = original.groups.map(_.transformInto[CompactGroup]), plans = original.plans.map(_.transformInto[CompactPlan]))
 
     given JsonCodec[CompactGroup]       = DeriveJsonCodec.gen
+    given JsonCodec[CompactFeature]     = DeriveJsonCodec.gen
+    given JsonCodec[CompactPlan]        = DeriveJsonCodec.gen
     given JsonCodec[CompactApplication] = DeriveJsonCodec.gen
     given JsonCodec[CompactUser]        = DeriveJsonCodec.gen
     given JsonCodec[Token]              = DeriveJsonCodec.gen
@@ -472,6 +574,22 @@ object domain {
     case class ImpersonationRequest(email: Email, magic: Magic)
     case class LogoffResponse(restored: Boolean)
 
+    case class ProvisionRequest(
+      tenant      : TenantCode,
+      application : ApplicationCode,
+      plan        : PlanCode,
+      account     : AccountName,
+      name        : String,
+      email       : Email,
+      password    : Password,
+      groups      : Map[GroupCode, Seq[RoleCode]],
+      accountType : String,
+      userType    : String,
+    )
+
+    case class GetAccountPlansRequest(account: AccountId, application: ApplicationCode)
+
+
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
     given JsonCodec[RequestPasswordRequestLink] = DeriveJsonCodec.gen
@@ -484,6 +602,8 @@ object domain {
     given JsonCodec[SetUserGroupsRequest]       = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
+    given JsonCodec[ProvisionRequest]              = DeriveJsonCodec.gen
+    given JsonCodec[GetAccountPlansRequest]        = DeriveJsonCodec.gen
     given JsonCodec[StoreAccountRequest]        = DeriveJsonCodec.gen
     given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
