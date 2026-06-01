@@ -587,7 +587,7 @@ object domain {
       userType    : String,
     )
 
-    case class GetAccountPlansRequest(account: AccountCode, application: ApplicationCode)
+    case class GetAccountPlansRequest(account: AccountId, application: ApplicationCode)
 
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
