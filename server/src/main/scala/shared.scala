@@ -266,12 +266,12 @@ object commands {
   case class UsersByAccount(app: ApplicationCode, account: AccountId) extends Command[Seq[RawUserEntry]]
   case class UserExists(code: UserCode) extends Command[Boolean]
 
-  case class FindPlansForAccount    (account: AccountId)                         extends Command[Map[ApplicationId, Seq[RawPlan]]]
-  case class FindPlansForApp        (app: ApplicationCode)                       extends Command[Seq[RawPlan]]
-  case class FindPlansForAccountInApp(account: AccountCode, app: ApplicationCode) extends Command[Seq[RawPlan]]
-  case class LinkAccountToPlan      (acc: AccountId, plan: PlanId)               extends Command[Unit]
-  case class FindTenantByCode       (code: TenantCode)                           extends Command[Option[RawTenant]]
-  case class FindPlanByCode         (app: ApplicationCode, code: PlanCode)       extends Command[Option[RawPlan]]
+  case class FindPlansForAccount     (account: AccountId)                       extends Command[Map[ApplicationId, Seq[RawPlan]]]
+  case class FindPlansForApp         (app: ApplicationCode)                     extends Command[Seq[RawPlan]]
+  case class FindPlansForAccountInApp(account: AccountId, app: ApplicationCode) extends Command[Seq[RawPlan]]
+  case class LinkAccountToPlan       (acc: AccountId, plan: PlanId)             extends Command[Unit]
+  case class FindTenantByCode        (code: TenantCode)                         extends Command[Option[RawTenant]]
+  case class FindPlanByCode          (app: ApplicationCode, code: PlanCode)     extends Command[Option[RawPlan]]
 
   case class RemoveAccount (id: AccountId)                                       extends Command[Unit]
   case class RemoveUser    (acc: AccountId, code: UserCode)                      extends Command[Long]

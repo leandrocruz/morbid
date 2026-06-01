@@ -503,7 +503,7 @@ object repo {
 
       inline def query = quote {
         for
-          acc <- accounts                                                  if acc.code == lift(request.account) && acc.active && acc.deleted.isEmpty
+          acc <- accounts                                                  if acc.id   == lift(request.account) && acc.active && acc.deleted.isEmpty
           app <- applications                                              if app.code == lift(request.app)     && app.active && app.deleted.isEmpty
           a2p <- account2plan                                              if a2p.deleted.isEmpty && a2p.acc == acc.id
           pln <- plans       .join    (_.id == a2p.plan)                   if pln.deleted.isEmpty && pln.active && pln.app == app.id
