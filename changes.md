@@ -1,5 +1,30 @@
 # Morbid
 
+ - [Leandro] Modelo de Planos e Features por aplicação (suporte ao freemium 2FA do presto)
+   - Novas tabelas `features`, `plans`, `plan_to_feature` (com `value BIGINT` opcional para quotas) e `account_to_plan` (com índices `account_to_plan_plan_idx`, `plan_to_feature_feature_idx`, `plans_app_idx`, `features_app_idx`)
+   - Migração idempotente `sql/migrations/01_2fa_freemium_plans.sql` que cria tabelas, popula seed (12 features do presto + planos `legacy` e `2fa_freemium`) e faz backfill das contas existentes do presto no plano `legacy`
+   - Novos opaque types em `morbid-commons`: `PlanId`/`PlanCode`/`PlanName`/`FeatureId`/`FeatureCode`/`FeatureName` com codecs (incluindo `JsonFieldEncoder`/`Decoder` para `GroupCode`)
+   - Novos raws: `RawFeature`, `RawPlanFeature(feature, value)`, `RawPlan(...)` e `RawApplication.plans: Seq[RawPlan]`
+   - Token JWT carrega planos e features inline via `CompactPlan(code, features)` e `CompactFeature(code, value)`; novos helpers `Token.hasFeature`, `Token.featureValue` (soma `value`s definidos), `Token.features`
+ - [Leandro] Nova rota `POST /provision` para auto-registro de usuários freemium
+   - `ProvisionRequest(tenant, application, plan, account, name, email, password, groups, accountType, userType)` em `morbid-commons`
+   - `AccountManager.provision` genérico (parametriza tenant/app/plan/grupos): cria conta no legacy morbid, cria usuário no Firebase a partir da senha, cria usuário no legacy, persiste tudo dentro de `repo.transaction` (chamadas externas ficam fora da transação)
+   - Tratamento específico das violações de unicidade: `ProvisionNameTaken` (constraint `accounts_tenant_name_key`) e `ProvisionEmailTaken` (constraint `users_account_email_key`)
+   - `/login` agora retorna `404 {"error":"unknown_user","email":"...","provision":"/provision"}` para usuários não-SAML desconhecidos (via `UnknownUser`)
+   - Novo método `MorbidClient.provision(request: ProvisionRequest): Task[Token]` em `morbid-client` (trait, `RemoteMorbidClient`, `LocalMorbidClient` e `FakeMorbidClient`)
+ - [Leandro] Nova rota `GET /application/{app}/plans` (pública) que lista todos os planos com suas features para a página de pricing/signup
+   - Novo comando `FindPlansForApp(app: ApplicationCode)` com query Quill correspondente
+ - [Leandro] Nova rota `POST /account/plans` (autenticada) que retorna os planos de uma conta em uma aplicação
+   - `GetAccountPlansRequest(account, application)` em `morbid-commons`
+   - Novo comando `FindPlansForAccountInApp(account: AccountCode, app: ApplicationCode)` com query Quill correspondente
+   - Tokens não-root ignoram o `account` do corpo e usam a conta do próprio chamador
+ - [Leandro] Novos comandos de repositório: `FindTenantByCode`, `FindPlanByCode`, `FindPlansForAccount`, `LinkAccountToPlan`
+ - [Leandro] Novo helper `Repo.transaction[R](action: Task[R]): Task[R]` para envolver operações de banco em uma transação Quill (compartilha conexão via `FiberRef[Option[Connection]]`)
+ - [Leandro] `userGiven` agora carrega os planos da conta e os agrega em `RawApplication.plans`
+ - [Leandro] Corrigido bug de consumo duplo do body em `legacy.scala` (`createAccount`, `createUser`, `handleGetUserResponse`, `accountById`): o body agora é lido uma vez em `text` e parseado a partir daí; mensagens de erro passam a incluir o body recebido
+ - [Leandro] Corrigido conflito de UNIQUE(acc, app, name) em `AccountManager`: `AdminGroupName` agora é `"Admin"` (antes duplicava `"Todos"` com `DefaultGroupName`)
+ - [Leandro] Testes ZIO em `server/src/test/scala/plans.scala` cobrindo round-trip de `CompactFeature`/`CompactPlan`/`Token` e semântica de `hasFeature`/`featureValue`
+
 ## Release v1.14.0
 LTS 20/05/2026
 

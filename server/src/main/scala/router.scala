@@ -151,6 +151,22 @@ object router {
         case Some(application) => Response.json(application.toJson)
     }
 
+    // Public: pricing/signup pages need to fetch the plan catalog before the user is authenticated.
+    private def plansByApp(app: String, request: Request): Task[Response] = {
+      for
+        plans <- repo.exec(FindPlansForApp(ApplicationCode.of(app)))
+      yield Response.json(plans.toJson)
+    }
+
+    private def plansByAccountInApp(request: Request): Task[Response] = ensureResponse {
+      for
+        tk    <- tokenFrom(request)
+        req   <- request.body.parse[GetAccountPlansRequest]().mapError(err => ReturnResponseWithExceptionError(err, Response.badRequest(s"Error parsing GetAccountPlansRequest: ${err.getMessage}")))
+        acc   =  if tk.isRoot then req.account else tk.user.details.account
+        plans <- repo.exec(FindPlansForAccountInApp(acc, req.application))
+      yield Response.json(plans.toJson)
+    }.toTask
+
     private def loginProvider(request: Request): Task[Response] = {
 
       def encode(provider: Option[RawIdentityProvider]): String = {
@@ -927,6 +943,8 @@ object router {
     private def regular = Routes(
       Method.GET  / "applications"                                               -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
       Method.GET  / "application" / string("app")                                -> handler(applicationGiven),
+      Method.GET  / "application" / string("app") / "plans"                      -> handler(plansByApp),
+      Method.POST / "account" / "plans"                                          -> Handler.fromFunctionZIO[Request](plansByAccountInApp),
       Method.POST / "login" / "provider"                                         -> Handler.fromFunctionZIO[Request](loginProvider),
       Method.GET  / "login" / "provider"                                         -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
       Method.POST / "login"                                                      -> Handler.fromFunctionZIO[Request](login),

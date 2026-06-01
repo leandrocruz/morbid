@@ -425,6 +425,8 @@ object repo {
         case r: UsersByAccount         => usersByAccount(r)
         case r: UserExists             => userExists(r)
         case r: FindPlansForAccount    => plansForAccount(r)
+        case r: FindPlansForApp        => plansForApp(r)
+        case r: FindPlansForAccountInApp => plansForAccountInApp(r)
         case r: LinkAccountToPlan      => linkAccountToPlan(r)
         case r: FindTenantByCode       => tenantByCode(r)
         case r: FindPlanByCode         => planByCode(r)
@@ -495,6 +497,88 @@ object repo {
         _    <- printQuery(query)
         rows <- exec(run(query))
       } yield merge(rows)
+    }
+
+    private def plansForAccountInApp(request: FindPlansForAccountInApp): Task[Seq[RawPlan]] = {
+
+      inline def query = quote {
+        for
+          acc <- accounts                                                  if acc.code == lift(request.account) && acc.active && acc.deleted.isEmpty
+          app <- applications                                              if app.code == lift(request.app)     && app.active && app.deleted.isEmpty
+          a2p <- account2plan                                              if a2p.deleted.isEmpty && a2p.acc == acc.id
+          pln <- plans       .join    (_.id == a2p.plan)                   if pln.deleted.isEmpty && pln.active && pln.app == app.id
+          p2f <- plan2feature.leftJoin(_.plan == pln.id)                   if p2f.exists(_.deleted.isEmpty)
+          ftr <- features    .leftJoin(f => p2f.exists(_.feature == f.id)) if ftr.exists(_.deleted.isEmpty)
+        yield (pln, p2f, ftr)
+      }
+
+      def merge(rows: Seq[(PlanRow, Option[PlanToFeatureRow], Option[FeatureRow])]): Seq[RawPlan] = {
+
+        def bind(plan: PlanRow, links: Seq[(Option[PlanToFeatureRow], Option[FeatureRow])]): RawPlan = {
+
+          val grants = links.collect {
+            case (link, Some(ftr)) => RawPlanFeature(
+              feature = ftr.transformInto[RawFeature],
+              value   = link.flatMap(_.value)
+            )
+          }
+
+          plan
+            .into[RawPlan]
+            .withFieldConst(_.features, grants)
+            .transform
+        }
+
+        rows
+          .groupMap(_._1)(r => (r._2, r._3))
+          .toSeq
+          .map(bind)
+      }
+
+      for
+        _    <- printQuery(query)
+        rows <- exec(run(query))
+      yield merge(rows)
+    }
+
+    private def plansForApp(request: FindPlansForApp): Task[Seq[RawPlan]] = {
+
+      inline def query = quote {
+        for
+          app <- applications                                              if app.code == lift(request.app) && app.active && app.deleted.isEmpty
+          pln <- plans       .join    (_.app == app.id)                    if pln.deleted.isEmpty && pln.active
+          p2f <- plan2feature.leftJoin(_.plan == pln.id)                   if p2f.exists(_.deleted.isEmpty)
+          ftr <- features    .leftJoin(f => p2f.exists(_.feature == f.id)) if ftr.exists(_.deleted.isEmpty)
+        yield (pln, p2f, ftr)
+      }
+
+      def merge(rows: Seq[(PlanRow, Option[PlanToFeatureRow], Option[FeatureRow])]): Seq[RawPlan] = {
+
+        def bind(plan: PlanRow, links: Seq[(Option[PlanToFeatureRow], Option[FeatureRow])]): RawPlan = {
+
+          val grants = links.collect {
+            case (link, Some(ftr)) => RawPlanFeature(
+              feature = ftr.transformInto[RawFeature],
+              value   = link.flatMap(_.value)
+            )
+          }
+
+          plan
+            .into[RawPlan]
+            .withFieldConst(_.features, grants)
+            .transform
+        }
+
+        rows
+          .groupMap(_._1)(r => (r._2, r._3))
+          .toSeq
+          .map(bind)
+      }
+
+      for
+        _    <- printQuery(query)
+        rows <- exec(run(query))
+      yield merge(rows)
     }
 
     private def linkAccountToPlan(request: LinkAccountToPlan): Task[Unit] = {
