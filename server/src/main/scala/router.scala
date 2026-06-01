@@ -151,6 +151,22 @@ object router {
         case Some(application) => Response.json(application.toJson)
     }
 
+    // Public: pricing/signup pages need to fetch the plan catalog before the user is authenticated.
+    private def plansByApp(app: String, request: Request): Task[Response] = {
+      for
+        plans <- repo.exec(FindPlansForApp(ApplicationCode.of(app)))
+      yield Response.json(plans.toJson)
+    }
+
+    private def plansByAccountInApp(request: Request): Task[Response] = ensureResponse {
+      for
+        tk    <- tokenFrom(request)
+        req   <- request.body.parse[GetAccountPlansRequest]().mapError(err => ReturnResponseWithExceptionError(err, Response.badRequest(s"Error parsing GetAccountPlansRequest: ${err.getMessage}")))
+        acc   =  if tk.isRoot then req.account else tk.user.details.account
+        plans <- repo.exec(FindPlansForAccountInApp(acc, req.application))
+      yield Response.json(plans.toJson)
+    }.toTask
+
     private def loginProvider(request: Request): Task[Response] = {
 
       def encode(provider: Option[RawIdentityProvider]): String = {
@@ -199,19 +215,55 @@ object router {
 
     private def login(request: Request): Task[Response] = {
 
+      def asLoginError(err: Throwable): ReturnResponseError = err match
+        case UnknownUser(email) => ReturnResponseError(Response.json(s"""{"error":"unknown_user","email":"$email","provision":"/provision"}""").status(Status.NotFound))
+        case other              => ReturnResponseError(Response.internalServerError(other.getMessage))
+
       def ensureUser(identity: CloudIdentity)(maybeUser: Option[RawUser]): Task[RawUser] = {
         maybeUser match
           case Some(user) => ZIO.succeed(user)
-          case None       => accounts.provision(identity).mapError(err => Exception(s"Error provisioning user account for '${identity.email}': ${err.getMessage}", err))
+          case None       => accounts.provisionSSO(identity)
       }
+
+      def errorHandler(e: Throwable) = e match {
+        case rre    : ReturnResponseError => rre
+        case wrapped: ReturnResponseWithExceptionError => wrapped.cause match
+          case u: UnknownUser => asLoginError(u)
+          case _              => wrapped
+
+        case other => asLoginError(other)
+    }
 
       ensureResponse {
         for
           vgt       <- request.body.parse[VerifyGoogleTokenRequest]() .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing VerifyGoogleTokenRequest: ${err.getMessage}")))
           identity  <- identities.verify(vgt)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error verifying firebase token '${vgt.token}: ${err.getMessage}'")))
           fn        =  ensureUser(identity)
-          (tk, enc) <- tokenGiven(identity.email) { fn }
+          (tk, enc) <- tokenGiven(identity.email) { fn }              .mapError(errorHandler)
         yield loginResponse(tk, enc).clearOriginal
+      }.toTask
+    }
+
+    private def provision(request: Request): Task[Response] = {
+
+      def asProvisionError(err: Throwable): ReturnResponseError = err match
+        case _: ProvisionNameTaken  => ReturnResponseError(Response.json("""{"error":"name_taken"}""") .status(Status.Conflict))
+        case _: ProvisionEmailTaken => ReturnResponseError(Response.json("""{"error":"email_taken"}""").status(Status.Conflict))
+        case ProvisionBadIntent(i)  => ReturnResponseError(Response.badRequest(s"Unsupported intent: '$i'"))
+        case other                  => ReturnResponseError(Response.internalServerError(other.getMessage))
+
+      def as500(prefix: String)(err: Throwable) = ReturnResponseWithExceptionError(err, Response.internalServerError(s"$prefix: ${err.getMessage}"))
+
+      ensureResponse {
+        for
+          req       <- request.body.parse[ProvisionRequest]().mapError(err => ReturnResponseWithExceptionError(err, Response.badRequest(s"Error parsing ProvisionRequest: ${err.getMessage}")))
+          maybeUser <- repo.exec(FindUserByEmail(req.email)) .mapError(as500("Error checking existing user"))
+          user      <- maybeUser match
+                         case Some(_) => ZIO.fail(asProvisionError(ProvisionEmailTaken(req.email)))
+                         case None    => accounts.provision(req).mapError(asProvisionError)
+          token     <- tokens.asToken(user).mapError(as500("Error minting token"))
+          encoded   <- tokens.encode(token).mapError(as500("Error encoding token"))
+        yield loginResponse(token, encoded).clearOriginal
       }.toTask
     }
 
@@ -891,9 +943,12 @@ object router {
     private def regular = Routes(
       Method.GET  / "applications"                                               -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
       Method.GET  / "application" / string("app")                                -> handler(applicationGiven),
+      Method.GET  / "application" / string("app") / "plans"                      -> handler(plansByApp),
+      Method.POST / "account" / "plans"                                          -> Handler.fromFunctionZIO[Request](plansByAccountInApp),
       Method.POST / "login" / "provider"                                         -> Handler.fromFunctionZIO[Request](loginProvider),
       Method.GET  / "login" / "provider"                                         -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
       Method.POST / "login"                                                      -> Handler.fromFunctionZIO[Request](login),
+      Method.POST / "provision"                                                  -> Handler.fromFunctionZIO[Request](provision),
       Method.POST / "logoff"                                                     -> Handler.fromFunctionZIO[Request](logoff),
       Method.POST / "verify"                                                     -> Handler.fromFunctionZIO[Request](verify),
       Method.POST / "impersonate"                                                -> Handler.fromFunctionZIO[Request](impersonate),
