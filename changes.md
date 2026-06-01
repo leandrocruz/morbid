@@ -1,5 +1,8 @@
 # Morbid
 
+## Release v2.0.0
+LTS 01/06/2026
+
  - [Leandro] Modelo de Planos e Features por aplicação (suporte ao freemium 2FA do presto)
  - [Leandro] Provisionando contas de usuários
  - [Leandro] Logando erros no `LegacyMorbidImpl`
