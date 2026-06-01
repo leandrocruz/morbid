@@ -515,6 +515,8 @@ object domain {
           }
 
       //def compact = this.transformInto[CompactToken]
+
+      def isRoot = user.details.account == RootAccount
     }
     case class SingleAppUser(
       details        : RawUserDetails,
@@ -585,6 +587,8 @@ object domain {
       userType    : String,
     )
 
+    case class GetAccountPlansRequest(account: AccountCode, application: ApplicationCode)
+
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
@@ -599,6 +603,7 @@ object domain {
     given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
     given JsonCodec[ProvisionRequest]              = DeriveJsonCodec.gen
+    given JsonCodec[GetAccountPlansRequest]        = DeriveJsonCodec.gen
     given JsonCodec[StoreAccountRequest]        = DeriveJsonCodec.gen
     given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen

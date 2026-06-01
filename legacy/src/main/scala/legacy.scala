@@ -3,7 +3,6 @@ package morbid
 object legacy {
 
   import java.util.Date
-  import guara.utils.parse
   import morbid.types.{AccountId, AccountName, Email, UserId}
   import zio.*
   import zio.http.*
