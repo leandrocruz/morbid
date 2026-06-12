@@ -1,5 +1,7 @@
 # Morbid
 
+ - [Leandro] `MorbidClient.exec` agora lê o corpo da resposta em erros não-200 e inclui no `Exception`, expondo o `CommonError` (com `trace`) do servidor em vez de um `ReturnResponseError` sem mensagem
+
 ## Release v2.0.0
 LTS 01/06/2026
 

@@ -102,10 +102,17 @@ object client {
 
       def warnings(response: Response) = response.headers.get("warning")
 
+      def explain(res: Response): Task[Exception] = {
+        res.body.asString.either.map {
+          case Right(body) if body.nonEmpty => Exception(s"Morbid '${req.url.encode}' returned ${res.status.code}: $body")
+          case _                            => Exception(s"Morbid '${req.url.encode}' returned ${res.status.code} (empty body)")
+        }
+      }
+
       for {
         _      <- ZIO.log(s"Calling '${req.url.encode}'")
         res    <- perform(req.copy(headers = req.headers ++ token.map(morbidToken).getOrElse(Headers.empty))).mapError(e => badGateway(s"Error calling Morbid '${req.url.encode}': ${e.getMessage}"))
-        _      <- ZIO.when(res.status.code != 200) { ZIO.fail(ReturnResponseError(res)) }
+        _      <- ZIO.when(res.status.code != 200) { explain(res).flatMap(ZIO.fail(_)) }
         result <- res.body.parse[T]().mapError(_ => ReturnResponseError(res))
       } yield result
     }
