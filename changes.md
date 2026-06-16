@@ -1,5 +1,7 @@
 # Morbid
 
+ - [Leandro] `AccountName` aumentado de 64 para 256 caracteres (decoder `safeLatinName` em `commons.scala` e coluna `accounts.name` em `sql/schema.sql`)
+
 ## Release v2.1.0
 LTS 15/06/2026
 

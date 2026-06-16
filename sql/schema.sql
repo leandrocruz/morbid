@@ -17,7 +17,7 @@ CREATE TABLE accounts (
     tenant   BIGINT       NOT NULL REFERENCES tenants (id)  ,
     active   BOOLEAN      NOT NULL DEFAULT true             ,
     code     VARCHAR(16)  NOT NULL                          ,
-    name     VARCHAR(64)  NOT NULL                          ,
+    name     VARCHAR(256) NOT NULL                          ,
     UNIQUE      (tenant, name)                              ,
     UNIQUE      (code)                                      ,
     PRIMARY KEY (id)
