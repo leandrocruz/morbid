@@ -257,6 +257,7 @@ object router {
       ensureResponse {
         for
           req       <- request.body.parse[ProvisionRequest]().mapError(err => ReturnResponseWithExceptionError(err, Response.badRequest(s"Error parsing ProvisionRequest: ${err.getMessage}")))
+          _         <- ensureMagic(req.magic)
           maybeUser <- repo.exec(FindUserByEmail(req.email)) .mapError(as500("Error checking existing user"))
           user      <- maybeUser match
                          case Some(_) => ZIO.fail(asProvisionError(ProvisionEmailTaken(req.email)))

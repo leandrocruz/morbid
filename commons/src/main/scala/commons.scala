@@ -575,6 +575,7 @@ object domain {
     case class LogoffResponse(restored: Boolean)
 
     case class ProvisionRequest(
+      magic       : Magic,
       tenant      : TenantCode,
       application : ApplicationCode,
       plan        : PlanCode,
