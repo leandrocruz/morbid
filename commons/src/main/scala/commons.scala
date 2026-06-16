@@ -91,7 +91,7 @@ object types {
   given JsonEncoder      [Link]             = JsonEncoder.string
 
   given JsonDecoder      [TenantName]      = safeLatinName(128)
-  given JsonDecoder      [AccountName]     = safeLatinName(64)
+  given JsonDecoder      [AccountName]     = safeLatinName(256)
   given JsonDecoder      [ApplicationName] = safeLatinName(256)
   given JsonDecoder      [GroupName]       = safeLatinName(64)
   given JsonDecoder      [RoleName]        = safeLatinName(32)
