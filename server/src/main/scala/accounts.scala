@@ -12,7 +12,6 @@ object accounts {
   import morbid.legacy.*
   import morbid.pins.PinManager
   import morbid.domain.requests.ProvisionRequest
-  import morbid.proto.{ProvisionEmailTaken, ProvisionNameTaken, UnknownUser}
   import morbid.repo.Repo
   import morbid.types.*
   import morbid.utils.*
@@ -96,7 +95,7 @@ object accounts {
         case (None, ProviderKind.SAML, Some(id)) if config.identities.provisionSAMLUsers => provisionSaml(id)
         // Non-SAML identities (or SAML when provisioning is disabled) can no longer be
         // auto-provisioned via /login. Self-registered Free accounts must go through /provision.
-        case _ => ZIO.fail(UnknownUser(identity.email))
+        case _ => ZIO.fail(Exception(s"Unknown user '${identity.email}'"))
     }
 
     /**
@@ -127,13 +126,11 @@ object accounts {
         // users PK collision, etc.) would masquerade as "name_taken" or "email_taken".
         // Other 23505s propagate as the original SQLException so the real cause stays visible.
         def asNameTaken(err: Throwable): Throwable = err match
-          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("accounts_tenant_name_key") =>
-            ProvisionNameTaken(request.account)
+          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("accounts_tenant_name_key") => Exception(s"Account name '${request.name}' already exists", e)
           case other => other
 
         def asEmailTaken(err: Throwable): Throwable = err match
-          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("users_account_email_key") =>
-            ProvisionEmailTaken(request.email)
+          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("users_account_email_key") => Exception(s"Email '${request.email}' already exists", e)
           case other => other
 
         def buildAccount(tenant: RawTenant, account: LegacyAccount) = {

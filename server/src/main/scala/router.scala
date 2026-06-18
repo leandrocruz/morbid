@@ -215,42 +215,23 @@ object router {
 
     private def login(request: Request): Task[Response] = {
 
-      def asLoginError(err: Throwable): ReturnResponseError = err match
-        case UnknownUser(email) => ReturnResponseError(Response.json(s"""{"error":"unknown_user","email":"$email","provision":"/provision"}""").status(Status.NotFound))
-        case other              => ReturnResponseError(Response.internalServerError(other.getMessage))
-
       def ensureUser(identity: CloudIdentity)(maybeUser: Option[RawUser]): Task[RawUser] = {
         maybeUser match
           case Some(user) => ZIO.succeed(user)
           case None       => accounts.provisionSSO(identity)
       }
 
-      def errorHandler(e: Throwable) = e match {
-        case rre    : ReturnResponseError => rre
-        case wrapped: ReturnResponseWithExceptionError => wrapped.cause match
-          case u: UnknownUser => asLoginError(u)
-          case _              => wrapped
-
-        case other => asLoginError(other)
-    }
-
       ensureResponse {
         for
           vgt       <- request.body.parse[VerifyGoogleTokenRequest]() .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing VerifyGoogleTokenRequest: ${err.getMessage}")))
           identity  <- identities.verify(vgt)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error verifying firebase token '${vgt.token}: ${err.getMessage}'")))
           fn        =  ensureUser(identity)
-          (tk, enc) <- tokenGiven(identity.email) { fn }              .mapError(errorHandler)
+          (tk, enc) <- tokenGiven(identity.email) { fn }
         yield loginResponse(tk, enc).clearOriginal
       }.toTask
     }
 
     private def provision(request: Request): Task[Response] = {
-
-      def asProvisionError(err: Throwable): ReturnResponseError = err match
-        case _: ProvisionNameTaken  => ReturnResponseError(Response.json("""{"error":"name_taken"}""") .status(Status.Conflict))
-        case _: ProvisionEmailTaken => ReturnResponseError(Response.json("""{"error":"email_taken"}""").status(Status.Conflict))
-        case ProvisionBadIntent(i)  => ReturnResponseError(Response.badRequest(s"Unsupported intent: '$i'"))
-        case other                  => ReturnResponseError(Response.internalServerError(other.getMessage))
 
       def as500(prefix: String)(err: Throwable) = ReturnResponseWithExceptionError(err, Response.internalServerError(s"$prefix: ${err.getMessage}"))
 
@@ -260,10 +241,10 @@ object router {
           _         <- ensureMagic(req.magic)
           maybeUser <- repo.exec(FindUserByEmail(req.email)) .mapError(as500("Error checking existing user"))
           user      <- maybeUser match
-                         case Some(_) => ZIO.fail(asProvisionError(ProvisionEmailTaken(req.email)))
-                         case None    => accounts.provision(req).mapError(asProvisionError)
-          token     <- tokens.asToken(user).mapError(as500("Error minting token"))
-          encoded   <- tokens.encode(token).mapError(as500("Error encoding token"))
+                         case Some(_) => ZIO.fail(Exception(s"email '${req.email}' already taken"))
+                         case None    => accounts.provision(req).mapError(err => Exception("Error provisioning the account"))
+          token     <- tokens.asToken(user).mapError(as500("Error minting the token"))
+          encoded   <- tokens.encode(token).mapError(as500("Error encoding the token"))
         yield loginResponse(token, encoded).clearOriginal
       }.toTask
     }

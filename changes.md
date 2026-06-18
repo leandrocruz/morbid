@@ -1,6 +1,8 @@
 # Morbid
 
  - [Leandro] `/provision` agora exige `magic` no `ProvisionRequest` e valida via `ensureMagic` antes de qualquer side-effect (Firebase, legacy-morbid). Protege o endpoint público de abuso/spam que consumia quota de identidade e criava contas órfãs
+ - [Leandro] Melhorando a regexp de validação de emails
+ - [Leandro] Removendo `ProvisionNameTaken`, `ProvisionEmailTaken`, `ProvisionBadIntent` e `UnknownUser` 
 
 ## Release v2.2.0
 LTS 16/06/2026
