@@ -227,7 +227,7 @@ object router {
           identity  <- identities.verify(vgt)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error verifying firebase token '${vgt.token}: ${err.getMessage}'")))
           fn        =  ensureUser(identity)
           (tk, enc) <- tokenGiven(identity.email) { fn }
-        yield loginResponse(tk, enc).clearOriginal
+        yield loginResponse(tk, enc)
       }.toTask
     }
 
@@ -245,7 +245,7 @@ object router {
                          case None    => accounts.provision(req).mapError(err => Exception("Error provisioning the account"))
           token     <- tokens.asToken(user).mapError(as500("Error minting the token"))
           encoded   <- tokens.encode(token).mapError(as500("Error encoding the token"))
-        yield loginResponse(token, encoded).clearOriginal
+        yield loginResponse(token, encoded)
       }.toTask
     }
 
