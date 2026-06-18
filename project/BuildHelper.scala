@@ -13,7 +13,7 @@ object BuildHelper {
     val commonsLang     = "org.apache.commons"   %  "commons-lang3"     % "3.17.0"
     val chimney         = "io.scalaland"         %% "chimney"           % "1.3.0"
     val firebase        = "com.google.firebase"  %  "firebase-admin"    % "9.6.0"
-    val guara           = "guara"                %% "guara-framework"   % "v1.2.0"
+    val guara           = "guara"                %% "guara-framework"   % "v1.3.1"
     val jjwtApi         = "io.jsonwebtoken"      % "jjwt-api"           % "0.12.3"
     val jjwtImpl        = "io.jsonwebtoken"      % "jjwt-impl"          % "0.12.3"
     val jjwtJackson     = "io.jsonwebtoken"      % "jjwt-jackson"       % "0.12.3"
@@ -75,7 +75,7 @@ object BuildHelper {
     ThisBuild / scalaVersion                 := ScalaVersion,
     ThisBuild / scalacOptions                := commonSettings(scalaVersion.value),
     ThisBuild / organization                 := "morbid",
-    ThisBuild / version                      := "v2.2.0",
+    ThisBuild / version                      := "v2.2.1",
     ThisBuild / doc / sources                := Seq.empty,
     ThisBuild / packageDoc / publishArtifact := false,
     ThisBuild / resolvers                    += Resolver.mavenLocal,
