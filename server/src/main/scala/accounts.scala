@@ -123,10 +123,11 @@ object accounts {
 
         // Distinguish the specific unique constraint that fired. Without the constraint
         // name check, *any* 23505 (PK collision on accounts.id, accounts.code collision,
-        // users PK collision, etc.) would masquerade as "name_taken" or "email_taken".
-        // Other 23505s propagate as the original SQLException so the real cause stays visible.
-        def asNameTaken(err: Throwable): Throwable = err match
-          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("accounts_tenant_name_key") => Exception(s"Account name '${request.name}' already exists", e)
+        // users PK collision, etc.) would masquerade as "name_taken" or "identifier_taken"
+        // or "email_taken". Other 23505s propagate as the original SQLException so the
+        // real cause stays visible.
+        def asIdentifierTaken(err: Throwable): Throwable = err match
+          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("accounts_identifier_key") => Exception(s"Identifier '${request.identifier.map(AccountIdentifier.value).getOrElse("")}' already exists", e)
           case other => other
 
         def asEmailTaken(err: Throwable): Throwable = err match
@@ -135,12 +136,13 @@ object accounts {
 
         def buildAccount(tenant: RawTenant, account: LegacyAccount) = {
           StoreAccount(
-            id     = account.id,
-            tenant = tenant.id,
-            code   = AccountCode.of(s"freemium_${RandomStringUtils.secure.nextAlphanumeric(4)}"),
-            name   = account.name,
-            active = true,
-            update = false
+            id         = account.id,
+            tenant     = tenant.id,
+            code       = AccountCode.of(s"freemium_${RandomStringUtils.secure.nextAlphanumeric(4)}"),
+            name       = account.name,
+            active     = true,
+            update     = false,
+            identifier = request.identifier
           )
         }
 
@@ -182,7 +184,7 @@ object accounts {
 
         for
           now         <- Clock.localDateTime
-          account     <- repo.exec(buildAccount(ctx.tenant, ctx.legacyAccount))              .mapError(asNameTaken)
+          account     <- repo.exec(buildAccount(ctx.tenant, ctx.legacyAccount))              .mapError(asIdentifierTaken)
           user        <- repo.exec(buildUser(account, ctx.legacyUser, ctx.userRecord.getUid)).mapError(asEmailTaken)
           _           <- repo.exec(LinkAccountToApp (acc = account.id, app = ctx.details.id))
           _           <- repo.exec(LinkAccountToPlan(acc = account.id, plan = ctx.plan.id))

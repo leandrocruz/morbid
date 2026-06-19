@@ -249,6 +249,19 @@ object router {
       }.toTask
     }
 
+    private def findAccountByIdentifier(request: Request): Task[Response] = {
+
+      def as500(prefix: String)(err: Throwable) = ReturnResponseWithExceptionError(err, Response.internalServerError(s"$prefix: ${err.getMessage}"))
+
+      ensureResponse {
+        for
+          req     <- request.body.parse[FindAccountByIdentifierRequest]().mapError(err => ReturnResponseWithExceptionError(err, Response.badRequest(s"Error parsing FindAccountByIdentifierRequest: ${err.getMessage}")))
+          _       <- ensureMagic(req.magic)
+          account <- repo.exec(FindAccountByIdentifier(req.identifier)).mapError(as500("Error looking up account by identifier"))
+        yield Response.json(account.toJson)
+      }.toTask
+    }
+
     private def emitToken(request: Request) = {
 
       def ensureUser(email: Email)(maybe: Option[RawUser]) = {
@@ -931,6 +944,7 @@ object router {
       Method.GET  / "login" / "provider"                                         -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
       Method.POST / "login"                                                      -> Handler.fromFunctionZIO[Request](login),
       Method.POST / "provision"                                                  -> Handler.fromFunctionZIO[Request](provision),
+      Method.POST / "account" / "by-identifier"                                  -> Handler.fromFunctionZIO[Request](findAccountByIdentifier),
       Method.POST / "logoff"                                                     -> Handler.fromFunctionZIO[Request](logoff),
       Method.POST / "verify"                                                     -> Handler.fromFunctionZIO[Request](verify),
       Method.POST / "impersonate"                                                -> Handler.fromFunctionZIO[Request](impersonate),

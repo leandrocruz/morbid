@@ -20,8 +20,9 @@ object types {
   opaque type FeatureId       = Long
   opaque type TenantName      = String
   opaque type TenantCode      = String
-  opaque type AccountName     = String
-  opaque type AccountCode     = String
+  opaque type AccountName       = String
+  opaque type AccountCode       = String
+  opaque type AccountIdentifier = String
   opaque type ApplicationName = String
   opaque type ApplicationCode = String
   opaque type GroupName       = String
@@ -67,8 +68,9 @@ object types {
 
   given JsonEncoder      [TenantName]      = JsonEncoder.string
   given JsonEncoder      [TenantCode]      = JsonEncoder.string
-  given JsonEncoder      [AccountName]     = JsonEncoder.string
-  given JsonEncoder      [AccountCode]     = JsonEncoder.string
+  given JsonEncoder      [AccountName]       = JsonEncoder.string
+  given JsonEncoder      [AccountCode]       = JsonEncoder.string
+  given JsonEncoder      [AccountIdentifier] = JsonEncoder.string
   given JsonEncoder      [ApplicationName] = JsonEncoder.string
   given JsonEncoder      [ApplicationCode] = JsonEncoder.string
   given JsonEncoder      [GroupName]       = JsonEncoder.string
@@ -91,7 +93,8 @@ object types {
   given JsonEncoder      [Link]             = JsonEncoder.string
 
   given JsonDecoder      [TenantName]      = safeLatinName(128)
-  given JsonDecoder      [AccountName]     = safeLatinName(256)
+  given JsonDecoder      [AccountName]       = safeLatinName(256)
+  given JsonDecoder      [AccountIdentifier] = JsonDecoder.string
   given JsonDecoder      [ApplicationName] = safeLatinName(256)
   given JsonDecoder      [GroupName]       = safeLatinName(64)
   given JsonDecoder      [RoleName]        = safeLatinName(32)
@@ -139,8 +142,9 @@ object types {
   }
 
   object AccountId       extends OpaqueOps[Long, AccountId]
-  object AccountName     extends OpaqueOps[String, AccountName]
-  object AccountCode     extends OpaqueOps[String, AccountCode]
+  object AccountName       extends OpaqueOps[String, AccountName]
+  object AccountCode       extends OpaqueOps[String, AccountCode]
+  object AccountIdentifier extends OpaqueOps[String, AccountIdentifier]
   object ApplicationId   extends OpaqueOps[Long, ApplicationId]
   object ApplicationCode extends OpaqueOps[String, ApplicationCode]
   object ApplicationName extends OpaqueOps[String, ApplicationName]
@@ -258,6 +262,7 @@ object domain {
       active     : Boolean,
       code       : AccountCode,
       name       : AccountName,
+      identifier : Option[AccountIdentifier] = None,
     )
 
     case class RawUserEntry(
@@ -558,7 +563,7 @@ object domain {
   object requests {
     case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
     case class StoreUserRequest(id: Option[UserId], code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], active: Boolean, update: Boolean /* TODO: remove this as soon as we migrate all users from legacy */)
-    case class StoreAccountRequest(id: Option[AccountId], tenant: TenantId, name: AccountName, code: AccountCode, active: Boolean, update: Boolean)
+    case class StoreAccountRequest(id: Option[AccountId], tenant: TenantId, name: AccountName, code: AccountCode, active: Boolean, update: Boolean, identifier: Option[AccountIdentifier] = None)
     case class RequestPasswordRequestLink(email: Email) extends HasEmail
     case class ChangePasswordRequest(email: Email, password: Password) extends HasEmail
     case class PasswordResetLink(link: Link)
@@ -570,7 +575,8 @@ object domain {
     case class SetUserGroupsRequest(user: UserCode, groups: Seq[GroupCode])
     case class LoginViaEmailLinkRequest(email: Email, url: String)
     case class LoginViaEmailLinkResponse(link: Link)
-    case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email)
+    case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email, identifier: Option[AccountIdentifier] = None)
+    case class FindAccountByIdentifierRequest(magic: Magic, identifier: AccountIdentifier)
     case class ImpersonationRequest(email: Email, magic: Magic)
     case class LogoffResponse(restored: Boolean)
 
@@ -586,6 +592,7 @@ object domain {
       groups      : Map[GroupCode, Seq[RoleCode]],
       accountType : String,
       userType    : String,
+      identifier  : Option[AccountIdentifier] = None,
     )
 
     case class GetAccountPlansRequest(account: AccountId, application: ApplicationCode)
@@ -607,6 +614,7 @@ object domain {
     given JsonCodec[GetAccountPlansRequest]        = DeriveJsonCodec.gen
     given JsonCodec[StoreAccountRequest]        = DeriveJsonCodec.gen
     given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
+    given JsonCodec[FindAccountByIdentifierRequest] = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
     given JsonCodec[ImpersonationRequest]       = DeriveJsonCodec.gen
     given JsonCodec[LogoffResponse]             = DeriveJsonCodec.gen

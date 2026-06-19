@@ -200,12 +200,13 @@ object commands {
   case class DefineUserPin(user: UserId, pin: Sha256Hash) extends Command[Unit]
 
   case class StoreAccount(
-    id     : AccountId  , // Maybe 0
-    tenant : TenantId   ,
-    code   : AccountCode,
-    name   : AccountName,
-    active : Boolean,
-    update : Boolean,
+    id         : AccountId  , // Maybe 0
+    tenant     : TenantId   ,
+    code       : AccountCode,
+    name       : AccountName,
+    active     : Boolean,
+    update     : Boolean,
+    identifier : Option[AccountIdentifier] = None,
   ) extends Command[RawAccount]
 
   case class StoreUser(
@@ -247,9 +248,10 @@ object commands {
     app     : ApplicationCode
   ) extends Command[Seq[RawRole]]
 
-  case class FindAccountByProvider(code: ProviderCode) extends Command[Option[RawAccount]]
-  case class FindAccountByCode    (code: AccountCode)  extends Command[Option[RawAccount]]
-  case class FindAccountById      (id: AccountId)      extends Command[Option[RawAccount]]
+  case class FindAccountByProvider  (code: ProviderCode)         extends Command[Option[RawAccount]]
+  case class FindAccountByCode      (code: AccountCode)          extends Command[Option[RawAccount]]
+  case class FindAccountById        (id: AccountId)              extends Command[Option[RawAccount]]
+  case class FindAccountByIdentifier(identifier: AccountIdentifier) extends Command[Option[RawAccount]]
 
   case class FindProviderByAccount(account: AccountId)                      extends Command[Option[RawIdentityProvider]]
   case class FindProviderByDomain(domain: Domain, code: Option[TenantCode]) extends Command[Option[RawIdentityProvider]]
