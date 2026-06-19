@@ -116,7 +116,7 @@ object accounts {
           tenant        <- repo.exec(FindTenantByCode(request.tenant))                  .orFail(s"Tenant '${request.tenant}' not found")
           details       <- repo.exec(FindApplicationDetails(request.application))       .orFail(s"Application '${request.application}' not found")
           plan          <- repo.exec(FindPlanByCode(request.application, request.plan)) .orFail(s"Plan '${request.plan}' not found for app '${request.application}'")
-          legacyAccount <- legacyMorbid.createAccount(CreateLegacyAccountRequest(request.account, request.accountType))
+          legacyAccount <- legacyMorbid.createAccount(CreateLegacyAccountRequest(request.account, request.accountType, request.identifier))
           userRecord    <- identities.createUser(request.email, tenant.code, request.password)
           legacyUser    <- legacyMorbid.createUser(CreateLegacyUserRequest(legacyAccount.id, request.name, request.email, request.userType))
         yield LegacyContext(tenant, legacyAccount, legacyUser, userRecord, details, plan)

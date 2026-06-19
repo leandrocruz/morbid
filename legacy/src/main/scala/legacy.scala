@@ -3,16 +3,16 @@ package morbid
 object legacy {
 
   import java.util.Date
-  import morbid.types.{AccountId, AccountName, Email, UserId}
+  import morbid.types.{AccountId, AccountIdentifier, AccountName, Email, UserId}
   import zio.*
   import zio.http.*
   import zio.json.*
 
-  case class LegacyAccount(id: AccountId, name: AccountName)
+  case class LegacyAccount(id: AccountId, name: AccountName, identifier: Option[AccountIdentifier] = None)
   case class LegacyToken(token: String)
   case class LegacyUser(id: UserId, email: Email, account: LegacyAccount)
 
-  case class CreateLegacyAccountRequest(name: AccountName, `type`: String)
+  case class CreateLegacyAccountRequest(name: AccountName, `type`: String, identifier: Option[AccountIdentifier] = None)
   case class CreateLegacyUserRequest(account: AccountId, name: String, email: Email, `type`: String, password: Option[String] = None) //matches legacy morbid CreateUserRequest
 
   case class LegacyClientConfig(url: String)
@@ -30,12 +30,13 @@ object legacy {
   }
 
   trait LegacyMorbid {
-    def accountById  (id: AccountId)                      : Task[Option[LegacyAccount]]
-    def createAccount(request: CreateLegacyAccountRequest): Task[LegacyAccount]
-    def createUser   (request: CreateLegacyUserRequest)   : Task[LegacyUser]
-    def userByEmail  (email: Email)                       : Task[Option[LegacyUser]]
-    def userById     (id: UserId)                         : Task[Option[LegacyUser]]
-    def userByToken  (token: String)                      : Task[Option[LegacyUser]]
+    def accountById          (id: AccountId)                      : Task[Option[LegacyAccount]]
+    def accountByIdentifier  (identifier: AccountIdentifier)      : Task[Option[LegacyAccount]]
+    def createAccount        (request: CreateLegacyAccountRequest): Task[LegacyAccount]
+    def createUser           (request: CreateLegacyUserRequest)   : Task[LegacyUser]
+    def userByEmail          (email: Email)                       : Task[Option[LegacyUser]]
+    def userById             (id: UserId)                         : Task[Option[LegacyUser]]
+    def userByToken          (token: String)                      : Task[Option[LegacyUser]]
   }
 
   case class LegacyMorbidImpl(url: URL, client: Client, scope: Scope) extends LegacyMorbid {
@@ -81,6 +82,17 @@ object legacy {
           case 404  => ZIO.none
           case 200  => ZIO.fromEither(text.fromJson[LegacyAccount]).map(Some(_)).mapError(err => Exception(s"Error parsing LegacyAccount from body: $text. Cause: $err"))
           case code => ZIO.fail(Exception(s"Error retrieving legacy account '$id'. Result code from legacy is $code. Body => $text"))
+      yield account
+    }
+
+    override def accountByIdentifier(identifier: AccountIdentifier): Task[Option[LegacyAccount]] = {
+      for
+        response <- client.url(url).get(s"/account/identifier/$identifier").provideSome(ZLayer.succeed(scope))
+        text     <- response.body.asString
+        account  <- response.status.code match
+          case 404  => ZIO.none
+          case 200  => ZIO.fromEither(text.fromJson[LegacyAccount]).map(Some(_)).mapError(err => Exception(s"Error parsing LegacyAccount from body: $text. Cause: $err"))
+          case code => ZIO.fail(Exception(s"Error retrieving legacy account by identifier '$identifier'. Result code from legacy is $code. Body => $text"))
       yield account
     }
 
