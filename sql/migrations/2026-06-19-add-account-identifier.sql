@@ -6,7 +6,7 @@
 BEGIN;
 
 ALTER TABLE accounts
-    ADD COLUMN IF NOT EXISTS identifier VARCHAR(32);
+    ADD COLUMN IF NOT EXISTS identifier VARCHAR(256);
 
 ALTER TABLE accounts
     DROP CONSTRAINT IF EXISTS accounts_tenant_name_key;
