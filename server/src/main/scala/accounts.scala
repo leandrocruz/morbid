@@ -22,6 +22,9 @@ object accounts {
   import java.time.LocalDateTime
   import scala.util.Try
 
+  case class IdentifierTakenException(identifier: AccountIdentifier, cause: Throwable = null) extends Exception(s"Identifier '${AccountIdentifier.value(identifier)}' already exists", cause)
+  case class EmailTakenException     (email: Email                 , cause: Throwable = null) extends Exception(s"Email '${Email.value(email)}' already exists"                      , cause)
+
   trait AccountManager {
     def provisionSSO (identity: CloudIdentity)          : Task[RawUser]
     def provision    (request: ProvisionRequest)           : Task[RawUser]
@@ -127,11 +130,11 @@ object accounts {
         // or "email_taken". Other 23505s propagate as the original SQLException so the
         // real cause stays visible.
         def asIdentifierTaken(err: Throwable): Throwable = err match
-          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("accounts_identifier_key") => Exception(s"Identifier '${request.identifier.map(AccountIdentifier.value).getOrElse("")}' already exists", e)
+          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("accounts_identifier_key") => request.identifier.map(IdentifierTakenException(_, e)).getOrElse(e)
           case other => other
 
         def asEmailTaken(err: Throwable): Throwable = err match
-          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("users_account_email_key") => Exception(s"Email '${request.email}' already exists", e)
+          case e: SQLException if e.getSQLState == "23505" && e.getMessage.contains("users_account_email_key") => EmailTakenException(request.email, e)
           case other => other
 
         def buildAccount(tenant: RawTenant, account: LegacyAccount) = {

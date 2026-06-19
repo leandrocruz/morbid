@@ -2,10 +2,10 @@ package morbid
 
 import guara.errors.*
 import guara.router.{Echo, Router}
-import guara.utils.{Origin, SafeResponse, ensureResponse, parse}
+import guara.utils.{Origin, SafeResponse, UnifiedErrorFormat, ensureResponse, parse}
 import guara.utils.SafeResponse.*
 import io.scalaland.chimney.dsl.*
-import morbid.accounts.AccountManager
+import morbid.accounts.{AccountManager, EmailTakenException, IdentifierTakenException}
 import morbid.commands.*
 import morbid.config.MorbidConfig
 import morbid.domain.*
@@ -233,18 +233,23 @@ object router {
 
     private def provision(request: Request): Task[Response] = {
 
-      def as500(prefix: String)(err: Throwable) = ReturnResponseWithExceptionError(err, Response.internalServerError(s"$prefix: ${err.getMessage}"))
+      def ensureIdentifierAvailable(id: AccountIdentifier) = {
+        for
+          maybe <- repo.exec(FindAccountByIdentifier(id)).mapError(e => Exception("Error checking existing identifier", e))
+          _     <- ZIO.foreach(maybe) { _ => ZIO.fail(IdentifierTakenException(id)) }
+        yield ()
+      }
 
       ensureResponse {
         for
           req       <- request.body.parse[ProvisionRequest]().mapError(err => ReturnResponseWithExceptionError(err, Response.badRequest(s"Error parsing ProvisionRequest: ${err.getMessage}")))
           _         <- ensureMagic(req.magic)
-          maybeUser <- repo.exec(FindUserByEmail(req.email)) .mapError(as500("Error checking existing user"))
-          user      <- maybeUser match
-                         case Some(_) => ZIO.fail(Exception(s"email '${req.email}' already taken"))
-                         case None    => accounts.provision(req).mapError(err => Exception("Error provisioning the account"))
-          token     <- tokens.asToken(user).mapError(as500("Error minting the token"))
-          encoded   <- tokens.encode(token).mapError(as500("Error encoding the token"))
+          _         <- ZIO.foreach(req.identifier) { ensureIdentifierAvailable }
+          maybeUser <- repo.exec(FindUserByEmail(req.email)).mapError(e => Exception("Error checking existing user", e))
+          _         <- ZIO.foreach(maybeUser) { _ => ZIO.fail(EmailTakenException(req.email)) }
+          user      <- accounts.provision(req)
+          token     <- tokens.asToken(user).mapError(e => Exception("Error minting the token", e))
+          encoded   <- tokens.encode(token).mapError(e => Exception("Error encoding the token", e))
         yield loginResponse(token, encoded).clearOriginal
       }.toTask
     }
