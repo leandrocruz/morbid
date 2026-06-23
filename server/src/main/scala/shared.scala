@@ -40,7 +40,7 @@ object utils {
 
   import domain.raw.RawUser
   import org.apache.commons.lang3.exception.ExceptionUtils
-  import guara.errors.ReturnResponseWithExceptionError
+  import guara.errors.GuaraError
   import zio.json.*
   import zio.http.{Body, Response, Header, Headers}
   import zio.http.Status.InternalServerError
@@ -65,26 +65,15 @@ object utils {
   }
 
   extension [T](task: Task[Option[T]])
-    def orFail(message: String): Task[T] = {
+    def orFail(code: Int, message: String): Task[T] = {
       for
         maybe <- task
-        value <- ZIO.fromOption(maybe).mapError(_ => Exception(message))
+        value <- ZIO.fromOption(maybe).mapError(_ => GuaraError.of(code, message))
       yield value
     }
 
   extension [T](task: Task[T]) {
     def refineError(message: String): Task[T] = task.mapError(Exception(message, _))
-
-    def errorToResponse(response: Response) = task.mapError(ReturnResponseWithExceptionError(_, response))
-
-    def asCommonError(code: Int, msg: String) = {
-      def response(error: Throwable) = Response(
-        status  = InternalServerError,
-        headers = Headers(Header.Custom("X-Error-Type", "GCEv0") /* Guara Common Error = GCEv0 */),
-        body    = Body.fromString(CommonError(origin = "Morbid", code, message = msg, trace = Some(ExceptionUtils.getStackTrace(error))).toJson)
-      )
-      task.mapError(e => ReturnResponseWithExceptionError(e, response(e)))
-    }
   }
 
   extension [T](op: Option[T])

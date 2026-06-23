@@ -4,8 +4,10 @@ import zio.*
 
 object client {
 
-  import guara.errors.{ReturnResponseError, ReturnResponseWithExceptionError}
-  import guara.utils.{parse, queryParams}
+  import guara.errors.{ReturnResponseError, ReturnUnifiedError}
+  import guara.uef
+  import guara.utils.queryParams
+  import io.jsonwebtoken.{Jws, Jwts}
   import morbid.domain.*
   import morbid.domain.raw.*
   import morbid.domain.requests.{*, given}
@@ -13,7 +15,6 @@ object client {
   import morbid.types.*
   import zio.http.*
   import zio.json.*
-  import io.jsonwebtoken.{Jwts, Jws}
 
   import java.nio.file.{Files, Paths}
   import java.time.{LocalDateTime, ZoneId, ZonedDateTime}
@@ -97,28 +98,34 @@ object client {
 
     private def exec[T](token: Option[RawToken], req: Request)(using dec: JsonDecoder[T]): Task[T] = {
 
-      def badGateway(message: String, cause: Option[Throwable] = None) = {
-        val resp = Response.error(Status.BadGateway, message)
-        cause match
-          case Some(error) => ReturnResponseWithExceptionError(error, resp)
-          case None        => ReturnResponseError(resp)
+      def badGateway(cause: Throwable) = {
+        ReturnUnifiedError(
+          message = s"Error calling Morbid '${req.url.encode}'",
+          cause   = Some(cause)
+        )
       }
 
-      def warnings(response: Response) = response.headers.get("warning")
-
-      def explain(res: Response): Task[Exception] = {
-        res.body.asString.either.map {
-          case Right(body) if body.nonEmpty => Exception(s"Morbid '${req.url.encode}' returned ${res.status.code}: $body")
-          case _                            => Exception(s"Morbid '${req.url.encode}' returned ${res.status.code} (empty body)")
-        }
+      def handleUEF(res: Response): Task[T] = {
+        //res.headers.filterNot(_.headerType == Header.ContentLength) //FIXME: should we remove the ContentLength header?
+        ZIO.fail(ReturnResponseError(res))
       }
 
-      for {
+      def handleParseError(res: Response, body: String)(error: String) = {
+        ReturnUnifiedError(
+          message = s"Error parsing morbid server response: '$error'",
+          status  = res.status.code,
+          cause   = Some(Exception(s"Morbid '${req.url.encode}' returned ${res.status.code}: $body"))
+        )
+      }
+
+      for
         _      <- ZIO.log(s"Calling '${req.url.encode}'")
-        res    <- perform(req.copy(headers = req.headers ++ token.map(morbidToken).getOrElse(Headers.empty))).mapError(e => badGateway(s"Error calling Morbid '${req.url.encode}': ${e.getMessage}"))
-        _      <- ZIO.when(res.status.code != 200) { explain(res).flatMap(ZIO.fail(_)) }
-        result <- res.body.parse[T]().mapError(_ => ReturnResponseError(res))
-      } yield result
+        res    <- perform(req.copy(headers = req.headers ++ token.map(morbidToken).getOrElse(Headers.empty))).mapError(badGateway)
+        isUEF  = res.headers.exists(uef.isUEFHeader)
+        _      <- ZIO.when(isUEF) { handleUEF(res) }
+        str    <- res.body.asString
+        result <- ZIO.fromEither(str.fromJson[T]).mapError(handleParseError(res, str))
+      yield result
     }
 
     private def delete[T] (token: Option[RawToken], url: URL)           (using dec: JsonDecoder[T])                     : Task[T] = exec(token, Request.get(url))

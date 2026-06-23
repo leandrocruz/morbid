@@ -4,6 +4,8 @@ import zio.*
 
 object accounts {
 
+  import morbid.errors.*
+  import morbid.MorbidError.*
   import morbid.commands.*
   import morbid.config.MorbidConfig
   import morbid.domain.*
@@ -22,12 +24,10 @@ object accounts {
   import java.time.LocalDateTime
   import scala.util.Try
 
-  case class IdentifierTakenException(identifier: AccountIdentifier, cause: Throwable = null) extends Exception(s"Identifier '${AccountIdentifier.value(identifier)}' already exists", cause)
-  case class EmailTakenException     (email: Email                 , cause: Throwable = null) extends Exception(s"Email '${Email.value(email)}' already exists"                      , cause)
 
   trait AccountManager {
     def provisionSSO (identity: CloudIdentity)          : Task[RawUser]
-    def provision    (request: ProvisionRequest)           : Task[RawUser]
+    def provision    (request: ProvisionRequest)        : Task[RawUser]
     def parseCSV     (account: RawAccount, csv: String) : Task[Seq[(Email, Try[RawUserEntry])]]
   }
 
@@ -85,12 +85,12 @@ object accounts {
         }
 
         for {
-          account <- repo.exec(FindAccountByProvider(id)).orFail(s"Can't find account for provider '$identity'")
+          account <- repo.exec(FindAccountByProvider(id)).orFail(AccountNotFound, s"Can't find account for provider '$identity'")
           legacy  <- legacyUser(account)
           _       <- ZIO.logInfo(s"Provisioning user :: tenant:${account.tenant} account:${account.id}, uid:${legacy.id}, idp:$id, code:${identity.code}, email:${identity.email}")
           user    <- repo.exec(StoreUser(legacy.id, identity.email, identity.code, account, kind = None, update = false, active = true))
           _       <- setup(account, user)
-          result  <- repo.exec(FindUserByEmail(user.email)).orFail(s"Error reading newly created user, email:${user.email}") // load applications, groups, etc
+          result  <- repo.exec(FindUserByEmail(user.email)).orFail(UserNotFound, s"Error reading newly created user, email:${user.email}") // load applications, groups, etc
         } yield result
       }
 
@@ -113,9 +113,9 @@ object accounts {
       // orphans — compensation is a separate concern (see callers / cleanup jobs).
       def prepareLegacy: Task[LegacyContext] = {
         for
-          tenant        <- repo.exec(FindTenantByCode(request.tenant))                  .orFail(s"Tenant '${request.tenant}' not found")
-          details       <- repo.exec(FindApplicationDetails(request.application))       .orFail(s"Application '${request.application}' not found")
-          plan          <- repo.exec(FindPlanByCode(request.application, request.plan)) .orFail(s"Plan '${request.plan}' not found for app '${request.application}'")
+          tenant        <- repo.exec(FindTenantByCode(request.tenant))                  .orFail(TenantNotFound     , s"Tenant '${request.tenant}' not found")
+          details       <- repo.exec(FindApplicationDetails(request.application))       .orFail(ApplicationNotFound, s"Application '${request.application}' not found")
+          plan          <- repo.exec(FindPlanByCode(request.application, request.plan)) .orFail(PlanNotFound       , s"Plan '${request.plan}' not found for app '${request.application}'")
           legacyAccount <- legacyMorbid.createAccount(CreateLegacyAccountRequest(request.account, request.accountType, request.identifier))
           userRecord    <- identities.createUser(request.email, tenant.code, request.password)
           legacyUser    <- legacyMorbid.createUser(CreateLegacyUserRequest(legacyAccount.id, request.name, request.email, request.userType))
@@ -191,9 +191,9 @@ object accounts {
           user        <- repo.exec(buildUser(account, ctx.legacyUser, ctx.userRecord.getUid)).mapError(asEmailTaken)
           _           <- repo.exec(LinkAccountToApp (acc = account.id, app = ctx.details.id))
           _           <- repo.exec(LinkAccountToPlan(acc = account.id, plan = ctx.plan.id))
-          application <- repo.exec(FindApplication(account.code, ctx.details.code)).orFail(s"Application '${ctx.details.code}' for account '${account.id}' not found")
+          application <- repo.exec(FindApplication(account.code, ctx.details.code)).orFail(ApplicationNotFound, s"Application '${ctx.details.code}' for account '${account.id}' not found")
           _           <- ZIO.foreach(request.groups) { linkGroup(now, account, application, user.code) }
-          reloaded    <- repo.exec(FindUserByEmail(user.email)).orFail(s"Error reading newly created user '${user.email}'")
+          reloaded    <- repo.exec(FindUserByEmail(user.email)).orFail(UserNotFound, s"Error reading newly created user '${user.email}'")
         yield reloaded
 
       }

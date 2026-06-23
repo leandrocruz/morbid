@@ -651,10 +651,10 @@ object roles {
     def apply(code: String): Role = SingleRole(RoleCode.of(code))
 
   sealed trait Role {
-    def or  (code: String) : Role = or(SingleRole(RoleCode.of(code)))
-    def or  (code: Role)   : Role = OrRole(this, code)
-    def and (code: String) : Role = and(SingleRole(RoleCode.of(code)))
-    def and (code: Role)   : Role = AndRole(this, code)
+    infix def or  (code: String) : Role = or(SingleRole(RoleCode.of(code)))
+    infix def or  (code: Role)   : Role = OrRole(this, code)
+    infix def and (code: String) : Role = and(SingleRole(RoleCode.of(code)))
+    infix def and (code: Role)   : Role = AndRole(this, code)
 
     def isSatisfiedBy(token: Token)(using ApplicationCode): Boolean
     def isSatisfiedBy(token: SingleAppToken): Boolean
@@ -697,7 +697,7 @@ object secure {
 
   def role(role: Role, allow: TokenValidator = AllowAll)(fn: Request => Task[Response])(request: Request)(using token: SingleAppToken): Task[Response] = {
 
-    def forbidden(message: String) = ZIO.fail(ReturnResponseError(Response.forbidden(message)))
+    def forbidden(message: String) = GuaraError.fail(MorbidError.Forbidden, Status.Forbidden, message)
 
     def test(token: SingleAppToken): Task[Unit] = {
       if (role.isSatisfiedBy(token)) ZIO.unit
@@ -738,7 +738,7 @@ object secure {
       _     <- ZIO.logInfo(s"Executing app route for app '${application}'")
       token <- tokenFrom(request)
       _     <- ZIO.logInfo(s"Token extracted ${token.user.details.email}")
-      sat   <- ZIO.fromOption(token.narrowTo(application)).mapError(_ => ReturnResponseError(Response.forbidden(s"User has no access to application '$application'")))
+      sat   <- ZIO.fromOption(token.narrowTo(application)).mapError(GuaraError.of(MorbidError.Forbidden, Status.Forbidden, s"User has no access to application '$application'"))
       _     <- ZIO.logInfo(s"Token narrowed. Executing")
       res   <- execute(sat)
     yield res
