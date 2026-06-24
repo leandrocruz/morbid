@@ -81,9 +81,12 @@ object client {
     private val applicationJson = Headers(Chunk(Header.ContentType(MediaType("application", "json"))))
     private def morbidToken(token: RawToken) = Headers(Chunk(Header.Custom(morbid.MorbidHeaders.Token, token.string)))
 
-    private def perform(request: Request): Task[Response] = for {
-      response <- ZClient.request(request).provideSome(ZLayer.succeed(scope), ZLayer.succeed(client))
-    } yield response
+    // ZClient.batched fully buffers the response body before returning. Using ZClient.request
+    // here returns a streaming response whose body is bound to the request scope — by the time
+    // callers (e.g. narrowResponse in presto-api) try to read the body, the underlying connection
+    // has been released and body.asString hangs forever waiting for bytes that never arrive.
+    private def perform(request: Request): Task[Response] =
+      ZClient.batched(request).provide(ZLayer.succeed(client))
 
     override def proxy(request: Request): Task[Response] = {
       for {
