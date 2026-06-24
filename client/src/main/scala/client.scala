@@ -85,13 +85,27 @@ object client {
     // here returns a streaming response whose body is bound to the request scope — by the time
     // callers (e.g. narrowResponse in presto-api) try to read the body, the underlying connection
     // has been released and body.asString hangs forever waiting for bytes that never arrive.
-    private def perform(request: Request): Task[Response] =
-      ZClient.batched(request).provide(ZLayer.succeed(client))
+    //
+    // We deliberately use `Client.default` per call instead of the injected shared `client` field.
+    // The shared client keeps a connection pool that can wedge in a "peer-down" state if the
+    // remote was unreachable at any prior point — even after the remote comes back, the pool
+    // stays poisoned and every subsequent call fails with `Connection refused`. Building a fresh
+    // client per call costs an extra TCP handshake (~tens of ms) but is bulletproof against the
+    // pool getting stuck.
+    private def perform(request: Request): Task[Response] = {
+      for
+        _     <- ZIO.logInfo(s"Calling '${request.url.encode}'")
+        res   <- ZClient.batched(request).provide(Client.default)
+        isUEF =  res.headers.exists(uef.isUEFHeader)
+        _     <- ZIO.logInfo(s"Result is ${res.status.code} (uef ? $isUEF)")
+        _     <- ZIO.when(isUEF) { ZIO.fail(ReturnResponseError(res)) }
+      yield res
+    }
 
     override def proxy(request: Request): Task[Response] = {
-      for {
+      for
         resp <- perform(request.copy(url = base ++ request.url))
-      } yield resp
+      yield resp
     }
 
     override def provisionRaw(request: ProvisionRequest): Task[Response] = perform(Request.post(base / "provision", Body.fromString(request.toJson)).copy(headers = applicationJson))
@@ -108,15 +122,6 @@ object client {
         )
       }
 
-      def handleUEF(res: Response, body: String): Task[T] = {
-        val headers = Headers(res.headers.filterNot(_.headerType == Header.ContentLength)) //FIXME: should we remove the ContentLength header?
-        ZIO.fail {
-          ReturnResponseError(
-            res.copy(headers = headers, body = Body.fromString(body)) //ensures the MorbidClient caller can read the body
-          )
-        }
-      }
-
       def handleParseError(res: Response, body: String)(error: String) = {
         ReturnUnifiedError(
           message = s"Error parsing morbid server response: '$error'",
@@ -126,12 +131,8 @@ object client {
       }
 
       for
-        _      <- ZIO.logInfo(s"Calling '${req.url.encode}'")
         res    <- perform(req.copy(headers = req.headers ++ token.map(morbidToken).getOrElse(Headers.empty))).mapError(badGateway)
-        isUEF  = res.headers.exists(uef.isUEFHeader)
-        _      <- ZIO.logInfo(s"Result is ${res.status.code} (uef ? $isUEF)")
         str    <- res.body.asString
-        _      <- ZIO.when(isUEF) { handleUEF(res, str) }
         result <- ZIO.fromEither(str.fromJson[T]).mapError(handleParseError(res, str))
       yield result
     }
