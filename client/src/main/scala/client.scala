@@ -108,9 +108,13 @@ object client {
         )
       }
 
-      def handleUEF(res: Response): Task[T] = {
+      def handleUEF(res: Response, body: String): Task[T] = {
         val headers = Headers(res.headers.filterNot(_.headerType == Header.ContentLength)) //FIXME: should we remove the ContentLength header?
-        ZIO.fail(ReturnResponseError(res.setHeaders(headers)))
+        ZIO.fail {
+          ReturnResponseError(
+            res.copy(headers = headers, body = Body.fromString(body)) //ensures the MorbidClient caller can read the body
+          )
+        }
       }
 
       def handleParseError(res: Response, body: String)(error: String) = {
@@ -122,11 +126,12 @@ object client {
       }
 
       for
-        _      <- ZIO.log(s"Calling '${req.url.encode}'")
+        _      <- ZIO.logInfo(s"Calling '${req.url.encode}'")
         res    <- perform(req.copy(headers = req.headers ++ token.map(morbidToken).getOrElse(Headers.empty))).mapError(badGateway)
         isUEF  = res.headers.exists(uef.isUEFHeader)
-        _      <- ZIO.when(isUEF) { handleUEF(res) }
+        _      <- ZIO.logInfo(s"Result is ${res.status.code} (uef ? $isUEF)")
         str    <- res.body.asString
+        _      <- ZIO.when(isUEF) { handleUEF(res, str) }
         result <- ZIO.fromEither(str.fromJson[T]).mapError(handleParseError(res, str))
       yield result
     }
