@@ -108,7 +108,7 @@ object router {
 
     private def ensureMagic(magic: Magic) = {
       ZIO.when(!cfg.magic.isValid(magic)) {
-        errors.badMagic
+        ZIO.logWarning("bad magic") *> errors.badMagic
       }
     }
 
@@ -237,20 +237,22 @@ object router {
       def ensureIdentifierAvailable(id: AccountIdentifier) = {
         for
           maybe <- repo.exec(FindAccountByIdentifier(id)).mapError(GuaraError.of("Error checking existing identifier"))
-          _     <- ZIO.foreach(maybe) { _ => errors.identifierTaken(id) }
+          _     <- ZIO.foreach(maybe) { _ => ZIO.logWarning(s"Account '$id' already exists") *> errors.identifierTaken(id) }
         yield ()
       }
 
       ensureResponse {
         for
+          _         <- ZIO.logInfo("Provisioning account")
           req       <- request.body.parse[ProvisionRequest]().mapError(GuaraError.of("bad request"))
           _         <- ensureMagic(req.magic)
           _         <- ZIO.foreach(req.identifier) { ensureIdentifierAvailable }
           maybeUser <- repo.exec(FindUserByEmail(req.email)).mapError(GuaraError.of(UsersError, "Error checking existing user"))
-          _         <- ZIO.foreach(maybeUser) { _ => errors.emailTaken(req.email) }
-          user      <- accounts.provision(req)
-          token     <- tokens.asToken(user).mapError(GuaraError.of("Error minting the token"))
-          encoded   <- tokens.encode(token).mapError(GuaraError.of("Error encoding the token"))
+          _         <- ZIO.foreach(maybeUser) { _ => ZIO.logWarning(s"User '${req.email}' already exists") *> errors.emailTaken(req.email) }
+          user      <- accounts.provision(req).mapError(GuaraError.of("Error provisioning account"))
+          token     <- tokens.asToken(user)   .mapError(GuaraError.of("Error minting the token"))
+          encoded   <- tokens.encode(token)   .mapError(GuaraError.of("Error encoding the token"))
+          _         <- ZIO.logInfo(s"Account '${req.email}' provisioned")
         yield loginResponse(token, encoded).clearOriginal
       }.toTask
     }

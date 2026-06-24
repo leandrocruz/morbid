@@ -106,8 +106,8 @@ object client {
       }
 
       def handleUEF(res: Response): Task[T] = {
-        //res.headers.filterNot(_.headerType == Header.ContentLength) //FIXME: should we remove the ContentLength header?
-        ZIO.fail(ReturnResponseError(res))
+        val headers = Headers(res.headers.filterNot(_.headerType == Header.ContentLength)) //FIXME: should we remove the ContentLength header?
+        ZIO.fail(ReturnResponseError(res.setHeaders(headers)))
       }
 
       def handleParseError(res: Response, body: String)(error: String) = {
