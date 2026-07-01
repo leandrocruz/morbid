@@ -13,6 +13,16 @@
  - [Leandro] Removendo `ProvisionNameTaken`, `ProvisionEmailTaken`, `ProvisionBadIntent` e `UnknownUser`
  - [Leandro] Adicionando `MorbidClient.provisionRaw`
 
+## Release v2.3.0
+LTS 01/07/2026
+
+ - [Leandro] Refactoring da criação de contas (endpoint POST `/app/$app/account`)
+
+## Release v2.2.1
+LTS 18/06/2026
+
+ - [Matheus] Updated guara dependency to v1.3.1
+
 ## Release v2.2.0
 LTS 16/06/2026
 

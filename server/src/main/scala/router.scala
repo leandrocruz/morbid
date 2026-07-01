@@ -715,50 +715,10 @@ object router {
     }).toTask
 
     private def provisionAccount: AppRoute = role("adm") { request =>
-
-      val Presto = summon[ApplicationCode]
-
-      def createGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount): Task[Seq[RawGroup]] = {
-
-        val groups = Seq(
-          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.all  , name = GroupName.of("Todos"), roles = Seq.empty),
-          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.admin, name = GroupName.of("Admin"), roles = Seq.empty)
-        )
-
-        val commands = groups.map { group =>
-          val roles = if(group.code == GroupCode.admin) Seq(RoleCode.of("adm")) else Seq.empty
-          StoreGroup(account = acc.id, accountCode = acc.code, application = app, group = group, users = Seq.empty, roles = roles)
-        }
-
-        ZIO.foreach(commands) {
-          repo.exec
-        }
-      }
-
       for
         req     <- request.body.parse[CreateAccount]()
-        _       <- ZIO.logInfo(s"Account Provisioning '${req.email}'")
-        maybe   <- repo.exec(FindApplicationDetails(Presto))
-        details <- ZIO.fromOption(maybe).mapError(GuaraError.of(ApplicationNotFound, s"Can't find application '$Presto'"))
-        acc     <- repo.exec {
-          req
-            .into[StoreAccount]
-            .withFieldConst(_.active, true)
-            .withFieldConst(_.update, false)
-            .transform
-        }
-        app     =  RawApplication(details)
-        _       <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
-        now     <- Clock.localDateTime
-        groups  <- createGroups(now, app, acc)
-        admin   <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(GuaraError.of(GroupError, "Can't find group 'admin' after account creation"))
-        all     <- ZIO.fromOption(groups.find(_.code == GroupCode.all)  .map(_.id)).mapError(GuaraError.of(GroupError, "Can't find group 'all' after account creation"))
-        fbUser  <- identities.createUser(req.email, acc.tenantCode, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
-        store   = StoreUser(id = req.user, email = req.email.toLowerCase, code = UserCode.of(fbUser.getUid), account = acc, kind = None, update = false, active = true)
-        user    <- repo.exec(store)
-        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = admin, users = Seq(user.id)))
-        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = all  , users = Seq(user.id)))
-        created <- repo.exec(FindUserById(user.id))
+        _       <- accounts.create(req)
+        created <- repo.exec(FindUserById(req.user))
       yield created match
         case None        => Response.internalServerError(s"Error provisioning account ${req.email}")
         case Some(value) => Response.json(value.toJson)

@@ -1,5 +1,6 @@
 package morbid
 
+import guara.errors.GuaraError
 import zio.*
 
 object accounts {
@@ -13,22 +14,22 @@ object accounts {
   import morbid.gip.*
   import morbid.legacy.*
   import morbid.pins.PinManager
-  import morbid.domain.requests.ProvisionRequest
+  import morbid.domain.requests.{CreateAccount, ProvisionRequest}
   import morbid.repo.Repo
   import morbid.types.*
   import morbid.utils.*
   import com.google.firebase.auth.UserRecord
   import org.apache.commons.lang3.RandomStringUtils
-
+  import io.scalaland.chimney.dsl.*
   import java.sql.SQLException
   import java.time.LocalDateTime
   import scala.util.Try
 
-
   trait AccountManager {
-    def provisionSSO (identity: CloudIdentity)          : Task[RawUser]
-    def provision    (request: ProvisionRequest)        : Task[RawUser]
-    def parseCSV     (account: RawAccount, csv: String) : Task[Seq[(Email, Try[RawUserEntry])]]
+    def provisionSSO (identity: CloudIdentity)                       : Task[RawUser]
+    def provision    (request: ProvisionRequest)                     : Task[RawUser]
+    def create       (request: CreateAccount)(using ApplicationCode) : Task[Unit]
+    def parseCSV     (account: RawAccount, csv: String)              : Task[Seq[(Email, Try[RawUserEntry])]]
   }
 
   object AccountManager {
@@ -84,21 +85,19 @@ object accounts {
           } yield user
         }
 
-        for {
+        for
           account <- repo.exec(FindAccountByProvider(id)).orFail(AccountNotFound, s"Can't find account for provider '$identity'")
           legacy  <- legacyUser(account)
           _       <- ZIO.logInfo(s"Provisioning user :: tenant:${account.tenant} account:${account.id}, uid:${legacy.id}, idp:$id, code:${identity.code}, email:${identity.email}")
           user    <- repo.exec(StoreUser(legacy.id, identity.email, identity.code, account, kind = None, update = false, active = true))
           _       <- setup(account, user)
           result  <- repo.exec(FindUserByEmail(user.email)).orFail(UserNotFound, s"Error reading newly created user, email:${user.email}") // load applications, groups, etc
-        } yield result
+        yield result
       }
 
       (identity.tenant, identity.kind, identity.provider) match
         case (None, ProviderKind.SAML, Some(id)) if config.identities.provisionSAMLUsers => provisionSaml(id)
-        // Non-SAML identities (or SAML when provisioning is disabled) can no longer be
-        // auto-provisioned via /login. Self-registered Free accounts must go through /provision.
-        case _ => ZIO.fail(Exception(s"Unknown user '${identity.email}'"))
+        case _                                                                           => GuaraError.fail(AccountError, s"Can't provision account for '${identity.email}'")
     }
 
     /**
@@ -251,6 +250,92 @@ object accounts {
         now     <- Clock.localDateTime
         entries <- ZIO.foreachPar(csv.split("\n")) { process(now) }
       } yield entries
+    }
+
+    override def create(req: CreateAccount)(using appCode: ApplicationCode) = {
+
+      def ensureGroup(code: GroupCode, name: GroupName, app: RawApplication, acc: RawAccount): Task[RawGroup] = {
+        val roles = if(code == GroupCode.admin) Seq(RoleCode.of("adm")) else Seq.empty
+        for
+          now    <- Clock.localDateTime
+          group  =  RawGroup(GroupId.of(0), now, None, code, name, Seq.empty)
+          result <- repo.exec {
+            StoreGroup(
+              account     = acc.id,
+              accountCode = acc.code,
+              application = app,
+              group       = group,
+              users       = Seq.empty,
+              roles       = roles
+            )
+          }
+        yield result
+      }
+
+      def ensureApp: Task[RawApplication] = {
+        for
+          maybe   <- repo.exec(FindApplicationDetails(appCode))
+          details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$appCode'"))
+        yield RawApplication(details)
+      }
+
+      def ensureAccount(req: CreateAccount): Task[RawAccount] = {
+
+        def create = {
+          ZIO.logInfo(s"Account '${req.id}' does not exist yet. Creating one") *>
+          repo.exec {
+            req
+              .into[StoreAccount]
+              .withFieldConst(_.active, true)
+              .withFieldConst(_.update, false)
+              .transform
+          }
+        }
+
+        for
+          maybe  <- repo.exec(FindAccountById(req.id))
+          result <- maybe.map(ZIO.succeed).getOrElse(create)
+        yield result
+      }
+
+      def ensureUser(req: CreateAccount, acc: RawAccount): Task[RawUserEntry] = {
+
+        def create = {
+
+          def fbCreate = identities.createUser(req.email, acc.tenantCode, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
+
+          for
+            _      <- ZIO.logInfo(s"User '${req.user}' does not exist yet. Creating one")
+            maybe  <- identities.getUserByEmail(req.email, acc.tenantCode).either
+            fbUser <- maybe.map(ZIO.succeed).getOrElse(fbCreate)
+            cmd    =  StoreUser(id = req.user, email = req.email.toLowerCase, code = UserCode.of(fbUser.getUid), account = acc, kind = None, update = false, active = true)
+            user   <- repo.exec(cmd)
+          yield user
+        }
+
+        def toEntry(raw: RawUser): Task[RawUserEntry] = {
+          ZIO.succeed {
+            raw.details.transformInto[RawUserEntry]
+          }
+        }
+
+        for
+          maybe  <- repo.exec(FindUserById(req.user))
+          result <- maybe.map(toEntry).getOrElse(create)
+        yield result
+      }
+
+      for
+        _       <- ZIO.logInfo(s"Creating Account for '${req.email}'")
+        app     <- ensureApp
+        acc     <- ensureAccount(req)
+        user    <- ensureUser(req, acc)
+        admin   <- ensureGroup(GroupCode.admin, GroupName.of("Admin"), app, acc)
+        all     <- ensureGroup(GroupCode.all  , GroupName.of("Todos"), app, acc)
+        _       <- repo.exec(LinkAccountToApp(acc = acc.id,  app = app.details.id))
+        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = admin.id, users = Seq(user.id)))
+        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = all  .id, users = Seq(user.id)))
+      yield ()
     }
   }
 }
