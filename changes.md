@@ -1,5 +1,7 @@
 # Morbid
 
+ - [Leandro] Refactoring da criação de contas (endpoint POST `/app/$app/account`)
+
 ## Release v2.2.1
 LTS 18/06/2026
 
