@@ -1,5 +1,10 @@
 # Morbid
 
+## Release v2.3.1
+LTS 02/07/2026
+
+ - [Leandro] Associando o grupo admin com a permissão `adm` (role id = 1)
+
 ## Release v2.3.0
 LTS 01/07/2026
 
