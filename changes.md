@@ -13,6 +13,13 @@
  - [Leandro] Removendo `ProvisionNameTaken`, `ProvisionEmailTaken`, `ProvisionBadIntent` e `UnknownUser`
  - [Leandro] Adicionando `MorbidClient.provisionRaw`
 
+## Release v2.4.0
+LTS 03/07/2026
+
+ - [Leandro] Adicionando `CloudUser` como abstração extra não referenciar diretamente o `UserRecord`
+ - [Leandro] Adicionando implementações de teste para `Identities` e `TokenGenerator`
+ - [Leandro] Refatorando a criação dos grupos ao criar uma conta
+
 ## Release v2.3.1
 LTS 02/07/2026
 

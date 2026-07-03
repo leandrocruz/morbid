@@ -1,10 +1,10 @@
 package morbid
 
-import guara.errors.GuaraError
 import zio.*
 
 object accounts {
 
+  import guara.errors.GuaraError
   import morbid.errors.*
   import morbid.MorbidError.*
   import morbid.commands.*
@@ -105,7 +105,7 @@ object accounts {
      */
     override def provision(request: ProvisionRequest): Task[RawUser] = {
 
-      case class LegacyContext(tenant: RawTenant, legacyAccount: LegacyAccount, legacyUser: LegacyUser, userRecord: UserRecord, details: RawApplicationDetails, plan: RawPlan)
+      case class LegacyContext(tenant: RawTenant, legacyAccount: LegacyAccount, legacyUser: LegacyUser, userRecord: CloudUser, details: RawApplicationDetails, plan: RawPlan)
 
       // External calls (Firebase, legacy morbid) happen *before* the DB transaction because
       // they cannot be rolled back. If the DB tx later fails, legacy/Firebase entries become
@@ -186,8 +186,8 @@ object accounts {
 
         for
           now         <- Clock.localDateTime
-          account     <- repo.exec(buildAccount(ctx.tenant, ctx.legacyAccount))              .mapError(asIdentifierTaken)
-          user        <- repo.exec(buildUser(account, ctx.legacyUser, ctx.userRecord.getUid)).mapError(asEmailTaken)
+          account     <- repo.exec(buildAccount(ctx.tenant, ctx.legacyAccount))          .mapError(asIdentifierTaken)
+          user        <- repo.exec(buildUser(account, ctx.legacyUser, ctx.userRecord.id)).mapError(asEmailTaken)
           _           <- repo.exec(LinkAccountToApp (acc = account.id, app = ctx.details.id))
           _           <- repo.exec(LinkAccountToPlan(acc = account.id, plan = ctx.plan.id))
           application <- repo.exec(FindApplication(account.code, ctx.details.code)).orFail(ApplicationNotFound, s"Application '${ctx.details.code}' for account '${account.id}' not found")
@@ -228,7 +228,7 @@ object accounts {
 
             for
               fbUser <- identities.createUser(email, account.tenantCode, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
-              usr    <- repo.exec(userGiven(UserCode.of(fbUser.getUid)))
+              usr    <- repo.exec(userGiven(UserCode.of(fbUser.id)))
             yield usr
           }
 
@@ -254,17 +254,18 @@ object accounts {
 
     override def create(req: CreateAccount)(using appCode: ApplicationCode) = {
 
-      def ensureGroup(code: GroupCode, name: GroupName, roles: Seq[RoleCode], app: RawApplication, acc: RawAccount): Task[RawGroup] = {
+      def ensureGroup(code: GroupCode, name: GroupName, roles: Seq[RoleCode], users: Seq[UserCode], app: RawApplication, acc: RawAccount): Task[RawGroup] = {
         for
+          _      <- ZIO.logInfo(s"Creating group $name ($code) with roles ${roles.mkString(", ")} and users ${users.mkString(", ")} for account ${acc.id} on app ${app.details.code}")
           now    <- Clock.localDateTime
-          group  =  RawGroup(GroupId.of(0), now, None, code, name, Seq.empty)
+          group  =  RawGroup(GroupId.of(0), now, None, code, name)
           result <- repo.exec {
             StoreGroup(
               account     = acc.id,
               accountCode = acc.code,
               application = app,
               group       = group,
-              users       = Seq.empty,
+              users       = users,
               roles       = roles
             )
           }
@@ -307,7 +308,7 @@ object accounts {
             _      <- ZIO.logInfo(s"User '${req.user}' does not exist yet. Creating one")
             maybe  <- identities.getUserByEmail(req.email, acc.tenantCode).either
             fbUser <- maybe.map(ZIO.succeed).getOrElse(fbCreate)
-            cmd    =  StoreUser(id = req.user, email = req.email.toLowerCase, code = UserCode.of(fbUser.getUid), account = acc, kind = None, update = false, active = true)
+            cmd    =  StoreUser(id = req.user, email = req.email.toLowerCase, code = UserCode.of(fbUser.id), account = acc, kind = None, update = false, active = true)
             user   <- repo.exec(cmd)
           yield user
         }
@@ -328,14 +329,11 @@ object accounts {
         _       <- ZIO.logInfo(s"Creating Account for '${req.email}'")
         app     <- ensureApp
         acc     <- ensureAccount(req)
-        groupFn =  ensureGroup(_, _, _, app, acc)
-        user    <- ensureUser(req, acc)
-        admin   <- groupFn(GroupCode.admin, GroupName.of("Admin"), Seq(RoleCode.of("adm")))
-        all     <- groupFn(GroupCode.all  , GroupName.of("Todos"), Seq.empty)
         _       <- repo.exec(LinkAccountToApp(acc = acc.id,  app = app.details.id))
-        _       <- repo.exec(LinkGroupToRoles(group = admin.id, roles = Seq(RoleId.of(1))))
-        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = admin.id, users = Seq(user.id)))
-        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = all  .id, users = Seq(user.id)))
+        user    <- ensureUser(req, acc)
+        create  =  ensureGroup(_, _, _, Seq(user.code), app, acc)
+        admin   <- create(GroupCode.admin, GroupName.of("Admin"), Seq(RoleCode.of("adm")))
+        all     <- create(GroupCode.all  , GroupName.of("Todos"), Seq.empty)
       yield ()
     }
   }
