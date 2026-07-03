@@ -254,8 +254,7 @@ object accounts {
 
     override def create(req: CreateAccount)(using appCode: ApplicationCode) = {
 
-      def ensureGroup(code: GroupCode, name: GroupName, app: RawApplication, acc: RawAccount): Task[RawGroup] = {
-        val roles = if(code == GroupCode.admin) Seq(RoleCode.of("adm")) else Seq.empty
+      def ensureGroup(code: GroupCode, name: GroupName, roles: Seq[RoleCode], app: RawApplication, acc: RawAccount): Task[RawGroup] = {
         for
           now    <- Clock.localDateTime
           group  =  RawGroup(GroupId.of(0), now, None, code, name, Seq.empty)
@@ -329,10 +328,12 @@ object accounts {
         _       <- ZIO.logInfo(s"Creating Account for '${req.email}'")
         app     <- ensureApp
         acc     <- ensureAccount(req)
+        groupFn =  ensureGroup(_, _, _, app, acc)
         user    <- ensureUser(req, acc)
-        admin   <- ensureGroup(GroupCode.admin, GroupName.of("Admin"), app, acc)
-        all     <- ensureGroup(GroupCode.all  , GroupName.of("Todos"), app, acc)
+        admin   <- groupFn(GroupCode.admin, GroupName.of("Admin"), Seq(RoleCode.of("adm")))
+        all     <- groupFn(GroupCode.all  , GroupName.of("Todos"), Seq.empty)
         _       <- repo.exec(LinkAccountToApp(acc = acc.id,  app = app.details.id))
+        _       <- repo.exec(LinkGroupToRoles(group = admin.id, roles = Seq(RoleId.of(1))))
         _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = admin.id, users = Seq(user.id)))
         _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = all  .id, users = Seq(user.id)))
       yield ()
