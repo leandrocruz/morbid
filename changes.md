@@ -1,5 +1,9 @@
 # Morbid
 
+ - [Leandro] Adicionando `CloudUser` como abstração extra não referenciar diretamente o `UserRecord`
+ - [Leandro] Adicionando implementações de teste para `Identities` e `TokenGenerator`
+ - [Leandro] Refatorando a criação dos grupos ao criar uma conta
+
 ## Release v2.3.1
 LTS 02/07/2026
 
