@@ -30,12 +30,14 @@ object MorbidServer extends GuaraApp {
     Scope.default,
     LegacyMorbid.layer,
     AccountManager.layer,
-    Identities.layer,
     MorbidRouter.layer,
     PasswordGenerator.layer,
     PinManager.layer,
     Repo.datasource,
     Repo.layer,
-    TokenGenerator.layer
+
+    //dev
+    TokenGenerator.layer,
+    Identities.layer,
   )
 }

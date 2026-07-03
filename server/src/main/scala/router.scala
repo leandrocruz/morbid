@@ -478,7 +478,7 @@ object router {
         pass   = Password.of(RandomStringUtils.secure().nextAlphanumeric(10))
         legacy <- handleLegacyMorbid(req, acc)
         fbUser <- handleFirebaseUser(legacy, acc, pass)
-        store  = buildRequest(legacy, acc, fbUser.getUid).copy(email = req.email.toLowerCase)
+        store  = buildRequest(legacy, acc, fbUser.id).copy(email = req.email.toLowerCase)
         _      <- ZIO.logInfo(s"Storing user ${store.id} - ${store.email} || Account ${store.account.id} || Tenant ${store.account.tenantCode} || Update: ${store.update}")
         user   <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")
         _      <- ZIO.logInfo(s"User ${user.id} - ${user.email} stored")
@@ -723,7 +723,7 @@ object router {
     private def provisionAccount: AppRoute = role("adm") { request =>
       for
         req     <- request.body.parse[CreateAccount]()
-        _       <- accounts.create(req)
+        _       <- accounts.create(req).tapErrorCause(cause => ZIO.logErrorCause("Error creating account", cause))
         created <- repo.exec(FindUserById(req.user))
       yield created match
         case None        => Response.internalServerError(s"Error provisioning account ${req.email}")
