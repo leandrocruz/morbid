@@ -1,5 +1,8 @@
 # Morbid
 
+## Release v2.5.0
+LTS: 10/07/2026
+
  - [Leandro] Nova rota `POST /account/by-identifier` (protegida por `magic`) que retorna `Option[RawAccount]` (JSON `null` quando não encontrado). Novo `FindAccountByIdentifierRequest(magic, identifier)` em `morbid-commons`, comando `FindAccountByIdentifier` no servidor com query Quill correspondente, e método `accountByIdentifier(request)` no `MorbidClient` (trait, `RemoteMorbidClient`, `LocalMorbidClient` e `FakeMorbidClient`)
  - [Leandro] Nova coluna `accounts.identifier` (nullable, `VARCHAR(256)`) para armazenar CPF/CNPJ da conta. Índice único parcial `accounts_identifier_key ON accounts (identifier) WHERE identifier IS NOT NULL` — duas contas só podem compartilhar `identifier` se ambos forem `NULL`. Removida a constraint `UNIQUE(tenant, name)`: o nome da conta volta a ser apenas rótulo de exibição; a chave de negócio passa a ser `identifier`. Script idempotente em `sql/migrations/2026-06-19-add-account-identifier.sql` (`ADD COLUMN IF NOT EXISTS` + `DROP CONSTRAINT IF EXISTS` + `CREATE UNIQUE INDEX IF NOT EXISTS`, dentro de `BEGIN/COMMIT`)
  - [Leandro] Novo `opaque type AccountIdentifier = String` em `morbid.types` (companion `OpaqueOps`, `JsonEncoder`/`JsonDecoder`, `MappedEncoding` para Quill). Propagado para `RawAccount`, `ProvisionRequest`, `StoreAccountRequest`, `CreateAccount`, `StoreAccount` (command interno) e `AccountRow`
