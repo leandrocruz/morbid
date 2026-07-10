@@ -11,17 +11,18 @@ CREATE TABLE tenants (
 );
 
 CREATE TABLE accounts (
-    id       SERIAL                                         ,
-    created  TIMESTAMP    NOT NULL                          ,
-    deleted  TIMESTAMP                                      ,
-    tenant   BIGINT       NOT NULL REFERENCES tenants (id)  ,
-    active   BOOLEAN      NOT NULL DEFAULT true             ,
-    code     VARCHAR(16)  NOT NULL                          ,
-    name     VARCHAR(256) NOT NULL                          ,
-    UNIQUE      (tenant, name)                              ,
-    UNIQUE      (code)                                      ,
+    id         SERIAL                                         ,
+    created    TIMESTAMP    NOT NULL                          ,
+    deleted    TIMESTAMP                                      ,
+    tenant     BIGINT       NOT NULL REFERENCES tenants (id)  ,
+    active     BOOLEAN      NOT NULL DEFAULT true             ,
+    code       VARCHAR(16)  NOT NULL                          ,
+    name       VARCHAR(256) NOT NULL                          ,
+    identifier VARCHAR(256)                                   ,
+    UNIQUE      (code)                                        ,
     PRIMARY KEY (id)
 );
+CREATE UNIQUE INDEX accounts_identifier_key ON accounts (identifier) WHERE identifier IS NOT NULL;
 
 CREATE TABLE users (
     id       SERIAL                                         ,

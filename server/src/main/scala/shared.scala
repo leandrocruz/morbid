@@ -40,7 +40,7 @@ object utils {
 
   import domain.raw.RawUser
   import org.apache.commons.lang3.exception.ExceptionUtils
-  import guara.errors.ReturnResponseWithExceptionError
+  import guara.errors.GuaraError
   import zio.json.*
   import zio.http.{Body, Response, Header, Headers}
   import zio.http.Status.InternalServerError
@@ -65,26 +65,15 @@ object utils {
   }
 
   extension [T](task: Task[Option[T]])
-    def orFail(message: String): Task[T] = {
+    def orFail(code: Int, message: String): Task[T] = {
       for
         maybe <- task
-        value <- ZIO.fromOption(maybe).mapError(_ => Exception(message))
+        value <- ZIO.fromOption(maybe).mapError(_ => GuaraError.of(code, message))
       yield value
     }
 
   extension [T](task: Task[T]) {
     def refineError(message: String): Task[T] = task.mapError(Exception(message, _))
-
-    def errorToResponse(response: Response) = task.mapError(ReturnResponseWithExceptionError(_, response))
-
-    def asCommonError(code: Int, msg: String) = {
-      def response(error: Throwable) = Response(
-        status  = InternalServerError,
-        headers = Headers(Header.Custom("X-Error-Type", "GCEv0") /* Guara Common Error = GCEv0 */),
-        body    = Body.fromString(CommonError(origin = "Morbid", code, message = msg, trace = Some(ExceptionUtils.getStackTrace(error))).toJson)
-      )
-      task.mapError(e => ReturnResponseWithExceptionError(e, response(e)))
-    }
   }
 
   extension [T](op: Option[T])
@@ -102,15 +91,6 @@ object proto {
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
   case class EmitToken(email: Email, magic: Magic, days: Option[Int]) derives JsonCodec
   case class SwapTokenRequest(token: String, magic: Magic) derives JsonCodec
-
-  case class ProvisionNameTaken (name: AccountName) extends Exception(s"Account name already taken: $name")
-  case class ProvisionEmailTaken(email: Email)      extends Exception(s"Email already registered: $email")
-  case class ProvisionBadIntent (intent: String)    extends Exception(s"Unsupported provision intent: '$intent'")
-
-  /** Thrown when /login sees a verified identity that does not map to any existing user and
-    * cannot be auto-provisioned (i.e. it's not a SAML identity for a known provider). The route
-    * translates this to a 404 directing the client to /provision. */
-  case class UnknownUser(email: Email) extends Exception(s"User not registered: $email")
 
   given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen
@@ -209,12 +189,13 @@ object commands {
   case class DefineUserPin(user: UserId, pin: Sha256Hash) extends Command[Unit]
 
   case class StoreAccount(
-    id     : AccountId  , // Maybe 0
-    tenant : TenantId   ,
-    code   : AccountCode,
-    name   : AccountName,
-    active : Boolean,
-    update : Boolean,
+    id         : AccountId  , // Maybe 0
+    tenant     : TenantId   ,
+    code       : AccountCode,
+    name       : AccountName,
+    active     : Boolean,
+    update     : Boolean,
+    identifier : Option[AccountIdentifier] = None,
   ) extends Command[RawAccount]
 
   case class StoreUser(
@@ -256,9 +237,10 @@ object commands {
     app     : ApplicationCode
   ) extends Command[Seq[RawRole]]
 
-  case class FindAccountByProvider(code: ProviderCode) extends Command[Option[RawAccount]]
-  case class FindAccountByCode    (code: AccountCode)  extends Command[Option[RawAccount]]
-  case class FindAccountById      (id: AccountId)      extends Command[Option[RawAccount]]
+  case class FindAccountByProvider  (code: ProviderCode)         extends Command[Option[RawAccount]]
+  case class FindAccountByCode      (code: AccountCode)          extends Command[Option[RawAccount]]
+  case class FindAccountById        (id: AccountId)              extends Command[Option[RawAccount]]
+  case class FindAccountByIdentifier(identifier: AccountIdentifier) extends Command[Option[RawAccount]]
 
   case class FindProviderByAccount(account: AccountId)                      extends Command[Option[RawIdentityProvider]]
   case class FindProviderByDomain(domain: Domain, code: Option[TenantCode]) extends Command[Option[RawIdentityProvider]]

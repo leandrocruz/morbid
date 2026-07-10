@@ -4,8 +4,10 @@ import zio.*
 
 object client {
 
-  import guara.errors.{ReturnResponseError, ReturnResponseWithExceptionError}
-  import guara.utils.{parse, queryParams}
+  import guara.errors.{ReturnResponseError, ReturnUnifiedError}
+  import guara.uef
+  import guara.utils.queryParams
+  import io.jsonwebtoken.{Jws, Jwts}
   import morbid.domain.*
   import morbid.domain.raw.*
   import morbid.domain.requests.{*, given}
@@ -13,7 +15,6 @@ object client {
   import morbid.types.*
   import zio.http.*
   import zio.json.*
-  import io.jsonwebtoken.{Jwts, Jws}
 
   import java.nio.file.{Files, Paths}
   import java.time.{LocalDateTime, ZoneId, ZonedDateTime}
@@ -23,6 +24,8 @@ object client {
   trait MorbidClient {
     def proxy             (request: Request)                                                                            : Task[Response]
     def provision         (request: ProvisionRequest)                                                                   : Task[Token]
+    def provisionRaw      (request: ProvisionRequest)                                                                   : Task[Response]
+    def accountByIdentifier(request: FindAccountByIdentifierRequest)                                                    : Task[Option[RawAccount]]
     def tokenFrom         (token: RawToken)                                                                             : Task[Token]
     def groups                                                             (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
     def groupsByCode      (groups: Seq[GroupCode])                         (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
@@ -78,43 +81,60 @@ object client {
     private val applicationJson = Headers(Chunk(Header.ContentType(MediaType("application", "json"))))
     private def morbidToken(token: RawToken) = Headers(Chunk(Header.Custom(morbid.MorbidHeaders.Token, token.string)))
 
-    private def perform(request: Request): Task[Response] = for {
-      response <- ZClient.request(request).provideSome(ZLayer.succeed(scope), ZLayer.succeed(client))
-    } yield response
-
-    override def proxy(request: Request): Task[Response] = {
-      for {
-        resp <- perform(request.copy(url = base ++ request.url))
-      } yield resp
+    // ZClient.batched fully buffers the response body before returning. Using ZClient.request
+    // here returns a streaming response whose body is bound to the request scope — by the time
+    // callers (e.g. narrowResponse in presto-api) try to read the body, the underlying connection
+    // has been released and body.asString hangs forever waiting for bytes that never arrive.
+    //
+    // We deliberately use `Client.default` per call instead of the injected shared `client` field.
+    // The shared client keeps a connection pool that can wedge in a "peer-down" state if the
+    // remote was unreachable at any prior point — even after the remote comes back, the pool
+    // stays poisoned and every subsequent call fails with `Connection refused`. Building a fresh
+    // client per call costs an extra TCP handshake (~tens of ms) but is bulletproof against the
+    // pool getting stuck.
+    private def perform(request: Request): Task[Response] = {
+      for
+        _     <- ZIO.logInfo(s"Calling '${request.url.encode}'")
+        res   <- ZClient.batched(request).provide(Client.default)
+        isUEF =  res.headers.exists(uef.isUEFHeader)
+        _     <- ZIO.logInfo(s"Result is ${res.status.code} (uef ? $isUEF)")
+        _     <- ZIO.when(isUEF) { ZIO.fail(ReturnResponseError(res)) }
+      yield res
     }
 
-    override def provision(request: ProvisionRequest): Task[Token] = post[ProvisionRequest, Token](None,        base / "provision", request)
-    override def tokenFrom(token: RawToken)          : Task[Token] = post[SimpleToken     , Token](Some(token), base / "verify", SimpleToken(token))
+    override def proxy(request: Request): Task[Response] = {
+      for
+        resp <- perform(request.copy(url = base ++ request.url))
+      yield resp
+    }
+
+    override def provisionRaw(request: ProvisionRequest): Task[Response] = perform(Request.post(base / "provision", Body.fromString(request.toJson)).copy(headers = applicationJson))
+    override def provision(request: ProvisionRequest)   : Task[Token]    = post[ProvisionRequest, Token](None, base / "provision", request)
+    override def tokenFrom(token: RawToken)             : Task[Token]    = post[SimpleToken     , Token](Some(token), base / "verify", SimpleToken(token))
+    override def accountByIdentifier(request: FindAccountByIdentifierRequest): Task[Option[RawAccount]] = post[FindAccountByIdentifierRequest, Option[RawAccount]](None, base / "account" / "by-identifier", request)
 
     private def exec[T](token: Option[RawToken], req: Request)(using dec: JsonDecoder[T]): Task[T] = {
 
-      def badGateway(message: String, cause: Option[Throwable] = None) = {
-        val resp = Response.error(Status.BadGateway, message)
-        cause match
-          case Some(error) => ReturnResponseWithExceptionError(error, resp)
-          case None        => ReturnResponseError(resp)
+      def badGateway(cause: Throwable) = {
+        ReturnUnifiedError(
+          message = s"Error calling Morbid '${req.url.encode}'",
+          cause   = Some(cause)
+        )
       }
 
-      def warnings(response: Response) = response.headers.get("warning")
-
-      def explain(res: Response): Task[Exception] = {
-        res.body.asString.either.map {
-          case Right(body) if body.nonEmpty => Exception(s"Morbid '${req.url.encode}' returned ${res.status.code}: $body")
-          case _                            => Exception(s"Morbid '${req.url.encode}' returned ${res.status.code} (empty body)")
-        }
+      def handleParseError(res: Response, body: String)(error: String) = {
+        ReturnUnifiedError(
+          message = s"Error parsing morbid server response: '$error'",
+          status  = res.status.code,
+          cause   = Some(Exception(s"Morbid '${req.url.encode}' returned ${res.status.code}: $body"))
+        )
       }
 
-      for {
-        _      <- ZIO.log(s"Calling '${req.url.encode}'")
-        res    <- perform(req.copy(headers = req.headers ++ token.map(morbidToken).getOrElse(Headers.empty))).mapError(e => badGateway(s"Error calling Morbid '${req.url.encode}': ${e.getMessage}"))
-        _      <- ZIO.when(res.status.code != 200) { explain(res).flatMap(ZIO.fail(_)) }
-        result <- res.body.parse[T]().mapError(_ => ReturnResponseError(res))
-      } yield result
+      for
+        res    <- perform(req.copy(headers = req.headers ++ token.map(morbidToken).getOrElse(Headers.empty))).mapError(badGateway)
+        str    <- res.body.asString
+        result <- ZIO.fromEither(str.fromJson[T]).mapError(handleParseError(res, str))
+      yield result
     }
 
     private def delete[T] (token: Option[RawToken], url: URL)           (using dec: JsonDecoder[T])                     : Task[T] = exec(token, Request.get(url))
@@ -170,6 +190,8 @@ object client {
 
     override def proxy             (request: Request)                                                                 = remote.proxy(request)
     override def provision         (request: ProvisionRequest)                                                        = remote.provision(request)
+    override def provisionRaw      (request: ProvisionRequest)                                                        = remote.provisionRaw(request)
+    override def accountByIdentifier(request: FindAccountByIdentifierRequest)                                         = remote.accountByIdentifier(request)
     override def groups                                                 (using token: RawToken, app: ApplicationCode) = remote.groups
     override def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode) = remote.groupsByCode(groups)
     override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = remote.groupByCode(group)
@@ -239,6 +261,8 @@ object client {
     override def groupsByCode      (groups: Seq[GroupCode])              (using token: RawToken, app: ApplicationCode) = ZIO.succeed { _groups.filter(g => groups.contains(g.code)) }
     override def proxy             (request: Request)                                                                  = ZIO.fail(Exception("TODO"))
     override def provision         (request: ProvisionRequest)                                                         = ZIO.fail(Exception("TODO"))
+    override def provisionRaw      (request: ProvisionRequest)                                                         = ZIO.fail(Exception("TODO"))
+    override def accountByIdentifier(request: FindAccountByIdentifierRequest)                                          = ZIO.fail(Exception("TODO"))
     override def usersByGroupByCode(group: GroupCode)                    (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
     override def groupsByUser      (request: GetUserGroupsRequest)       (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_groups)
     override def setUserGroups     (request: SetUserGroupsRequest)       (using token: RawToken, app: ApplicationCode) = ZIO.succeed(true)

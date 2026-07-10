@@ -107,13 +107,14 @@ object repo {
   )
 
   private case class AccountRow(
-    id       : AccountId,
-    created  : LocalDateTime,
-    deleted  : Option[LocalDateTime],
-    tenant   : TenantId,
-    active   : Boolean,
-    code     : AccountCode,
-    name     : AccountName,
+    id         : AccountId,
+    created    : LocalDateTime,
+    deleted    : Option[LocalDateTime],
+    tenant     : TenantId,
+    active     : Boolean,
+    code       : AccountCode,
+    name       : AccountName,
+    identifier : Option[AccountIdentifier],
   )
 
   private case class UserRow(
@@ -309,6 +310,7 @@ object repo {
     private inline given MappedEncoding[TenantName, String]           (TenantName.value)
     private inline given MappedEncoding[AccountName, String]          (AccountName.value)
     private inline given MappedEncoding[AccountCode, String]          (AccountCode.value)
+    private inline given MappedEncoding[AccountIdentifier, String]    (AccountIdentifier.value)
     private inline given MappedEncoding[ApplicationName, String]      (ApplicationName.value)
     private inline given MappedEncoding[ApplicationCode, String]      (ApplicationCode.value)
     private inline given MappedEncoding[GroupName, String]            (GroupName.value)
@@ -343,6 +345,7 @@ object repo {
     private inline given MappedEncoding[String, TenantName]           (TenantName.of)
     private inline given MappedEncoding[String, AccountName]          (AccountName.of)
     private inline given MappedEncoding[String, AccountCode]          (AccountCode.of)
+    private inline given MappedEncoding[String, AccountIdentifier]    (AccountIdentifier.of)
     private inline given MappedEncoding[String, ApplicationName]      (ApplicationName.of)
     private inline given MappedEncoding[String, ApplicationCode]      (ApplicationCode.of)
     private inline given MappedEncoding[String, GroupName]            (GroupName.of)
@@ -396,9 +399,10 @@ object repo {
         case r: StoreUser              => storeUser(r)
         case r: DefineUserPin          => setUserPin(r)
         case r: GetUserPin             => getUserPin(r)
-        case r: FindAccountByCode      => accountByCode(r)
-        case r: FindAccountById        => accountById(r)
-        case r: FindAccountByProvider  => accountByProvider(r)
+        case r: FindAccountByCode       => accountByCode(r)
+        case r: FindAccountById         => accountById(r)
+        case r: FindAccountByProvider   => accountByProvider(r)
+        case r: FindAccountByIdentifier => accountByIdentifier(r)
         case r: FindApplication        => applicationGiven(r)
         case r: FindApplicationDetails => applicationDetails(r)
         case r: FindApplications       => applicationDetailsGiven(r)
@@ -714,7 +718,8 @@ object repo {
         tenantCode = tenant.code,
         active     = true,
         code       = request.code,
-        name       = request.name
+        name       = request.name,
+        identifier = request.identifier
       )
 
       def store(raw: RawAccount): Task[RawAccount] = {
@@ -1321,6 +1326,21 @@ object repo {
         for
           ten <- tenants                         if ten.active && ten.deleted.isEmpty
           acc <- accounts.join(_.tenant == ten.id) if acc.active && acc.deleted.isEmpty && acc.id == lift(request.id)
+        yield (ten, acc)
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.headOption.map {
+        case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform
+      }
+    }
+
+    private def accountByIdentifier(request: FindAccountByIdentifier): Task[Option[RawAccount]] = {
+      inline def query = quote {
+        for
+          ten <- tenants                           if ten.active && ten.deleted.isEmpty
+          acc <- accounts.join(_.tenant == ten.id) if acc.active && acc.deleted.isEmpty && acc.identifier.contains(lift(request.identifier))
         yield (ten, acc)
       }
 
