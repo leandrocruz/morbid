@@ -14,6 +14,7 @@ object client {
   import morbid.domain.token.*
   import morbid.types.*
   import zio.http.*
+  import zio.http.netty.NettyConfig
   import zio.json.*
 
   import java.nio.file.{Files, Paths}
@@ -56,13 +57,42 @@ object client {
 
   object MorbidClient {
 
-    val layer = ZLayer {
+    // Dedicated Netty client for morbid. Built once at layer construction and
+    // shared across every call — the whole Netty stack (event-loop group, boss
+    // thread, DNS resolver) is created a single time instead of per request.
+    //
+    // Connection pool is disabled: every request opens a fresh TCP connection.
+    // This kills the "peer-down" poisoning that used to survive a morbid
+    // restart — the shared pool would hang on to now-dead connections and
+    // every subsequent call would fail with "Connection refused" even after
+    // morbid was back. With no pool, there is nothing to poison; the next
+    // call just connects.
+    //
+    // DNS is cached with a short unknown-host TTL (5s) so a failed lookup
+    // during a brief outage does not lock us out for the default 1 minute.
+    // Successful lookups keep the default 10-minute TTL with background
+    // refresh, which is fine for morbid's stable service address.
+    private val dnsConfig: DnsResolver.Config =
+      DnsResolver.Config(
+        ttl                      = 10.minutes,
+        unknownHostTtl           = 5.seconds,
+        maxCount                 = 4096,
+        maxConcurrentResolutions = 16,
+        expireAction             = DnsResolver.ExpireAction.Refresh,
+        refreshRate              = 2.seconds,
+      )
+
+    private val dedicatedClient: ZLayer[Any, Throwable, Client] =
+      ZLayer.succeed(ZClient.Config.default.disabledConnectionPool) ++
+      ZLayer.succeed(NettyConfig.defaultWithFastShutdown)           ++
+      (ZLayer.succeed(dnsConfig) >>> DnsResolver.live) >>> Client.live
+
+    val layer: ZLayer[MorbidClientConfig, Throwable, MorbidClient] = ZLayer.scoped {
       for {
         config <- ZIO.service[MorbidClientConfig]
-        scope  <- ZIO.service[Scope]
-        client <- ZIO.service[Client]
+        client <- dedicatedClient.build.map(_.get[Client])
         url    <- ZIO.fromEither(URL.decode(config.url))
-        remote =  RemoteMorbidClient(url, client, scope)
+        remote =  RemoteMorbidClient(url, client)
         impl   <- config.mode match
           case "local" => LocalMorbidClient.make(config, remote)
           case _       => ZIO.succeed(remote)
@@ -72,7 +102,7 @@ object client {
     def fake(app: ApplicationCode) = ZLayer.succeed(FakeMorbidClient(app))
   }
 
-  case class RemoteMorbidClient(base: URL, client: Client, scope: Scope) extends MorbidClient {
+  case class RemoteMorbidClient(base: URL, client: Client) extends MorbidClient {
 
     case class SimpleToken(token: RawToken)
 
@@ -81,21 +111,14 @@ object client {
     private val applicationJson = Headers(Chunk(Header.ContentType(MediaType("application", "json"))))
     private def morbidToken(token: RawToken) = Headers(Chunk(Header.Custom(morbid.MorbidHeaders.Token, token.string)))
 
-    // ZClient.batched fully buffers the response body before returning. Using ZClient.request
-    // here returns a streaming response whose body is bound to the request scope — by the time
-    // callers (e.g. narrowResponse in presto-api) try to read the body, the underlying connection
-    // has been released and body.asString hangs forever waiting for bytes that never arrive.
-    //
-    // We deliberately use `Client.default` per call instead of the injected shared `client` field.
-    // The shared client keeps a connection pool that can wedge in a "peer-down" state if the
-    // remote was unreachable at any prior point — even after the remote comes back, the pool
-    // stays poisoned and every subsequent call fails with `Connection refused`. Building a fresh
-    // client per call costs an extra TCP handshake (~tens of ms) but is bulletproof against the
-    // pool getting stuck.
+    // `batched` fully buffers the response body before returning. Using
+    // `request` instead would give a streaming body bound to the client's
+    // scope — by the time callers (e.g. narrowResponse in presto-api) read
+    // it, the connection has been released and body.asString hangs.
     private def perform(request: Request): Task[Response] = {
       for
         _     <- ZIO.logInfo(s"Calling '${request.url.encode}'")
-        res   <- ZClient.batched(request).provide(Client.default)
+        res   <- client.batched(request)
         isUEF =  res.headers.exists(uef.isUEFHeader)
         _     <- ZIO.logInfo(s"Result is ${res.status.code} (uef ? $isUEF)")
         _     <- ZIO.when(isUEF) { ZIO.fail(ReturnResponseError(res)) }

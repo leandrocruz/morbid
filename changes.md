@@ -1,5 +1,7 @@
 # Morbid
 
+ - [Leandro] Opções customizadas para o cliente http do Morbid
+
 ## Release v2.5.0
 LTS: 10/07/2026
 
