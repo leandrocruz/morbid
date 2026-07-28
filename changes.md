@@ -1,5 +1,9 @@
 # Morbid
 
+ - [Leandro] Compilação cross jvm/js
+ - [Leandro] Usando sbt 1.9.6
+ - [Leandro] Atualizando a versão das dependências
+
 ## Release v2.6.0
 LTS: 17/07/2026
 
