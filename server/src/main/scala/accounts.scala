@@ -33,7 +33,7 @@ object accounts {
   }
 
   object AccountManager {
-    val layer = ZLayer.fromFunction(LocalAccountManager.apply _)
+    val layer = ZLayer.fromFunction(LocalAccountManager.apply)
   }
 
   case class LocalAccountManager(config: MorbidConfig, repo: Repo, legacyMorbid: LegacyMorbid, pins: PinManager, identities: Identities) extends AccountManager {

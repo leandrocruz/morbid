@@ -17,7 +17,7 @@ object pins {
   }
 
   object PinManager {
-    val layer = ZLayer.fromFunction(DatabasePinManager.apply _)
+    val layer = ZLayer.fromFunction(DatabasePinManager.apply)
   }
 
   case class DatabasePinManager(config: MorbidConfig, repo: Repo) extends PinManager {

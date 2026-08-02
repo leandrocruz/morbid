@@ -1023,11 +1023,14 @@ object repo {
     }
 
     private def providerGiven(request: FindProviderByAccount): Task[Option[RawIdentityProvider]] = {
+
+      given Ord[Nothing] = Ord.desc
+
       inline def query = quote {
         for {
-          t <- tenants                                                        if t.active && t.deleted.isEmpty
-          a <- accounts  .join(_.tenant == t.id)                              if a.active && a.deleted.isEmpty && a.id == lift(request.account)
-          p <- providers .join(_.account == a.id).sortBy(_.created)(Ord.desc) if p.active && p.deleted.isEmpty
+          t <- tenants                                              if t.active && t.deleted.isEmpty
+          a <- accounts  .join(_.tenant == t.id)                    if a.active && a.deleted.isEmpty && a.id == lift(request.account)
+          p <- providers .join(_.account == a.id).sortBy(_.created) if p.active && p.deleted.isEmpty
         } yield p
       }
 
@@ -1038,13 +1041,14 @@ object repo {
 
     private def providerGiven(request: FindProviderByDomain): Task[Option[RawIdentityProvider]] = {
 
+      given Ord[Nothing] = Ord.desc
       val code = request.code.getOrElse(TenantCode.DEFAULT)
 
       inline def query = quote {
         for {
-          t <- tenants                                                       if t.active && t.deleted.isEmpty && t.code == lift(code)
-          a <- accounts .join(_.tenant == t.id)                              if a.active && a.deleted.isEmpty
-          p <- providers.join(_.account == a.id).sortBy(_.created)(Ord.desc) if p.active && p.deleted.isEmpty && p.domain == lift(request.domain)
+          t <- tenants                                             if t.active && t.deleted.isEmpty && t.code == lift(code)
+          a <- accounts .join(_.tenant == t.id)                    if a.active && a.deleted.isEmpty
+          p <- providers.join(_.account == a.id).sortBy(_.created) if p.active && p.deleted.isEmpty && p.domain == lift(request.domain)
         } yield p
       }
 

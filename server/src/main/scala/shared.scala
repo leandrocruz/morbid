@@ -99,7 +99,7 @@ object passwords {
   }
 
   object PasswordGenerator {
-    val layer: ZLayer[Any, Nothing, PasswordGenerator] = ZLayer.fromFunction(DefaultPasswordGenerator.apply _)
+    val layer: ZLayer[Any, Nothing, PasswordGenerator] = ZLayer.fromFunction(() => DefaultPasswordGenerator())
   }
 
 }
