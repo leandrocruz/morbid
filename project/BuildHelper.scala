@@ -66,20 +66,21 @@ object BuildHelper {
   lazy val serverDependencies = allDependencies ++ Seq(dependencies.commonsLang, dependencies.guara)
 
   def commonSettings(scalaVersion: String) = CrossVersion.partialVersion(scalaVersion) match {
-    case Some((3, _))                  => Seq.empty
-    case Some((2, 12)) | Some((2, 13)) => Seq("-Ywarn-unused:params")
-    case _                             => Seq.empty
+    case Some((3, _))                  => Seq("-release:17")
+    case Some((2, 12)) | Some((2, 13)) => Seq("-release:17", "-Ywarn-unused:params")
+    case _                             => Seq("-release:17")
   }
 
   def stdSettings = Seq(
-    ThisBuild / fork                         := true,
-    ThisBuild / scalaVersion                 := ScalaVersion,
-    ThisBuild / scalacOptions                := commonSettings(scalaVersion.value),
-    ThisBuild / organization                 := "morbid",
-    ThisBuild / version                      := "v2.7.0-SNAPSHOT",
-    ThisBuild / doc / sources                := Seq.empty,
-    ThisBuild / packageDoc / publishArtifact := false,
-    ThisBuild / resolvers                    += Resolver.mavenLocal,
-    ThisBuild / testFrameworks               += new TestFramework("zio.test.sbt.ZTestFramework")
+    ThisBuild / fork                         :=  true,
+    ThisBuild / javacOptions                 ++= Seq("-source:17", "-target:17"),
+    ThisBuild / scalaVersion                 :=  ScalaVersion,
+    ThisBuild / scalacOptions                :=  commonSettings(scalaVersion.value),
+    ThisBuild / organization                 :=  "morbid",
+    ThisBuild / version                      :=  "v2.7.0-SNAPSHOT",
+    ThisBuild / doc / sources                :=  Seq.empty,
+    ThisBuild / packageDoc / publishArtifact :=  false,
+    ThisBuild / resolvers                    +=  Resolver.mavenLocal,
+    ThisBuild / testFrameworks               +=  new TestFramework("zio.test.sbt.ZTestFramework")
   )
 }

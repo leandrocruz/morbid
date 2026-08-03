@@ -6,7 +6,7 @@ object accounts {
 
   import guara.errors.GuaraError
   import morbid.errors.*
-  import morbid.MorbidError.*
+  import morbid.MorbidErrorCodes.*
   import morbid.commands.*
   import morbid.config.MorbidConfig
   import morbid.domain.*

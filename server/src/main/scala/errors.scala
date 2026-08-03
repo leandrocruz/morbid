@@ -2,7 +2,7 @@ package morbid
 
 object errors {
 
-  import morbid.MorbidError.*
+  import morbid.MorbidErrorCodes.*
   import guara.errors.GuaraError.{fail, of}
   import morbid.types.*
   import zio.http.Status

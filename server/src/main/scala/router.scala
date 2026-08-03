@@ -5,14 +5,14 @@ import guara.router.{Echo, Router}
 import guara.utils.SafeResponse.*
 import guara.utils.{Origin, ensureResponse, parse}
 import io.scalaland.chimney.dsl.*
-import morbid.MorbidError.*
+import morbid.MorbidErrorCodes.*
 import morbid.accounts.AccountManager
 import morbid.commands.*
 import morbid.config.MorbidConfig
 import morbid.domain.*
 import morbid.domain.raw.*
 import morbid.domain.requests.*
-import morbid.domain.token.{SingleAppToken, SingleAppUser, Token}
+import morbid.domain.token.{RawToken, SingleAppToken, SingleAppUser, Token}
 import morbid.gip.*
 import morbid.legacy.{CreateLegacyAccountRequest, CreateLegacyUserRequest, LegacyMorbid, LegacyUser}
 import morbid.passwords.PasswordGenerator
@@ -66,8 +66,8 @@ object cookies {
   private val clearedOriginal = original.copy(maxAge = Some(0.seconds))
 
   extension (r: Response) {
-    def loggedIn(tk: String)        : Response = r.addCookie(auth).addCookie(token.copy(content = tk))
-    def stashOriginal(tk: String)   : Response = r.addCookie(original.copy(content = tk))
+    def loggedIn(tk: RawToken)      : Response = r.addCookie(auth).addCookie(token.copy(content = tk.string))
+    def stashOriginal(tk: RawToken) : Response = r.addCookie(original.copy(content = tk.string))
     def clearOriginal               : Response = r.addCookie(clearedOriginal)
     def logOff                      : Response = r.addCookie(auth.copy(maxAge = Some(0.seconds))).addCookie(token.copy(maxAge = Some(0.seconds))).addCookie(clearedOriginal)
   }
@@ -84,7 +84,7 @@ object router {
   private given Origin   = Origin.of("MorbidServer")
 
   object MorbidRouter {
-    val layer = ZLayer.fromFunction(MorbidRouter.apply _)
+    val layer = ZLayer.fromFunction(MorbidRouter.apply)
   }
 
   case class LoginSuccess(email: String, admin: Boolean)
@@ -98,13 +98,7 @@ object router {
     passGen    : PasswordGenerator,
     tokens     : TokenGenerator,
     legacy     : LegacyMorbid,
-  ) extends Router {
-
-    private def protect(r: AppRoute)(app: String, request: Request): Task[Response] = {
-      ensureResponse(appRoute(ApplicationCode.of(app), tokenFrom)(r)(request)).toTask
-    }
-
-    private def forbidden(cause: Throwable) = GuaraError.of(Forbidden, Status.Forbidden, s"Error verifying token")(cause)
+  ) extends Router with MorbidRouterOps {
 
     private def ensureMagic(magic: Magic) = {
       ZIO.when(!cfg.magic.isValid(magic)) {
@@ -125,15 +119,11 @@ object router {
         case (Some(header), _) => test(header)
         case (_, Some(cookie)) => test(cookie.content)
     }
-
-    private def rawTokenFrom(request: Request): Option[String] = {
-      request.headers.get(morbid.MorbidHeaders.Token).orElse(request.cookie(morbid.MorbidCookies.Token).map(_.content))
-    }
-
-    private def tokenFrom(request: Request): Task[Token] = {
+    
+    override def tokenFrom(request: Request): Task[Token] = {
       rawTokenFrom(request) match
         case None      => errors.notAuthorized("Authorization cookie or header is missing")
-        case Some(raw) => tokens.verify(raw).mapError(forbidden)
+        case Some(raw) => tokens.verify(raw).mapError(MorbidError.forbidden)
     }
 
     private def applicationDetailsGiven(request: Request): Task[Response] = ensureResponse {
@@ -210,7 +200,7 @@ object router {
         case Some(provider) => Response.json(provider.toJson)
     }
 
-    private def loginResponse(token: Token, encoded: String) = {
+    private def loginResponse(token: Token, encoded: RawToken) = {
       Response.json(token.toJson).loggedIn(encoded)
     }
 
@@ -288,7 +278,7 @@ object router {
           _        <- ensureMagic(req.magic)
           (_, enc) <- tokenGiven(req.email, req.days.getOrElse(365), Some(owner)) { ensureUser(req.email) }
           _        <- ZIO.logWarning(s"Service Account Token '${req.email}' created by '${owner.user.details.email}'")
-        yield Response.text(enc)
+        yield Response.text(enc.string)
       }.toTask
     }
 
@@ -302,10 +292,10 @@ object router {
         _       <- ZIO.logInfo(s"Legacy user found: ${user.email}")
         result  <- tokenGiven(user.email) { maybe => ZIO.fromOption(maybe).mapError(_ => GuaraError.of(UserNotFound, s"User '${user.email}' not found in morbid")) }
         _       <- ZIO.logInfo(s"Token swapped for user '${user.email}'")
-      yield Response.text(result._2)
+      yield Response.text(result._2.string)
     }.toTask
 
-    private def tokenGiven(email: Email, days: Int = 1, owner: Option[Token] = None)(ensureUser: Option[RawUser] => Task[RawUser]): Task[(Token, String)] = {
+    private def tokenGiven(email: Email, days: Int = 1, owner: Option[Token] = None)(ensureUser: Option[RawUser] => Task[RawUser]): Task[(Token, RawToken)] = {
       for
         maybeUser <- repo.exec(FindUserByEmail(email)).mapError(GuaraError.of(UserNotFound, s"Error locating user '$email'"))
         user      <- ensureUser(maybeUser)            .mapError(GuaraError.of(UsersError, s"Error ensuring user '$email'"))
@@ -330,7 +320,7 @@ object router {
 
       def plainLogoff = ZIO.succeed(Response.json(LogoffResponse(restored = false).toJson).logOff)
 
-      def restore(raw: String): Task[Response] = {
+      def restore(raw: RawToken): Task[Response] = {
         tokens.verify(raw).foldZIO(
           failure = err => ZIO.logWarning(s"Stashed impersonator token is invalid: ${err.getMessage}") *> plainLogoff,
           success = impersonator =>
@@ -339,7 +329,7 @@ object router {
         )
       }
 
-      request.cookie(morbid.MorbidCookies.OriginalToken).map(_.content).filter(_.nonEmpty) match
+      request.cookie(morbid.MorbidCookies.OriginalToken).map(_.content).filter(_.nonEmpty).map(RawToken.of) match
         case Some(raw) => restore(raw)
         case None      => plainLogoff
     }
@@ -548,8 +538,8 @@ object router {
 
     private def verify(request: Request): Task[Response] = ensureResponse {
       for {
-        req   <- request.body.parse[VerifyMorbidTokenRequest]().mapError(forbidden)
-        token <- tokens.verify(req.token)                      .mapError(forbidden)
+        req   <- request.body.parse[VerifyMorbidTokenRequest]().mapError(MorbidError.forbidden)
+        token <- tokens.verify(req.token)                      .mapError(MorbidError.forbidden)
       } yield Response.json(token.toJson)
     }.toTask
 

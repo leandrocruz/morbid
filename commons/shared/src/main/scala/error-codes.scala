@@ -1,6 +1,6 @@
 package morbid
 
-object MorbidError {
+object MorbidErrorCodes {
 
   val Forbidden           = 1
   val Unauthorized        = 2

@@ -1,5 +1,6 @@
 package morbid
 
+import morbid.domain.token.RawToken
 import zio.*
 
 object tokens {
@@ -19,9 +20,9 @@ object tokens {
   import io.scalaland.chimney.dsl.*
 
   trait TokenGenerator {
-    def verify(payload: String)              : Task[Token]
+    def verify(raw: RawToken)                : Task[Token]
     def asToken(user: RawUser, days: Int = 1): Task[Token]
-    def encode(token: Token)                 : Task[String]
+    def encode(token: Token)                 : Task[RawToken]
   }
 
   object TokenGenerator {
@@ -77,13 +78,14 @@ object tokens {
       )
     )
 
-    override def verify(payload: String)           = ZIO.succeed(deflt)
+    override def verify(payload: RawToken)         = ZIO.succeed(deflt)
     override def asToken(user: RawUser, days: Int) = ZIO.succeed(deflt)
-    override def encode(token: Token)              = ZIO.succeed("FAKE")
+    override def encode(token: Token)              = ZIO.succeed(RawToken.of("FAKE"))
   }
 
   private case class FakeTokenGenerator(zone: ZoneId) extends TokenGenerator {
-    override def encode(token: Token)   : Task[String] = ZIO.succeed("TODO: encode token")
+
+    override def encode(token: Token) = ZIO.succeed(RawToken.of("TODO: encode token"))
 
     override def asToken(user: RawUser, days: Int) : Task[Token]  = {
       for {
@@ -96,7 +98,7 @@ object tokens {
       )
     }
 
-    override def verify(payload: String) : Task[Token]  = {
+    override def verify(payload: RawToken) = {
 
       val roles = Seq(
         RawRole(
@@ -178,7 +180,7 @@ object tokens {
     /**
      * https://github.com/jwtk/jjwt#jwt-create
      */
-    override def encode(token: Token): Task[String] = {
+    override def encode(token: Token) = {
 
       def build(content: String) = ZIO.attempt {
         Jwts
@@ -196,10 +198,10 @@ object tokens {
       for {
         encoded <- ZIO.attempt(token.toJson)
         result  <- build(encoded)
-      } yield result
+      } yield RawToken.of(result)
     }
 
-    override def verify(payload: String): Task[Token] = {
+    override def verify(payload: RawToken): Task[Token] = {
 
       def asToken(str: String): Task[Token] = {
         ZIO.fromEither(str.fromJson[Token]).mapError(new Exception(_))
@@ -213,7 +215,7 @@ object tokens {
       }
 
       for {
-        generic <- ZIO.attempt(parser.parse(payload))
+        generic <- ZIO.attempt(parser.parse(payload.string))
         str     <- ZIO.attempt(generic.accept(Jws.CONTENT).getPayload)
         token   <- asToken(new String(str))
         now     <- Clock.localDateTime

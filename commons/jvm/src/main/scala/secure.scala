@@ -1,47 +1,11 @@
 package morbid
 
-object roles {
-
-  import types.{ApplicationCode, RoleCode}
-  import domain.token.{Token, SingleAppToken, HasRoles}
-
-  given Conversion[String, Role] with
-    def apply(code: String): Role = SingleRole(RoleCode.of(code))
-
-  sealed trait Role {
-    infix def or  (code: String) : Role = or(SingleRole(RoleCode.of(code)))
-    infix def or  (code: Role)   : Role = OrRole(this, code)
-    infix def and (code: String) : Role = and(SingleRole(RoleCode.of(code)))
-    infix def and (code: Role)   : Role = AndRole(this, code)
-
-    def isSatisfiedBy(token: Token)(using ApplicationCode): Boolean
-    def isSatisfiedBy(token: SingleAppToken): Boolean
-  }
-
-  private case class SingleRole(code: RoleCode) extends Role {
-    override def toString = RoleCode.value(code)
-    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = tk.hasRole(code)
-    override def isSatisfiedBy(tk: SingleAppToken)              : Boolean = tk.hasRole(code)
-  }
-
-  private case class OrRole(r1: Role, r2: Role) extends Role {
-    override def toString = s"($r1 || $r2)"
-    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = r1.isSatisfiedBy(tk) || r2.isSatisfiedBy(tk)
-    override def isSatisfiedBy(tk: SingleAppToken)              : Boolean = r1.isSatisfiedBy(tk) || r2.isSatisfiedBy(tk)
-  }
-
-  private case class AndRole(r1: Role, r2: Role) extends Role {
-    override def toString = s"($r1 && $r2)"
-    override def isSatisfiedBy(tk: Token)(using ApplicationCode): Boolean = r1.isSatisfiedBy(tk) && r2.isSatisfiedBy(tk)
-    override def isSatisfiedBy(tk: SingleAppToken)              : Boolean = r1.isSatisfiedBy(tk) && r2.isSatisfiedBy(tk)
-  }
-}
-
 object secure {
 
   import domain.raw.RawUserDetails
-  import types.ApplicationCode
+  import domain.token.RawToken
   import domain.token.{SingleAppToken, Token}
+  import types.ApplicationCode
   import roles.Role
   import guara.utils.Origin
   import guara.errors.*
@@ -55,7 +19,7 @@ object secure {
 
   def role(role: Role, allow: TokenValidator = AllowAll)(fn: Request => Task[Response])(request: Request)(using token: SingleAppToken): Task[Response] = {
 
-    def forbidden(message: String) = GuaraError.fail(MorbidError.Forbidden, Status.Forbidden, message)
+    def forbidden(message: String) = GuaraError.fail(MorbidErrorCodes.Forbidden, Status.Forbidden, message)
 
     def test(token: SingleAppToken): Task[Unit] = {
       if (role.isSatisfiedBy(token)) ZIO.unit
@@ -76,10 +40,10 @@ object secure {
     }
 
     for
-      _      <- allow(token) match {
-               case Left(err) => forbidden(err)
-               case Right(_)  => test(token)
-             }
+      _ <- allow(token) match {
+          case Left(err) => forbidden(err)
+          case Right(_)  => test(token)
+        }
       result <- execute @@ morbid.track.account(token)
     yield result
   }
@@ -96,7 +60,7 @@ object secure {
       _     <- ZIO.logInfo(s"Executing app route for app '${application}'")
       token <- tokenFrom(request)
       _     <- ZIO.logInfo(s"Token extracted ${token.user.details.email}")
-      sat   <- ZIO.fromOption(token.narrowTo(application)).mapError(GuaraError.of(MorbidError.Forbidden, Status.Forbidden, s"User has no access to application '$application'"))
+      sat   <- ZIO.fromOption(token.narrowTo(application)).mapError(GuaraError.of(MorbidErrorCodes.Forbidden, Status.Forbidden, s"User has no access to application '$application'"))
       _     <- ZIO.logInfo(s"Token narrowed. Executing")
       res   <- execute(sat)
     yield res
