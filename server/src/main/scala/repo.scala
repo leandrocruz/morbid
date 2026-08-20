@@ -12,7 +12,7 @@ object repo {
   import io.getquill.jdbczio.Quill
   import io.scalaland.chimney.dsl.*
   import morbid.config.MorbidConfig
-  import utils.refineError
+  import utils.{refineError, some}
 
   import java.sql.SQLException
   import java.time.LocalDateTime
@@ -107,19 +107,21 @@ object repo {
   )
 
   private case class AccountRow(
-    id       : AccountId,
-    created  : LocalDateTime,
-    deleted  : Option[LocalDateTime],
-    tenant   : TenantId,
-    active   : Boolean,
-    code     : AccountCode,
-    name     : AccountName,
+    id         : AccountId,
+    created    : LocalDateTime,
+    deleted    : Option[LocalDateTime],
+    tenant     : TenantId,
+    active     : Boolean,
+    code       : AccountCode,
+    name       : AccountName,
+    identifier : Option[AccountIdentifier],
   )
 
   private case class UserRow(
     id      : UserId,
     created : LocalDateTime,
     deleted : Option[LocalDateTime],
+    updated : Option[LocalDateTime],
     account : AccountId,
     kind    : Option[UserKind],
     code    : UserCode,
@@ -206,10 +208,56 @@ object repo {
     name     : ProviderName,
   )
 
+  private case class FeatureRow(
+    id          : FeatureId,
+    created     : LocalDateTime,
+    deleted     : Option[LocalDateTime],
+    app         : ApplicationId,
+    code        : FeatureCode,
+    name        : FeatureName,
+    description : Option[String],
+  )
+
+  private case class PlanRow(
+    id          : PlanId,
+    created     : LocalDateTime,
+    deleted     : Option[LocalDateTime],
+    active      : Boolean,
+    app         : ApplicationId,
+    code        : PlanCode,
+    name        : PlanName,
+    description : Option[String],
+  )
+
+  private case class PlanToFeatureRow(
+    plan    : PlanId,
+    feature : FeatureId,
+    value   : Option[Long],
+    created : LocalDateTime,
+    deleted : Option[LocalDateTime] = None
+  )
+
+  private case class AccountToPlanRow(
+    acc     : AccountId,
+    plan    : PlanId,
+    created : LocalDateTime,
+    deleted : Option[LocalDateTime] = None
+  )
+
   trait Repo {
-    
+
     def exec[R](command: Command[R]): Task[R]
-    
+
+    /**
+     * Run `action` inside a single JDBC transaction. Every `exec` invoked transitively
+     * inside the block shares the same connection (Quill tracks it via a `FiberRef`);
+     * on success the transaction commits, on failure it rolls back.
+     *
+     * Only DB operations participate. External calls (Firebase, legacy morbid, HTTP)
+     * cannot be rolled back — callers should keep those outside the transaction.
+     */
+    def transaction[R](action: Task[R]): Task[R]
+
     def get[R](command: Command[Option[R]])(msg: => String): Task[R] = {
       for {
         result <- exec(command)
@@ -257,10 +305,13 @@ object repo {
     private inline given MappedEncoding[RoleId, Long]                 (RoleId.value)
     private inline given MappedEncoding[PermissionId, Long]           (PermissionId.value)
     private inline given MappedEncoding[ProviderId, Long]             (ProviderId.value)
+    private inline given MappedEncoding[PlanId, Long]                 (PlanId.value)
+    private inline given MappedEncoding[FeatureId, Long]              (FeatureId.value)
     private inline given MappedEncoding[TenantCode, String]           (TenantCode.value)
     private inline given MappedEncoding[TenantName, String]           (TenantName.value)
     private inline given MappedEncoding[AccountName, String]          (AccountName.value)
     private inline given MappedEncoding[AccountCode, String]          (AccountCode.value)
+    private inline given MappedEncoding[AccountIdentifier, String]    (AccountIdentifier.value)
     private inline given MappedEncoding[ApplicationName, String]      (ApplicationName.value)
     private inline given MappedEncoding[ApplicationCode, String]      (ApplicationCode.value)
     private inline given MappedEncoding[GroupName, String]            (GroupName.value)
@@ -271,6 +322,10 @@ object repo {
     private inline given MappedEncoding[PermissionCode, String]       (PermissionCode.value)
     private inline given MappedEncoding[ProviderName, String]         (ProviderName.value)
     private inline given MappedEncoding[ProviderCode, String]         (ProviderCode.value)
+    private inline given MappedEncoding[PlanCode, String]             (PlanCode.value)
+    private inline given MappedEncoding[PlanName, String]             (PlanName.value)
+    private inline given MappedEncoding[FeatureCode, String]          (FeatureCode.value)
+    private inline given MappedEncoding[FeatureName, String]          (FeatureName.value)
     private inline given MappedEncoding[UserCode, String]             (UserCode.value)
     private inline given MappedEncoding[Email, String]                (Email.value)
     private inline given MappedEncoding[Domain, String]               (Domain.value)
@@ -285,10 +340,13 @@ object repo {
     private inline given MappedEncoding[Long, RoleId]                 (RoleId.of)
     private inline given MappedEncoding[Long, PermissionId]           (PermissionId.of)
     private inline given MappedEncoding[Long, ProviderId]             (ProviderId.of)
+    private inline given MappedEncoding[Long, PlanId]                 (PlanId.of)
+    private inline given MappedEncoding[Long, FeatureId]              (FeatureId.of)
     private inline given MappedEncoding[String, TenantCode]           (TenantCode.of)
     private inline given MappedEncoding[String, TenantName]           (TenantName.of)
     private inline given MappedEncoding[String, AccountName]          (AccountName.of)
     private inline given MappedEncoding[String, AccountCode]          (AccountCode.of)
+    private inline given MappedEncoding[String, AccountIdentifier]    (AccountIdentifier.of)
     private inline given MappedEncoding[String, ApplicationName]      (ApplicationName.of)
     private inline given MappedEncoding[String, ApplicationCode]      (ApplicationCode.of)
     private inline given MappedEncoding[String, GroupName]            (GroupName.of)
@@ -299,6 +357,10 @@ object repo {
     private inline given MappedEncoding[String, PermissionCode]       (PermissionCode.of)
     private inline given MappedEncoding[String, ProviderName]         (ProviderName.of)
     private inline given MappedEncoding[String, ProviderCode]         (ProviderCode.of)
+    private inline given MappedEncoding[String, PlanCode]             (PlanCode.of)
+    private inline given MappedEncoding[String, PlanName]             (PlanName.of)
+    private inline given MappedEncoding[String, FeatureCode]          (FeatureCode.of)
+    private inline given MappedEncoding[String, FeatureName]          (FeatureName.of)
     private inline given MappedEncoding[String, UserCode]             (UserCode.of)
     private inline given MappedEncoding[String, Email]                (Email.of)
     private inline given MappedEncoding[String, Domain]               (Domain.of)
@@ -321,8 +383,15 @@ object repo {
     private inline def roles        = quote { querySchema[RoleRow]             ("roles")              }
     private inline def permissions  = quote { querySchema[PermissionRow]       ("permissions")        }
     private inline def providers    = quote { querySchema[IdentityProviderRow] ("identity_providers") }
+    private inline def features     = quote { querySchema[FeatureRow]          ("features")           }
+    private inline def plans        = quote { querySchema[PlanRow]             ("plans")              }
+    private inline def plan2feature = quote { querySchema[PlanToFeatureRow]    ("plan_to_feature")    }
+    private inline def account2plan = quote { querySchema[AccountToPlanRow]    ("account_to_plan")    }
 
     private def exec[T](zio: ZIO[DataSource, SQLException, T]): Task[T] = zio.provide(ZLayer.succeed(ds))
+
+    override def transaction[R](action: Task[R]): Task[R] =
+      ctx.transaction(action: ZIO[DataSource, Throwable, R]).provide(ZLayer.succeed(ds))
 
     override def exec[R](command: Command[R]): Task[R] = {
       command match
@@ -331,9 +400,10 @@ object repo {
         case r: StoreUser              => storeUser(r)
         case r: DefineUserPin          => setUserPin(r)
         case r: GetUserPin             => getUserPin(r)
-        case r: FindAccountByCode      => accountByCode(r)
-        case r: FindAccountById        => accountById(r)
-        case r: FindAccountByProvider  => accountByProvider(r)
+        case r: FindAccountByCode       => accountByCode(r)
+        case r: FindAccountById         => accountById(r)
+        case r: FindAccountByProvider   => accountByProvider(r)
+        case r: FindAccountByIdentifier => accountByIdentifier(r)
         case r: FindApplication        => applicationGiven(r)
         case r: FindApplicationDetails => applicationDetails(r)
         case r: FindApplications       => applicationDetailsGiven(r)
@@ -347,17 +417,182 @@ object repo {
         case r: FindUserByEmail        => userGiven(r)
         case r: FindUserById           => userGiven(r)
         case r: FindUsersInGroup       => usersGiven(r)
-        case r: FindAdmsOfAccounts     => admsOfAccounts(r)
+        case r: FindGroupsByUser       => groupsByUser(r)
+        case r: SetUserGroups          => setUserGroups(r)
         case r: LinkAccountToApp       => linkAccountToApp(r)
         case r: LinkUsersToGroup       => linkGroups(r)
-        case r: UnlinkUsersFromGroup   => ZIO.fail(Exception("TODO"))
-        case r: LinkGroupToRoles       => ZIO.fail(Exception("TODO"))
-        case r: UnlinkGroupFromRoles   => ZIO.fail(Exception("TODO"))
+        case r: UnlinkUsersFromGroup   => ZIO.fail(Exception("TODO: UnlinkUsersFromGroup"))
+        case r: LinkGroupToRoles       => ZIO.fail(Exception("TODO: LinkGroupToRoles"))
+        case r: UnlinkGroupFromRoles   => ZIO.fail(Exception("TODO: UnlinkGroupFromRoles"))
         case r: RemoveAccount          => removeAccount(r)
         case r: RemoveGroup            => removeGroup(r)
         case r: RemoveUser             => removeUser(r)
         case r: UsersByAccount         => usersByAccount(r)
         case r: UserExists             => userExists(r)
+        case r: FindPlansForAccount    => plansForAccount(r)
+        case r: FindPlansForApp        => plansForApp(r)
+        case r: FindPlansForAccountInApp => plansForAccountInApp(r)
+        case r: LinkAccountToPlan      => linkAccountToPlan(r)
+        case r: FindTenantByCode       => tenantByCode(r)
+        case r: FindPlanByCode         => planByCode(r)
+    }
+
+    private def tenantByCode(request: FindTenantByCode): Task[Option[RawTenant]] = {
+      inline def query = quote {
+        tenants.filter(t => t.code == lift(request.code) && t.active && t.deleted.isEmpty)
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.headOption.map(_.transformInto[RawTenant])
+    }
+
+    private def planByCode(request: FindPlanByCode): Task[Option[RawPlan]] = {
+      inline def query = quote {
+        for
+          app <- applications if app.code == lift(request.app) && app.active && app.deleted.isEmpty
+          pln <- plans       if pln.app == app.id && pln.code == lift(request.code) && pln.active && pln.deleted.isEmpty
+        yield pln
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.headOption.map(_.into[RawPlan].withFieldConst(_.features, Seq.empty).transform)
+    }
+
+    private def plansForAccount(request: FindPlansForAccount): Task[Map[ApplicationId, Seq[RawPlan]]] = {
+
+      inline def query = quote {
+        for
+          a2p <- account2plan                                                    if a2p.deleted.isEmpty && a2p.acc == lift(request.account)
+          pln <- plans       .join    (_.id == a2p.plan)                         if pln.deleted.isEmpty && pln.active
+          p2f <- plan2feature.leftJoin(_.plan == pln.id)                         if p2f.exists(_.deleted.isEmpty)
+          ftr <- features    .leftJoin(f => p2f.exists(_.feature == f.id))       if ftr.exists(_.deleted.isEmpty)
+        yield (pln, p2f, ftr)
+      }
+
+      def merge(rows: Seq[(PlanRow, Option[PlanToFeatureRow], Option[FeatureRow])]): Map[ApplicationId, Seq[RawPlan]] = {
+
+        def bind(plan: PlanRow, links: Seq[(Option[PlanToFeatureRow], Option[FeatureRow])]): (ApplicationId, RawPlan) = {
+
+          val grants = links.collect {
+            case (link, Some(ftr)) => RawPlanFeature(
+              feature = ftr.transformInto[RawFeature],
+              value   = link.flatMap(_.value)
+            )
+          }
+
+          (
+            plan.app,
+            plan
+              .into[RawPlan]
+              .withFieldConst(_.features, grants)
+              .transform
+          )
+        }
+
+        rows
+          .groupMap(_._1)(r => (r._2, r._3))
+          .toSeq
+          .map(bind)
+          .groupMap(_._1)(_._2)
+      }
+
+      for {
+        _    <- printQuery(query)
+        rows <- exec(run(query))
+      } yield merge(rows)
+    }
+
+    private def plansForAccountInApp(request: FindPlansForAccountInApp): Task[Seq[RawPlan]] = {
+
+      inline def query = quote {
+        for
+          acc <- accounts                                                  if acc.id   == lift(request.account) && acc.active && acc.deleted.isEmpty
+          app <- applications                                              if app.code == lift(request.app)     && app.active && app.deleted.isEmpty
+          a2p <- account2plan                                              if a2p.deleted.isEmpty && a2p.acc == acc.id
+          pln <- plans       .join    (_.id == a2p.plan)                   if pln.deleted.isEmpty && pln.active && pln.app == app.id
+          p2f <- plan2feature.leftJoin(_.plan == pln.id)                   if p2f.exists(_.deleted.isEmpty)
+          ftr <- features    .leftJoin(f => p2f.exists(_.feature == f.id)) if ftr.exists(_.deleted.isEmpty)
+        yield (pln, p2f, ftr)
+      }
+
+      def merge(rows: Seq[(PlanRow, Option[PlanToFeatureRow], Option[FeatureRow])]): Seq[RawPlan] = {
+
+        def bind(plan: PlanRow, links: Seq[(Option[PlanToFeatureRow], Option[FeatureRow])]): RawPlan = {
+
+          val grants = links.collect {
+            case (link, Some(ftr)) => RawPlanFeature(
+              feature = ftr.transformInto[RawFeature],
+              value   = link.flatMap(_.value)
+            )
+          }
+
+          plan
+            .into[RawPlan]
+            .withFieldConst(_.features, grants)
+            .transform
+        }
+
+        rows
+          .groupMap(_._1)(r => (r._2, r._3))
+          .toSeq
+          .map(bind)
+      }
+
+      for
+        _    <- printQuery(query)
+        rows <- exec(run(query))
+      yield merge(rows)
+    }
+
+    private def plansForApp(request: FindPlansForApp): Task[Seq[RawPlan]] = {
+
+      inline def query = quote {
+        for
+          app <- applications                                              if app.code == lift(request.app) && app.active && app.deleted.isEmpty
+          pln <- plans       .join    (_.app == app.id)                    if pln.deleted.isEmpty && pln.active
+          p2f <- plan2feature.leftJoin(_.plan == pln.id)                   if p2f.exists(_.deleted.isEmpty)
+          ftr <- features    .leftJoin(f => p2f.exists(_.feature == f.id)) if ftr.exists(_.deleted.isEmpty)
+        yield (pln, p2f, ftr)
+      }
+
+      def merge(rows: Seq[(PlanRow, Option[PlanToFeatureRow], Option[FeatureRow])]): Seq[RawPlan] = {
+
+        def bind(plan: PlanRow, links: Seq[(Option[PlanToFeatureRow], Option[FeatureRow])]): RawPlan = {
+
+          val grants = links.collect {
+            case (link, Some(ftr)) => RawPlanFeature(
+              feature = ftr.transformInto[RawFeature],
+              value   = link.flatMap(_.value)
+            )
+          }
+
+          plan
+            .into[RawPlan]
+            .withFieldConst(_.features, grants)
+            .transform
+        }
+
+        rows
+          .groupMap(_._1)(r => (r._2, r._3))
+          .toSeq
+          .map(bind)
+      }
+
+      for
+        _    <- printQuery(query)
+        rows <- exec(run(query))
+      yield merge(rows)
+    }
+
+    private def linkAccountToPlan(request: LinkAccountToPlan): Task[Unit] = {
+      for {
+        now <- Clock.localDateTime
+        row  = AccountToPlanRow(acc = request.acc, plan = request.plan, created = now)
+        _   <- ZIO.log(s"Linking account ${request.acc} to plan ${request.plan}")
+        _   <- exec(run(quote { account2plan.insertValue(lift(row)) }))
+      } yield ()
     }
 
     private def userGiven(request: FindUserByEmail | FindUserById): Task[Option[RawUser]] = {
@@ -436,8 +671,14 @@ object repo {
         } yield merge(rows)
       }
 
-      def assign(groups: Map[ApplicationId, Seq[RawGroup]])(application: RawApplication) = {
-        application.copy(groups = groups.getOrElse(application.details.id, Seq.empty))
+      def assign(
+        groups : Map[ApplicationId, Seq[RawGroup]],
+        plans  : Map[ApplicationId, Seq[RawPlan]]
+      )(application: RawApplication) = {
+        application.copy(
+          groups = groups.getOrElse(application.details.id, Seq.empty),
+          plans  = plans .getOrElse(application.details.id, Seq.empty)
+        )
       }
 
       for {
@@ -449,7 +690,8 @@ object repo {
           case Some(usr) =>
             for {
               groups <- groupsFor(usr)
-            } yield Some(usr.copy(applications = usr.applications.map(assign(groups))))
+              plans  <- plansForAccount(FindPlansForAccount(usr.details.account))
+            } yield Some(usr.copy(applications = usr.applications.map(assign(groups, plans))))
       } yield result
     }
 
@@ -477,7 +719,8 @@ object repo {
         tenantCode = tenant.code,
         active     = true,
         code       = request.code,
-        name       = request.name
+        name       = request.name,
+        identifier = request.identifier
       )
 
       def store(raw: RawAccount): Task[RawAccount] = {
@@ -555,8 +798,8 @@ object repo {
         )
       }
 
-      def store(raw: RawUserEntry): Task[RawUserEntry] = {
-        val row = raw.transformInto[UserRow]
+      def store(raw: RawUserEntry, now: LocalDateTime): Task[RawUserEntry] = {
+        val row = raw.into[UserRow].withFieldConst(_.updated, Some(now)).transform
 
         def insertWithoutId = {
 
@@ -581,12 +824,13 @@ object repo {
           inline def stmt = quote {
             users.filter(_.id == lift(row.id))
               .update(
+                _.updated -> lift(row.updated),
                 _.deleted -> lift(row.deleted),
-                _.active -> lift(row.active)
+                _.active  -> lift(row.active),
               )
           }
           for
-            _ <- ZIO.log(s"Updating user '${row.email}' id ${row.id}")
+            _ <- ZIO.log(s"Updating user '${row.email}' id ${row.id} (active:${row.active}, deleted:${row.deleted.getOrElse("_")} )")
             _ <- exec(run(stmt))
           yield raw
         }
@@ -601,7 +845,7 @@ object repo {
       for {
         now <- Clock.localDateTime
         raw =  build(now)
-        usr <- store(raw)
+        usr <- store(raw, now)
       } yield usr
 
     }
@@ -947,6 +1191,87 @@ object repo {
       }.toSeq
     }
 
+    private def setUserGroups(request: SetUserGroups): Task[Boolean] = {
+
+      inline def findUser = quote {
+        for
+          ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          usr <- users        .join(_.account == acc.id) if usr.deleted.isEmpty && usr.code == lift(request.user)
+        yield usr
+      }
+
+      inline def findApp = quote {
+        for
+          ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
+          app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+        yield app
+      }
+
+      inline def findGroups = quote {
+        for
+          ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
+          app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+          grp <- groups       .join(_.app    == a2a.app) if grp.deleted.isEmpty && grp.acc == acc.id && liftQuery(request.groups).contains(grp.code)
+        yield grp
+      }
+
+      def currentLinks(userId: UserId, appId: ApplicationId) = quote {
+        user2group.filter(u2g => u2g.deleted.isEmpty && u2g.usr == lift(userId) && u2g.app == lift(appId)).map(_.grp)
+      }
+
+      def insertLinks(userId: UserId, appId: ApplicationId, groupIds: Seq[GroupId], now: LocalDateTime): Task[Unit] = {
+        val rows = groupIds.map(gid => UserToGroupRow(usr = userId, app = appId, grp = gid, created = now))
+        inline def stmt = quote { liftQuery(rows).foreach(row => user2group.insertValue(row)) }
+        exec(run(stmt)).unit
+      }
+
+      def deleteLinks(userId: UserId, appId: ApplicationId, groupIds: Seq[GroupId]): Task[Unit] = {
+        inline def stmt = quote {
+          user2group.filter(u2g => u2g.usr == lift(userId) && u2g.app == lift(appId) && liftQuery(groupIds).contains(u2g.grp)).delete
+        }
+        exec(run(stmt)).unit
+      }
+
+      for
+        usrRows   <- exec(run(findUser))
+        usr       <- usrRows.headOption.some(s"User '${request.user}' not found")
+        appRows   <- exec(run(findApp))
+        app       <- appRows.headOption.some(s"App '${request.app}' not found")
+        targets   <- exec(run(findGroups))
+        targetIds =  targets.map(_.id)
+        current   <- exec(run(currentLinks(usr.id, app.id)))
+        toAdd     =  targetIds.diff(current)
+        toRemove  =  current.diff(targetIds)
+        now       <- Clock.localDateTime
+        _         <- ZIO.when(toAdd   .nonEmpty)(insertLinks(usr.id, app.id, toAdd   , now))
+        _         <- ZIO.when(toRemove.nonEmpty)(deleteLinks(usr.id, app.id, toRemove))
+      yield true
+    }
+
+    private def groupsByUser(request: FindGroupsByUser): Task[Seq[RawGroup]] = {
+
+      inline def query = quote {
+        for {
+          ten <- tenants                                 if ten.deleted.isEmpty && ten.active
+          acc <- accounts     .join(_.tenant == ten.id)  if acc.deleted.isEmpty && acc.active && acc.code == lift(request.account)
+          a2a <- account2app  .join(_.acc    == acc.id)  if a2a.deleted.isEmpty
+          app <- applications .join(_.id     == a2a.app) if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+          usr <- users        .join(_.account == acc.id) if usr.deleted.isEmpty && usr.code == lift(request.user)
+          u2g <- user2group   .join(_.usr    == usr.id)  if u2g.deleted.isEmpty && u2g.app  == app.id
+          grp <- groups       .join(_.id     == u2g.grp) if grp.deleted.isEmpty
+        } yield grp
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.map(_.into[RawGroup].withFieldConst(_.roles, Seq.empty).transform)
+    }
+
     private def usersGiven(request: FindUsersInGroup): Task[Seq[RawUserEntry]] = {
 
       inline def groupUsers(code: GroupCode) = {
@@ -1003,6 +1328,21 @@ object repo {
         for
           ten <- tenants                         if ten.active && ten.deleted.isEmpty
           acc <- accounts.join(_.tenant == ten.id) if acc.active && acc.deleted.isEmpty && acc.id == lift(request.id)
+        yield (ten, acc)
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.headOption.map {
+        case (tenant, account) => account.into[RawAccount].withFieldConst(_.tenant, tenant.id).withFieldConst(_.tenantCode, tenant.code).transform
+      }
+    }
+
+    private def accountByIdentifier(request: FindAccountByIdentifier): Task[Option[RawAccount]] = {
+      inline def query = quote {
+        for
+          ten <- tenants                           if ten.active && ten.deleted.isEmpty
+          acc <- accounts.join(_.tenant == ten.id) if acc.active && acc.deleted.isEmpty && acc.identifier.contains(lift(request.identifier))
         yield (ten, acc)
       }
 
@@ -1235,7 +1575,7 @@ object repo {
           )
         }.toSeq
       }
-      
+
       for
         rows <- exec(run(query))
       yield groupRows(rows)

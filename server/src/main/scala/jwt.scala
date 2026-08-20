@@ -6,7 +6,7 @@ object tokens {
 
   import types.*
   import domain.raw.*
-  import domain.token.{Token, CompactUser}
+  import domain.token.{Token, CompactUser, CompactApplication, CompactGroup}
   import morbid.config.MorbidConfig
   import better.files._
   import guara.errors.*
@@ -25,6 +25,9 @@ object tokens {
   }
 
   object TokenGenerator {
+
+    val fake: ULayer[TokenGenerator] = ZLayer.succeed(FakeTokens())
+
     val layer = ZLayer {
 
       def build(config: MorbidConfig, zone: ZoneId) = {
@@ -47,6 +50,36 @@ object tokens {
         impl    <- if(config.jwt.fake) ZIO.succeed(FakeTokenGenerator(zone)) else build(config, zone)
       } yield impl
     }
+  }
+
+  private case class FakeTokens() extends TokenGenerator {
+
+    val deflt = Token(
+      created = ZonedDateTime.now(),
+      expires = Some(ZonedDateTime.now().plusDays(1)),
+      user    = CompactUser(
+        details = RawUserDetails(
+          id          = UserId.of(1),
+          created     = LocalDateTime.now(),
+          deleted     = None,
+          tenant      = TenantId.of(1),
+          tenantCode  = TenantCode.of("DEFAULT"),
+          account     = AccountId.of(1),
+          accountCode = AccountCode.of("fake"),
+          kind        = None,
+          active      = true,
+          code        = UserCode.of("fake"),
+          email       = Email.of("user@fake.com")
+        ),
+        applications = Seq(
+          CompactApplication(id = ApplicationId.of(1), code = ApplicationCode.of("console"), groups = Seq(CompactGroup(code = GroupCode.of("g1"), roles = Seq(RoleCode.of("adm")))))
+        )
+      )
+    )
+
+    override def verify(payload: String)           = ZIO.succeed(deflt)
+    override def asToken(user: RawUser, days: Int) = ZIO.succeed(deflt)
+    override def encode(token: Token)              = ZIO.succeed("FAKE")
   }
 
   private case class FakeTokenGenerator(zone: ZoneId) extends TokenGenerator {

@@ -60,3 +60,39 @@ INSERT INTO permissions (created, rid, code, name) VALUES (now(), 5, 'delete', '
 INSERT INTO group_to_role (created, grp, rid) VALUES (now(), 1 /* Console */, 1 /* Global Admin */);
 INSERT INTO group_to_role (created, grp, rid) VALUES (now(), 2 /* Presto */ , 4 /* Credentials Admin */);
 INSERT INTO group_to_role (created, grp, rid) VALUES (now(), 2 /* Presto */ , 5 /* Policy Admin */);
+
+-- Presto features (app id = 2)
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'dashboard'  , 'Dashboard'         , 'Página inicial e métricas');
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'tfa'        , '2FA'               , 'Cadastro e compartilhamento de códigos TOTP');
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'credentials', 'Credenciais'       , 'Gestão de credenciais e cofre');
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'sites'      , 'Sites'             , 'Catálogo de sites e domínios');
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'groups'     , 'Usuários e Grupos' , 'Administração de usuários e grupos');
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'directives' , 'Diretivas'         , 'Regras de manipulação de páginas');
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'rules'      , 'Regras'            , 'Regras de acesso e políticas');
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'proxies'    , 'Proxies'           , 'Configuração de proxies');
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'signing'    , 'Assinaturas'       , 'Assinatura de documentos');
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'express'    , 'Express'           , 'Autopreenchimento e login expresso');
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'sessions'   , 'Sessões'           , 'Ponte de sessões de emergência');
+INSERT INTO features (created, app, code, name, description) VALUES (now(), 2, 'config'     , 'Configurações'     , 'Configurações e perfil');
+
+-- Presto plans
+INSERT INTO plans (created, app, code, name, description) VALUES (now(), 2, 'legacy'      , 'Legacy'        , 'Plano completo aplicado a todas as contas existentes');
+INSERT INTO plans (created, app, code, name, description) VALUES (now(), 2, '2fa_freemium', '2FA Freemium'  , 'Plano gratuito: somente cadastro e compartilhamento de 2FA');
+
+-- plan_to_feature: legacy = all 12 features (ids 1..12), 2fa_freemium = tfa only (id 2)
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 1  /* dashboard   */);
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 2  /* tfa         */);
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 3  /* credentials */);
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 4  /* sites       */);
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 5  /* groups      */);
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 6  /* directives  */);
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 7  /* rules       */);
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 8  /* proxies     */);
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 9  /* signing     */);
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 10 /* express     */);
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 11 /* sessions    */);
+INSERT INTO plan_to_feature (created, plan, feature) VALUES (now(), 1 /* legacy */, 12 /* config      */);
+INSERT INTO plan_to_feature (created, plan, feature, value) VALUES (now(), 2 /* 2fa_freemium */, 2 /* tfa */, 5 /* max shared 2FA codes */);
+
+-- Existing presto-bearing accounts default to legacy (mirrors M7 backfill behaviour for the dev DB)
+INSERT INTO account_to_plan (created, acc, plan) VALUES (now(), 1 /* A1 */, 1 /* legacy */);

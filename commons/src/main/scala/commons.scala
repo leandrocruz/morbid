@@ -16,10 +16,13 @@ object types {
   opaque type RoleId          = Long
   opaque type PermissionId    = Long
   opaque type PinId           = Long
+  opaque type PlanId          = Long
+  opaque type FeatureId       = Long
   opaque type TenantName      = String
   opaque type TenantCode      = String
-  opaque type AccountName     = String
-  opaque type AccountCode     = String
+  opaque type AccountName       = String
+  opaque type AccountCode       = String
+  opaque type AccountIdentifier = String
   opaque type ApplicationName = String
   opaque type ApplicationCode = String
   opaque type GroupName       = String
@@ -28,6 +31,10 @@ object types {
   opaque type RoleCode        = String
   opaque type PermissionName  = String
   opaque type PermissionCode  = String
+  opaque type PlanName        = String
+  opaque type PlanCode        = String
+  opaque type FeatureName     = String
+  opaque type FeatureCode     = String
   opaque type ProviderName    = String
   opaque type ProviderCode    = String
   opaque type UserCode        = String
@@ -47,6 +54,8 @@ object types {
   given JsonCodec[GroupId]       = JsonCodec.long
   given JsonCodec[RoleId]        = JsonCodec.long
   given JsonCodec[PermissionId]  = JsonCodec.long
+  given JsonCodec[PlanId]        = JsonCodec.long
+  given JsonCodec[FeatureId]     = JsonCodec.long
   given JsonCodec[ProviderId]    = JsonCodec.long
   given JsonCodec[Password]      = JsonCodec.string
 
@@ -55,12 +64,13 @@ object types {
   private val domainFrom = ".+@(.+)"       .r
   private val userFrom   = "(.+)@.+"       .r
   private val domain     = "[\\w\\.\\-]+"  .r
-  private val email      = "[\\w\\.\\-@]+" .r
+  private val email      = """^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}$""".r
 
   given JsonEncoder      [TenantName]      = JsonEncoder.string
   given JsonEncoder      [TenantCode]      = JsonEncoder.string
-  given JsonEncoder      [AccountName]     = JsonEncoder.string
-  given JsonEncoder      [AccountCode]     = JsonEncoder.string
+  given JsonEncoder      [AccountName]       = JsonEncoder.string
+  given JsonEncoder      [AccountCode]       = JsonEncoder.string
+  given JsonEncoder      [AccountIdentifier] = JsonEncoder.string
   given JsonEncoder      [ApplicationName] = JsonEncoder.string
   given JsonEncoder      [ApplicationCode] = JsonEncoder.string
   given JsonEncoder      [GroupName]       = JsonEncoder.string
@@ -69,6 +79,10 @@ object types {
   given JsonEncoder      [RoleCode]        = JsonEncoder.string
   given JsonEncoder      [PermissionName]  = JsonEncoder.string
   given JsonEncoder      [PermissionCode]  = JsonEncoder.string
+  given JsonEncoder      [PlanName]        = JsonEncoder.string
+  given JsonEncoder      [PlanCode]        = JsonEncoder.string
+  given JsonEncoder      [FeatureName]     = JsonEncoder.string
+  given JsonEncoder      [FeatureCode]     = JsonEncoder.string
   given JsonEncoder      [ProviderName]    = JsonEncoder.string
   given JsonEncoder      [ProviderCode]    = JsonEncoder.string
   given JsonEncoder      [UserCode]        = JsonEncoder.string
@@ -79,11 +93,14 @@ object types {
   given JsonEncoder      [Link]             = JsonEncoder.string
 
   given JsonDecoder      [TenantName]      = safeLatinName(128)
-  given JsonDecoder      [AccountName]     = safeLatinName(64)
+  given JsonDecoder      [AccountName]       = safeLatinName(256)
+  given JsonDecoder      [AccountIdentifier] = JsonDecoder.string
   given JsonDecoder      [ApplicationName] = safeLatinName(256)
   given JsonDecoder      [GroupName]       = safeLatinName(64)
   given JsonDecoder      [RoleName]        = safeLatinName(32)
   given JsonDecoder      [PermissionName]  = safeLatinName(128)
+  given JsonDecoder      [PlanName]        = safeLatinName(128)
+  given JsonDecoder      [FeatureName]     = safeLatinName(128)
   given JsonDecoder      [ProviderName]    = safeLatinName(256)
 
   given JsonDecoder      [TenantCode]      = safeCode(64)
@@ -93,6 +110,8 @@ object types {
   given JsonDecoder      [UserCode]        = safeCode(128)
   given JsonDecoder      [RoleCode]        = safeCode(16)
   given JsonDecoder      [PermissionCode]  = safeCode(16)
+  given JsonDecoder      [PlanCode]        = safeCode(32)
+  given JsonDecoder      [FeatureCode]     = safeCode(32)
   given JsonDecoder      [ProviderCode]    = safeCode(128)
 
   given JsonDecoder      [Email]           = safeDecode(email, 256)
@@ -105,10 +124,16 @@ object types {
   given JsonFieldDecoder[ApplicationName] = JsonFieldDecoder.string
   given JsonFieldEncoder[ApplicationCode] = JsonFieldEncoder.string
   given JsonFieldDecoder[ApplicationCode] = JsonFieldDecoder.string
+  given JsonFieldEncoder[GroupCode]        = JsonFieldEncoder.string
+  given JsonFieldDecoder[GroupCode]        = JsonFieldDecoder.string
   given JsonFieldEncoder[RoleName]        = JsonFieldEncoder.string
   given JsonFieldDecoder[RoleName]        = JsonFieldDecoder.string
   given JsonFieldEncoder[RoleCode]        = JsonFieldEncoder.string
   given JsonFieldDecoder[RoleCode]        = JsonFieldDecoder.string
+  given JsonFieldEncoder[PlanCode]        = JsonFieldEncoder.string
+  given JsonFieldDecoder[PlanCode]        = JsonFieldDecoder.string
+  given JsonFieldEncoder[FeatureCode]     = JsonFieldEncoder.string
+  given JsonFieldDecoder[FeatureCode]     = JsonFieldDecoder.string
 
   trait OpaqueOps[N, T] {
     def of(n: N)     : T         = n.asInstanceOf[T]
@@ -117,14 +142,18 @@ object types {
   }
 
   object AccountId       extends OpaqueOps[Long, AccountId]
-  object AccountName     extends OpaqueOps[String, AccountName]
-  object AccountCode     extends OpaqueOps[String, AccountCode]
+  object AccountName       extends OpaqueOps[String, AccountName]
+  object AccountCode       extends OpaqueOps[String, AccountCode]
+  object AccountIdentifier extends OpaqueOps[String, AccountIdentifier]
   object ApplicationId   extends OpaqueOps[Long, ApplicationId]
   object ApplicationCode extends OpaqueOps[String, ApplicationCode]
   object ApplicationName extends OpaqueOps[String, ApplicationName]
   object Domain          extends OpaqueOps[String, Domain]
   object Email           extends OpaqueOps[String, Email]
   object EmailUser       extends OpaqueOps[String, EmailUser]
+  object FeatureCode     extends OpaqueOps[String, FeatureCode]
+  object FeatureId       extends OpaqueOps[Long, FeatureId]
+  object FeatureName     extends OpaqueOps[String, FeatureName]
   object GroupCode       extends OpaqueOps[String, GroupCode] {
     def all   = GroupCode.of("all")
     def admin = GroupCode.of("admin")
@@ -139,6 +168,9 @@ object types {
   object PermissionId    extends OpaqueOps[Long, PermissionId]
   object PermissionCode  extends OpaqueOps[String, PermissionCode]
   object PermissionName  extends OpaqueOps[String, PermissionName]
+  object PlanCode        extends OpaqueOps[String, PlanCode]
+  object PlanId          extends OpaqueOps[Long, PlanId]
+  object PlanName        extends OpaqueOps[String, PlanName]
   object ProviderCode    extends OpaqueOps[String, ProviderCode]
   object ProviderId      extends OpaqueOps[Long, ProviderId]
   object ProviderName    extends OpaqueOps[String, ProviderName]
@@ -166,6 +198,8 @@ object types {
         case userFrom(value) => Some(EmailUser.of(value))
         case _ => None
       }
+
+    def toLowerCase: Email = it.toLowerCase
   }
 
   extension (it: Password) {
@@ -228,6 +262,7 @@ object domain {
       active     : Boolean,
       code       : AccountCode,
       name       : AccountName,
+      identifier : Option[AccountIdentifier] = None,
     )
 
     case class RawAccountAdmin(
@@ -295,7 +330,35 @@ object domain {
 
     case class RawApplication(
       details : RawApplicationDetails,
-      groups  : Seq[RawGroup] = Seq.empty
+      groups  : Seq[RawGroup] = Seq.empty,
+      plans   : Seq[RawPlan]  = Seq.empty
+    )
+
+    case class RawFeature(
+      id          : FeatureId,
+      created     : LocalDateTime,
+      deleted     : Option[LocalDateTime],
+      app         : ApplicationId,
+      code        : FeatureCode,
+      name        : FeatureName,
+      description : Option[String] = None,
+    )
+
+    case class RawPlanFeature(
+      feature : RawFeature,
+      value   : Option[Long] = None,
+    )
+
+    case class RawPlan(
+      id          : PlanId,
+      created     : LocalDateTime,
+      deleted     : Option[LocalDateTime],
+      active      : Boolean,
+      app         : ApplicationId,
+      code        : PlanCode,
+      name        : PlanName,
+      description : Option[String]         = None,
+      features    : Seq[RawPlanFeature]    = Seq.empty,
     )
 
     case class RawIdentityProvider(
@@ -347,6 +410,9 @@ object domain {
     )
 
     given JsonCodec[RawApplicationDetails] = DeriveJsonCodec.gen
+    given JsonCodec[RawFeature]            = DeriveJsonCodec.gen
+    given JsonCodec[RawPlanFeature]        = DeriveJsonCodec.gen
+    given JsonCodec[RawPlan]               = DeriveJsonCodec.gen
     given JsonCodec[RawApplication]        = DeriveJsonCodec.gen
     given JsonCodec[RawUserData]           = DeriveJsonCodec.gen
     given JsonCodec[RawUserDetails]        = DeriveJsonCodec.gen
@@ -395,10 +461,25 @@ object domain {
       def of(raw: RawGroup) = raw.transformInto[CompactGroup]
     }
 
+    case class CompactFeature(
+      code  : FeatureCode,
+      value : Option[Long] = None,
+    )
+
+    case class CompactPlan(
+      code     : PlanCode,
+      features : Seq[CompactFeature] = Seq.empty
+    )
+
+    object CompactPlan {
+      def of(raw: RawPlan) = raw.transformInto[CompactPlan]
+    }
+
     case class CompactApplication(
       id     : ApplicationId,
       code   : ApplicationCode,
-      groups : Seq[CompactGroup] = Seq.empty
+      groups : Seq[CompactGroup] = Seq.empty,
+      plans  : Seq[CompactPlan]  = Seq.empty
     )
 
     object CompactApplication {
@@ -417,13 +498,27 @@ object domain {
       impersonatedBy : Option[RawUserDetails] = None
     ) {
       private def roleByCode(code: RoleCode)(using app: ApplicationCode): Option[RoleCode] =
-        for {
+        for
           a <- user.applications.find(_.code == app)
           r <- a.groups.flatMap(_.roles).find(_ == code)
-        } yield r
+        yield r
 
-      def hasRole(code: RoleCode)(using ApplicationCode) =
-        roleByCode(code).isDefined
+      def hasRole(code: RoleCode)(using ApplicationCode) = roleByCode(code).isDefined
+
+      def features(using app: ApplicationCode): Seq[CompactFeature] =
+        user
+          .applications
+          .find(_.code == app)
+          .toSeq
+          .flatMap(_.plans.flatMap(_.features))
+
+      def featureCodes(using ApplicationCode): Set[FeatureCode] = features.map(_.code).toSet
+      def hasFeature(code: FeatureCode)(using ApplicationCode): Boolean = features.exists(_.code == code)
+
+      def featureValue(code: FeatureCode)(using ApplicationCode): Option[Long] = {
+        val values = features.filter(_.code == code).flatMap(_.value)
+        if values.isEmpty then None else Some(values.sum)
+      }
 
       def narrowTo(application: ApplicationCode): Option[SingleAppToken] =
         user
@@ -438,6 +533,8 @@ object domain {
           }
 
       //def compact = this.transformInto[CompactToken]
+
+      def isRoot = user.details.account == RootAccount
     }
     case class SingleAppUser(
       details        : RawUserDetails,
@@ -450,13 +547,25 @@ object domain {
       expires : Option[ZonedDateTime],
       user    : SingleAppUser
     ) {
-      def hasRole(code: RoleCode): Boolean = user.application.groups.flatMap(_.roles).contains(code)
+      def hasRole     (code: RoleCode)    : Boolean             = user.application.groups.flatMap(_.roles).contains(code)
+      def features                        : Seq[CompactFeature] = user.application.plans.flatMap(_.features)
+      def featureCodes                    : Set[FeatureCode]    = features.map(_.code).toSet
+      def hasFeature  (code: FeatureCode) : Boolean             = features.exists(_.code == code)
+
+      def featureValue(code: FeatureCode) : Option[Long] = {
+        val values = features.filter(_.code == code).flatMap(_.value)
+        if values.isEmpty then None else Some(values.sum)
+      }
     }
 
     given Transformer[RawGroup, CompactGroup]             = (original: RawGroup)       => CompactGroup(code = original.code, roles = original.roles.map(_.code))
-    given Transformer[RawApplication, CompactApplication] = (original: RawApplication) => CompactApplication(id = original.details.id, code = original.details.code, groups = original.groups.map(_.transformInto[CompactGroup]))
+    given Transformer[RawPlanFeature, CompactFeature]     = (original: RawPlanFeature) => CompactFeature(code = original.feature.code, value = original.value)
+    given Transformer[RawPlan, CompactPlan]               = (original: RawPlan)        => CompactPlan(code = original.code, features = original.features.map(_.transformInto[CompactFeature]))
+    given Transformer[RawApplication, CompactApplication] = (original: RawApplication) => CompactApplication(id = original.details.id, code = original.details.code, groups = original.groups.map(_.transformInto[CompactGroup]), plans = original.plans.map(_.transformInto[CompactPlan]))
 
     given JsonCodec[CompactGroup]       = DeriveJsonCodec.gen
+    given JsonCodec[CompactFeature]     = DeriveJsonCodec.gen
+    given JsonCodec[CompactPlan]        = DeriveJsonCodec.gen
     given JsonCodec[CompactApplication] = DeriveJsonCodec.gen
     given JsonCodec[CompactUser]        = DeriveJsonCodec.gen
     given JsonCodec[Token]              = DeriveJsonCodec.gen
@@ -467,7 +576,7 @@ object domain {
   object requests {
     case class StoreGroupRequest(id: Option[GroupId], code: Option[GroupCode], name: GroupName, users: Seq[UserCode], roles: Seq[RoleCode])
     case class StoreUserRequest(id: Option[UserId], code: Option[UserCode], kind: Option[UserKind], email: Email, password: Option[Password], tenant: Option[TenantCode], active: Boolean, update: Boolean /* TODO: remove this as soon as we migrate all users from legacy */)
-    case class StoreAccountRequest(id: Option[AccountId], tenant: TenantId, name: AccountName, code: AccountCode, active: Boolean, update: Boolean)
+    case class StoreAccountRequest(id: Option[AccountId], tenant: TenantId, name: AccountName, code: AccountCode, active: Boolean, update: Boolean, identifier: Option[AccountIdentifier] = None)
     case class RequestPasswordRequestLink(email: Email) extends HasEmail
     case class ChangePasswordRequest(email: Email, password: Password) extends HasEmail
     case class PasswordResetLink(link: Link)
@@ -475,11 +584,32 @@ object domain {
     case class ValidateUserPin(pin: Pin)
     case class RemoveUserRequest(code: UserCode)
     case class RemoveGroupRequest(code: GroupCode)
+    case class GetUserGroupsRequest(user: UserCode)
+    case class SetUserGroupsRequest(user: UserCode, groups: Seq[GroupCode])
     case class LoginViaEmailLinkRequest(email: Email, url: String)
     case class LoginViaEmailLinkResponse(link: Link)
-    case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email)
+    case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email, identifier: Option[AccountIdentifier] = None)
+    case class FindAccountByIdentifierRequest(magic: Magic, identifier: AccountIdentifier)
     case class ImpersonationRequest(email: Email, magic: Magic)
-    case class ExpiryEmailsRequests(accountId: AccountId)
+    case class LogoffResponse(restored: Boolean)
+
+    case class ProvisionRequest(
+      magic       : Magic,
+      tenant      : TenantCode,
+      application : ApplicationCode,
+      plan        : PlanCode,
+      account     : AccountName,
+      name        : String,
+      email       : Email,
+      password    : Password,
+      groups      : Map[GroupCode, Seq[RoleCode]],
+      accountType : String,
+      userType    : String,
+      identifier  : Option[AccountIdentifier] = None,
+    )
+
+    case class GetAccountPlansRequest(account: AccountId, application: ApplicationCode)
+
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
@@ -489,14 +619,40 @@ object domain {
     given JsonCodec[ValidateUserPin]            = DeriveJsonCodec.gen
     given JsonCodec[RemoveUserRequest]          = DeriveJsonCodec.gen
     given JsonCodec[RemoveGroupRequest]         = DeriveJsonCodec.gen
+    given JsonCodec[GetUserGroupsRequest]       = DeriveJsonCodec.gen
+    given JsonCodec[SetUserGroupsRequest]       = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
     given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
+    given JsonCodec[ProvisionRequest]              = DeriveJsonCodec.gen
+    given JsonCodec[GetAccountPlansRequest]        = DeriveJsonCodec.gen
     given JsonCodec[StoreAccountRequest]        = DeriveJsonCodec.gen
     given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
+    given JsonCodec[FindAccountByIdentifierRequest] = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
     given JsonCodec[ImpersonationRequest]       = DeriveJsonCodec.gen
-    given JsonCodec[ExpiryEmailsRequests]       = DeriveJsonCodec.gen
+    given JsonCodec[LogoffResponse]             = DeriveJsonCodec.gen
   }
+}
+
+object MorbidHeaders {
+  val Token        = "X-MorbidToken"
+  val ServiceToken = "X-Morbid-Service-Token"
+}
+
+object MorbidCookies {
+  val Auth          = "morbid-auth"
+  val Token         = "morbid-token"
+  val OriginalToken = "morbid-original-token"
+  val ServiceToken  = "morbid-service-token"
+}
+
+object track {
+
+  import morbid.types.*
+  import morbid.domain.token.SingleAppToken
+  import zio.ZIOAspect
+
+  def account(token: SingleAppToken) = zio.logging.loggerName("account") @@ ZIOAspect.annotated("account", AccountId.value(token.user.details.account).toString)
 }
 
 object roles {
@@ -508,10 +664,10 @@ object roles {
     def apply(code: String): Role = SingleRole(RoleCode.of(code))
 
   sealed trait Role {
-    def or  (code: String) : Role = or(SingleRole(RoleCode.of(code)))
-    def or  (code: Role)   : Role = OrRole(this, code)
-    def and (code: String) : Role = and(SingleRole(RoleCode.of(code)))
-    def and (code: Role)   : Role = AndRole(this, code)
+    infix def or  (code: String) : Role = or(SingleRole(RoleCode.of(code)))
+    infix def or  (code: Role)   : Role = OrRole(this, code)
+    infix def and (code: String) : Role = and(SingleRole(RoleCode.of(code)))
+    infix def and (code: Role)   : Role = AndRole(this, code)
 
     def isSatisfiedBy(token: Token)(using ApplicationCode): Boolean
     def isSatisfiedBy(token: SingleAppToken): Boolean
@@ -538,10 +694,11 @@ object roles {
 
 object secure {
 
+  import domain.raw.RawUserDetails
   import types.ApplicationCode
   import domain.token.{SingleAppToken, Token}
   import roles.Role
-  import guara.utils.{ensureResponse, Origin}
+  import guara.utils.Origin
   import guara.errors.*
   import zio.http.*
   import zio.*
@@ -553,19 +710,33 @@ object secure {
 
   def role(role: Role, allow: TokenValidator = AllowAll)(fn: Request => Task[Response])(request: Request)(using token: SingleAppToken): Task[Response] = {
 
-    def forbidden(message: String) = ZIO.fail(ReturnResponseError(Response.forbidden(message)))
+    def forbidden(message: String) = GuaraError.fail(MorbidError.Forbidden, Status.Forbidden, message)
 
     def test(token: SingleAppToken): Task[Unit] = {
       if (role.isSatisfiedBy(token)) ZIO.unit
       else                           forbidden(s"Required role '$role' is missing from user token (application: ${token.user.application.code})")
     }
 
-    for {
-      _ <- allow(token) match
-             case Left(err) => forbidden(err)
-             case Right(_)  => test(token)
-      result <- fn(request)
-    } yield result
+    def execute = {
+      def log(maybe: Option[RawUserDetails]) = {
+        maybe match
+          case Some(imp) => ZIO.logWarning(s"Executing impersonated request at '${request.url.path.encode}' by '${imp.id}/${imp.email}' on behalf of '${token.user.details.id}/${token.user.details.email}' on app '${token.user.application.code}'")
+          case None      => ZIO.logInfo   (s"Executing request at '${request.url.path.encode}' by '${token.user.details.id}/${token.user.details.email}' on app '${token.user.application.code}'")
+      }
+
+      for
+        _      <- log(token.user.impersonatedBy)
+        result <- fn(request)
+      yield result
+    }
+
+    for
+      _      <- allow(token) match {
+               case Left(err) => forbidden(err)
+               case Right(_)  => test(token)
+             }
+      result <- execute @@ morbid.track.account(token)
+    yield result
   }
 
   def appRoute(application: ApplicationCode, tokenFrom: Request => Task[Token])(route: AppRoute)(request: Request)(using Origin): Task[Response] = {
@@ -576,15 +747,13 @@ object secure {
       route(request)
     }
 
-    ensureResponse {
-      for
-        _     <- ZIO.logInfo(s"Executing app route for app '${application}'")
-        token <- tokenFrom(request)                         //.mapError(e => ReturnResponseError(Response.forbidden(s"Error extracting token from request: ${e.getMessage}")))
-        _     <- ZIO.logInfo(s"Token extracted ${token.user.details.email}")
-        sat   <- ZIO.fromOption(token.narrowTo(application)).mapError(_ => ReturnResponseError(Response.forbidden(s"User has no access to application '$application'")))
-        _     <- ZIO.logInfo(s"Token narrowed. Executing")
-        res   <- execute(sat)
-      yield res
-    }
+    for
+      _     <- ZIO.logInfo(s"Executing app route for app '${application}'")
+      token <- tokenFrom(request)
+      _     <- ZIO.logInfo(s"Token extracted ${token.user.details.email}")
+      sat   <- ZIO.fromOption(token.narrowTo(application)).mapError(GuaraError.of(MorbidError.Forbidden, Status.Forbidden, s"User has no access to application '$application'"))
+      _     <- ZIO.logInfo(s"Token narrowed. Executing")
+      res   <- execute(sat)
+    yield res
   }
 }
