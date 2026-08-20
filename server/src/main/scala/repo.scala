@@ -435,6 +435,7 @@ object repo {
         case r: LinkAccountToPlan      => linkAccountToPlan(r)
         case r: FindTenantByCode       => tenantByCode(r)
         case r: FindPlanByCode         => planByCode(r)
+        case r: GetAdmins              => admins(r)
     }
 
     private def tenantByCode(request: FindTenantByCode): Task[Option[RawTenant]] = {
@@ -1552,7 +1553,7 @@ object repo {
       yield rows.map(_.transformInto[RawUserEntry])
     }
 
-    private def admsOfAccounts(request: FindAdmsOfAccounts): Task[Seq[RawAccountAdmin]] = {
+    private def admins(request: GetAdmins): Task[Seq[RawAccountAdmin]] = {
       inline def query = {
         quote {
           for
