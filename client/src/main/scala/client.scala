@@ -6,7 +6,9 @@ object client {
 
   import guara.errors.{ReturnResponseError, ReturnUnifiedError}
   import guara.uef
-  import guara.utils.queryParams
+  import guara.uef.UnifiedErrorFormat
+  import guara.uef.given
+  import guara.utils.{queryParams, parse}
   import io.jsonwebtoken.{Jws, Jwts}
   import morbid.domain.*
   import morbid.domain.raw.*
@@ -116,12 +118,22 @@ object client {
     // scope — by the time callers (e.g. narrowResponse in presto-api) read
     // it, the connection has been released and body.asString hangs.
     private def perform(request: Request): Task[Response] = {
+
+      def whenUEF(response: Response) = {
+        for
+          uef <- response.body.parse[UnifiedErrorFormat]()
+          _   <- ZIO.logError(s"Erro calling morbid: ${uef.message} (code:${uef.code}, status:${uef.status})")
+          _   <- ZIO.logError(uef.trace.getOrElse("NO TRACE"))
+          _   <- ZIO.fail(ReturnUnifiedError(message = uef.message, status = uef.status, code = uef.code))
+        yield ()
+      }
+
       for
         _     <- ZIO.logInfo(s"Calling '${request.url.encode}'")
         res   <- client.batched(request)
         isUEF =  res.headers.exists(uef.isUEFHeader)
         _     <- ZIO.logInfo(s"Result is ${res.status.code} (uef ? $isUEF)")
-        _     <- ZIO.when(isUEF) { ZIO.fail(ReturnResponseError(res)) }
+        _     <- ZIO.when(isUEF) { whenUEF(res) }
       yield res
     }
 
