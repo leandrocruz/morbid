@@ -828,7 +828,7 @@ object repo {
               )
           }
           for
-            _ <- ZIO.log(s"Updating user '${row.email}' id ${row.id}")
+            _ <- ZIO.log(s"Updating user '${row.email}' id ${row.id} (active:${row.active}, deleted:${row.deleted.getOrElse("_")} )")
             _ <- exec(run(stmt))
           yield raw
         }
