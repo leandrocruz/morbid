@@ -1559,7 +1559,7 @@ object repo {
           for
             app <- applications                      if app.deleted.isEmpty && app.code == lift(request.app)
             ata <- account2app.join(_.app == app.id) if ata.deleted.isEmpty
-            acc <- accounts.join   (_.id == ata.acc) if acc.deleted.isEmpty && acc.active
+            acc <- accounts.join   (_.id == ata.acc) if acc.deleted.isEmpty && acc.active && lift(request.account).forall(_ == acc.id)
             grp <- groups.join     (_.acc == acc.id) if grp.deleted.isEmpty && grp.code == lift(GroupCode.admin)
             utg <- user2group.join (_.grp == grp.id) if utg.deleted.isEmpty
             usr <- users.join      (_.id == utg.usr) if usr.deleted.isEmpty && usr.active
