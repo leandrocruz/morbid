@@ -1,7 +1,11 @@
 # Morbid
 
+## Release v2.7.0
+LTS: 20/08/2026
+
  - [Leandro] Logando `UserRow.active` e `UserRow.deleted` na atualização dos usuários (mascarenhas)
  - [Leandro] Nova coluna `UserRow.updated`
+ - [Leandro] Parsing UEF error at `RemoteMorbidClient.perform`
 
 ## Release v2.6.0
 LTS: 17/07/2026
