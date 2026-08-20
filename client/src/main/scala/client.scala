@@ -4,11 +4,10 @@ import zio.*
 
 object client {
 
-  import guara.errors.{ReturnResponseError, ReturnUnifiedError}
+  import guara.errors.ReturnUnifiedError
   import guara.uef
-  import guara.uef.UnifiedErrorFormat
-  import guara.uef.given
-  import guara.utils.{queryParams, parse}
+  import guara.uef.{UnifiedErrorFormat, given}
+  import guara.utils.{parse, queryParams}
   import io.jsonwebtoken.{Jws, Jwts}
   import morbid.domain.*
   import morbid.domain.raw.*
@@ -23,36 +22,47 @@ object client {
   import java.time.{LocalDateTime, ZoneId, ZonedDateTime}
   import java.util.Base64
   import javax.crypto.spec.SecretKeySpec
+  
+  trait TokenHeader[T] {
+    def headers(token: T): Headers
+  }
+
+  object TokenHeader {
+    private def header(name: String, token: RawToken | ServiceToken) = Headers(Chunk(Header.Custom(name, token.string)))
+    given TokenHeader[RawToken]     = header(morbid.MorbidHeaders.Token       , _)
+    given TokenHeader[ServiceToken] = header(morbid.MorbidHeaders.ServiceToken, _)
+  }
 
   trait MorbidClient {
-    def proxy             (request: Request)                                                                            : Task[Response]
-    def provision         (request: ProvisionRequest)                                                                   : Task[Token]
-    def provisionRaw      (request: ProvisionRequest)                                                                   : Task[Response]
-    def accountByIdentifier(request: FindAccountByIdentifierRequest)                                                    : Task[Option[RawAccount]]
-    def tokenFrom         (token: RawToken)                                                                             : Task[Token]
-    def groups                                                             (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
-    def groupsByCode      (groups: Seq[GroupCode])                         (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
-    def groupByCode       (group: GroupCode)                               (using token: RawToken, app: ApplicationCode): Task[Option[RawGroup]]
-    def usersByGroupByCode(group: GroupCode)                               (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
-    def groupsByUser      (request: GetUserGroupsRequest)                  (using token: RawToken, app: ApplicationCode): Task[Seq[RawGroup]]
-    def setUserGroups     (request: SetUserGroupsRequest)                  (using token: RawToken, app: ApplicationCode): Task[Boolean]
-    def users                                                              (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
-    def roles                                                              (using token: RawToken, app: ApplicationCode): Task[Seq[RawRole]]
-    def storeGroup        (request: StoreGroupRequest)                     (using token: RawToken, app: ApplicationCode): Task[RawGroup]
-    def removeGroup       (request: RemoveGroupRequest)                    (using token: RawToken, app: ApplicationCode): Task[Long]
-    def storeUser         (request: StoreUserRequest)                      (using token: RawToken, app: ApplicationCode): Task[RawUserEntry]
-    def removeUser        (request: RemoveUserRequest)                     (using token: RawToken, app: ApplicationCode): Task[Long]
-    def passwordResetLink (request: RequestPasswordRequestLink)            (using token: RawToken, app: ApplicationCode): Task[PasswordResetLink]
-    def passwordChange    (request: ChangePasswordRequest)                 (using token: RawToken, app: ApplicationCode): Task[Boolean]
-    def setPin            (request: SetUserPin)                            (using token: RawToken, app: ApplicationCode): Task[Boolean]
-    def validatePin       (request: ValidateUserPin)                       (using token: RawToken                      ): Task[Boolean]
-    def emailLoginLink    (request: LoginViaEmailLinkRequest)              (using                  app: ApplicationCode): Task[LoginViaEmailLinkResponse]
-    def managerGetUsers     (account: AccountId)                           (using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]]
-    def managerStoreUser    (request: StoreUserRequest, account: AccountId)(using token: RawToken, app: ApplicationCode): Task[RawUserEntry]
-    def managerRemoveUser   (account: AccountId, code: UserCode)           (using token: RawToken, app: ApplicationCode): Task[Boolean]
-    def managerGetAccounts                                                 (using token: RawToken, app: ApplicationCode): Task[Seq[RawAccount]]
-    def managerStoreAccount (request: StoreAccountRequest)                 (using token: RawToken, app: ApplicationCode): Task[RawAccount]
-    def managerRemoveAccount(account: AccountId)                           (using token: RawToken, app: ApplicationCode): Task[Boolean]
+    def proxy             (request: Request)                                                                                : Task[Response]
+    def provision         (request: ProvisionRequest)                                                                       : Task[Token]
+    def provisionRaw      (request: ProvisionRequest)                                                                       : Task[Response]
+    def accountByIdentifier(request: FindAccountByIdentifierRequest)                                                        : Task[Option[RawAccount]]
+    def tokenFrom         (token: RawToken)                                                                                 : Task[Token]
+    def admins                                                             (using token: ServiceToken, app: ApplicationCode): Task[Seq[RawAccountAdmin]]
+    def groups                                                             (using token: RawToken, app: ApplicationCode)    : Task[Seq[RawGroup]]
+    def groupsByCode      (groups: Seq[GroupCode])                         (using token: RawToken, app: ApplicationCode)    : Task[Seq[RawGroup]]
+    def groupByCode       (group: GroupCode)                               (using token: RawToken, app: ApplicationCode)    : Task[Option[RawGroup]]
+    def usersByGroupByCode(group: GroupCode)                               (using token: RawToken, app: ApplicationCode)    : Task[Seq[RawUserEntry]]
+    def groupsByUser      (request: GetUserGroupsRequest)                  (using token: RawToken, app: ApplicationCode)    : Task[Seq[RawGroup]]
+    def setUserGroups     (request: SetUserGroupsRequest)                  (using token: RawToken, app: ApplicationCode)    : Task[Boolean]
+    def users                                                              (using token: RawToken, app: ApplicationCode)    : Task[Seq[RawUserEntry]]
+    def roles                                                              (using token: RawToken, app: ApplicationCode)    : Task[Seq[RawRole]]
+    def storeGroup        (request: StoreGroupRequest)                     (using token: RawToken, app: ApplicationCode)    : Task[RawGroup]
+    def removeGroup       (request: RemoveGroupRequest)                    (using token: RawToken, app: ApplicationCode)    : Task[Long]
+    def storeUser         (request: StoreUserRequest)                      (using token: RawToken, app: ApplicationCode)    : Task[RawUserEntry]
+    def removeUser        (request: RemoveUserRequest)                     (using token: RawToken, app: ApplicationCode)    : Task[Long]
+    def passwordResetLink (request: RequestPasswordRequestLink)            (using token: RawToken, app: ApplicationCode)    : Task[PasswordResetLink]
+    def passwordChange    (request: ChangePasswordRequest)                 (using token: RawToken, app: ApplicationCode)    : Task[Boolean]
+    def setPin            (request: SetUserPin)                            (using token: RawToken, app: ApplicationCode)    : Task[Boolean]
+    def validatePin       (request: ValidateUserPin)                       (using token: RawToken                      )    : Task[Boolean]
+    def emailLoginLink    (request: LoginViaEmailLinkRequest)              (using                  app: ApplicationCode)    : Task[LoginViaEmailLinkResponse]
+    def managerGetUsers     (account: AccountId)                           (using token: RawToken, app: ApplicationCode)    : Task[Seq[RawUserEntry]]
+    def managerStoreUser    (request: StoreUserRequest, account: AccountId)(using token: RawToken, app: ApplicationCode)    : Task[RawUserEntry]
+    def managerRemoveUser   (account: AccountId, code: UserCode)           (using token: RawToken, app: ApplicationCode)    : Task[Boolean]
+    def managerGetAccounts                                                 (using token: RawToken, app: ApplicationCode)    : Task[Seq[RawAccount]]
+    def managerStoreAccount (request: StoreAccountRequest)                 (using token: RawToken, app: ApplicationCode)    : Task[RawAccount]
+    def managerRemoveAccount(account: AccountId)                           (using token: RawToken, app: ApplicationCode)    : Task[Boolean]
   }
 
   case class MorbidClientConfig(url: String, mode: String = "remote", key: Option[String] = None, timezone: Option[String] = None)
@@ -111,7 +121,7 @@ object client {
     given JsonEncoder[SimpleToken] = DeriveJsonEncoder.gen
 
     private val applicationJson = Headers(Chunk(Header.ContentType(MediaType("application", "json"))))
-    private def morbidToken(token: RawToken) = Headers(Chunk(Header.Custom(morbid.MorbidHeaders.Token, token.string)))
+    private def auth[A](token: A)(using hdr: TokenHeader[A]): Headers = hdr.headers(token)
 
     // `batched` fully buffers the response body before returning. Using
     // `request` instead would give a streaming body bound to the client's
@@ -143,12 +153,12 @@ object client {
       yield resp
     }
 
-    override def provisionRaw(request: ProvisionRequest): Task[Response] = perform(Request.post(base / "provision", Body.fromString(request.toJson)).copy(headers = applicationJson))
-    override def provision(request: ProvisionRequest)   : Task[Token]    = post[ProvisionRequest, Token](None, base / "provision", request)
-    override def tokenFrom(token: RawToken)             : Task[Token]    = post[SimpleToken     , Token](Some(token), base / "verify", SimpleToken(token))
-    override def accountByIdentifier(request: FindAccountByIdentifierRequest): Task[Option[RawAccount]] = post[FindAccountByIdentifierRequest, Option[RawAccount]](None, base / "account" / "by-identifier", request)
+    override def provisionRaw(request: ProvisionRequest): Task[Response]                                = perform(Request.post(base / "provision", Body.fromString(request.toJson)).copy(headers = applicationJson))
+    override def provision(request: ProvisionRequest)   : Task[Token]                                   = post[ProvisionRequest, Token](Headers.empty, base / "provision", request)
+    override def tokenFrom(token: RawToken)             : Task[Token]                                   = post[SimpleToken     , Token](auth(token), base / "verify", SimpleToken(token))
+    override def accountByIdentifier(request: FindAccountByIdentifierRequest): Task[Option[RawAccount]] = post[FindAccountByIdentifierRequest, Option[RawAccount]](Headers.empty, base / "account" / "by-identifier", request)
 
-    private def exec[T](token: Option[RawToken], req: Request)(using dec: JsonDecoder[T]): Task[T] = {
+    private def exec[T](auth: Headers, req: Request)(using dec: JsonDecoder[T]): Task[T] = {
 
       def badGateway(cause: Throwable) = {
         ReturnUnifiedError(
@@ -166,40 +176,41 @@ object client {
       }
 
       for
-        res    <- perform(req.copy(headers = req.headers ++ token.map(morbidToken).getOrElse(Headers.empty))).mapError(badGateway)
+        res    <- perform(req.copy(headers = req.headers ++ auth)).mapError(badGateway)
         str    <- res.body.asString
         result <- ZIO.fromEither(str.fromJson[T]).mapError(handleParseError(res, str))
       yield result
     }
 
-    private def delete[T] (token: Option[RawToken], url: URL)           (using dec: JsonDecoder[T])                     : Task[T] = exec(token, Request.get(url))
-    private def get [T]   (token: Option[RawToken], url: URL)           (using dec: JsonDecoder[T])                     : Task[T] = exec(token, Request.get(url))
-    private def post[R, T](token: Option[RawToken], url: URL, req: R)   (using dec: JsonDecoder[T], enc: JsonEncoder[R]): Task[T] = exec(token, Request.post(url, Body.fromString(req.toJson)).copy(headers = applicationJson))
+    private def delete[T] (auth: Headers, url: URL)        (using dec: JsonDecoder[T])                     : Task[T] = exec(auth, Request.get(url))
+    private def get [T]   (auth: Headers, url: URL)        (using dec: JsonDecoder[T])                     : Task[T] = exec(auth, Request.get(url))
+    private def post[R, T](auth: Headers, url: URL, req: R)(using dec: JsonDecoder[T], enc: JsonEncoder[R]): Task[T] = exec(auth, Request.post(url, Body.fromString(req.toJson)).copy(headers = applicationJson))
 
-    override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = get [Option[RawGroup]]                                    (Some(token),  base / "app" / ApplicationCode.value(app) / "group")
-    override def storeGroup        (request: StoreGroupRequest)         (using token: RawToken, app: ApplicationCode) = post[StoreGroupRequest, RawGroup]                         (Some(token),  base / "app" / ApplicationCode.value(app) / "group", request)
-    override def removeGroup       (request: RemoveGroupRequest)        (using token: RawToken, app: ApplicationCode) = post[RemoveGroupRequest, Long]                            (Some(token),  base / "app" / ApplicationCode.value(app) / "group" / "delete", request)
-    override def groups                                                 (using token: RawToken, app: ApplicationCode) = get [Seq[RawGroup]]                                       (Some(token),  base / "app" / ApplicationCode.value(app) / "groups")
-    override def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode) = get [Seq[RawGroup]]                                       (Some(token), (base / "app" / ApplicationCode.value(app) / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
-    override def usersByGroupByCode(group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = get [Seq[RawUserEntry]]                                   (Some(token),  base / "app" / ApplicationCode.value(app) / "group" / GroupCode.value(group) / "users")
-    override def groupsByUser      (request: GetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode) = post[GetUserGroupsRequest, Seq[RawGroup]]                 (Some(token),  base / "app" / ApplicationCode.value(app) / "user"  / "groups" / "find", request)
-    override def setUserGroups     (request: SetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode) = post[SetUserGroupsRequest, Boolean]                       (Some(token),  base / "app" / ApplicationCode.value(app) / "user"  / "groups", request)
-    override def storeUser         (request: StoreUserRequest)          (using token: RawToken, app: ApplicationCode) = post[StoreUserRequest, RawUserEntry]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "user", request)
-    override def removeUser        (request: RemoveUserRequest)         (using token: RawToken, app: ApplicationCode) = post[RemoveUserRequest, Long]                             (Some(token),  base / "app" / ApplicationCode.value(app) / "user" / "delete", request)
-    override def users                                                  (using token: RawToken, app: ApplicationCode) = get [Seq[RawUserEntry]]                                   (Some(token),  base / "app" / ApplicationCode.value(app) / "users")
-    override def roles                                                  (using token: RawToken, app: ApplicationCode) = get [Seq[RawRole]]                                        (Some(token),  base / "app" / ApplicationCode.value(app) / "roles")
-    override def passwordResetLink (request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode) = post[RequestPasswordRequestLink, PasswordResetLink]       (Some(token),  base / "app" / ApplicationCode.value(app) / "password" / "reset", request)
-    override def passwordChange    (request: ChangePasswordRequest)     (using token: RawToken, app: ApplicationCode) = post[ChangePasswordRequest, Boolean]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "password" / "change", request)
-    override def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode) = post[SetUserPin, Boolean]                                 (Some(token),  base / "app" / ApplicationCode.value(app) / "user" / "pin", request)
-    override def validatePin       (request: ValidateUserPin)           (using token: RawToken                      ) = post[ValidateUserPin, Boolean]                            (Some(token),  base                                      / "user" / "pin" / "validate", request)
-    override def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode) = post[LoginViaEmailLinkRequest, LoginViaEmailLinkResponse] (None       ,  base / "app" / ApplicationCode.value(app) / "login" / "email", request)
+    override def admins                                                 (using token: ServiceToken, app: ApplicationCode) = get[Seq[RawAccountAdmin]]                                 (auth(token),  base / "service" / "app" / ApplicationCode.value(app) / "accounts" / "adms")
+    override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode)     = get [Option[RawGroup]]                                    (auth(token),  base / "app" / ApplicationCode.value(app) / "group")
+    override def storeGroup        (request: StoreGroupRequest)         (using token: RawToken, app: ApplicationCode)     = post[StoreGroupRequest, RawGroup]                         (auth(token),  base / "app" / ApplicationCode.value(app) / "group", request)
+    override def removeGroup       (request: RemoveGroupRequest)        (using token: RawToken, app: ApplicationCode)     = post[RemoveGroupRequest, Long]                            (auth(token),  base / "app" / ApplicationCode.value(app) / "group" / "delete", request)
+    override def groups                                                 (using token: RawToken, app: ApplicationCode)     = get [Seq[RawGroup]]                                       (auth(token),  base / "app" / ApplicationCode.value(app) / "groups")
+    override def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode)     = get [Seq[RawGroup]]                                       (auth(token), (base / "app" / ApplicationCode.value(app) / "groups").queryParams(QueryParams(Map("code" -> Chunk.fromIterator(groups.map(GroupCode.value).iterator)))))
+    override def usersByGroupByCode(group: GroupCode)                   (using token: RawToken, app: ApplicationCode)     = get [Seq[RawUserEntry]]                                   (auth(token),  base / "app" / ApplicationCode.value(app) / "group" / GroupCode.value(group) / "users")
+    override def groupsByUser      (request: GetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode)     = post[GetUserGroupsRequest, Seq[RawGroup]]                 (auth(token),  base / "app" / ApplicationCode.value(app) / "user"  / "groups" / "find", request)
+    override def setUserGroups     (request: SetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode)     = post[SetUserGroupsRequest, Boolean]                       (auth(token),  base / "app" / ApplicationCode.value(app) / "user"  / "groups", request)
+    override def storeUser         (request: StoreUserRequest)          (using token: RawToken, app: ApplicationCode)     = post[StoreUserRequest, RawUserEntry]                      (auth(token),  base / "app" / ApplicationCode.value(app) / "user", request)
+    override def removeUser        (request: RemoveUserRequest)         (using token: RawToken, app: ApplicationCode)     = post[RemoveUserRequest, Long]                             (auth(token),  base / "app" / ApplicationCode.value(app) / "user" / "delete", request)
+    override def users                                                  (using token: RawToken, app: ApplicationCode)     = get [Seq[RawUserEntry]]                                   (auth(token),  base / "app" / ApplicationCode.value(app) / "users")
+    override def roles                                                  (using token: RawToken, app: ApplicationCode)     = get [Seq[RawRole]]                                        (auth(token),  base / "app" / ApplicationCode.value(app) / "roles")
+    override def passwordResetLink (request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode)     = post[RequestPasswordRequestLink, PasswordResetLink]       (auth(token),  base / "app" / ApplicationCode.value(app) / "password" / "reset", request)
+    override def passwordChange    (request: ChangePasswordRequest)     (using token: RawToken, app: ApplicationCode)     = post[ChangePasswordRequest, Boolean]                      (auth(token),  base / "app" / ApplicationCode.value(app) / "password" / "change", request)
+    override def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode)     = post[SetUserPin, Boolean]                                 (auth(token),  base / "app" / ApplicationCode.value(app) / "user" / "pin", request)
+    override def validatePin       (request: ValidateUserPin)           (using token: RawToken                      )     = post[ValidateUserPin, Boolean]                            (auth(token),  base                                      / "user" / "pin" / "validate", request)
+    override def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode)     = post[LoginViaEmailLinkRequest, LoginViaEmailLinkResponse] (Headers.empty       ,  base / "app" / ApplicationCode.value(app) / "login" / "email", request)
 
-    override def managerGetUsers     (account: AccountId)                           (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]               (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString / "users")
-    override def managerStoreUser    (request: StoreUserRequest, account: AccountId)(using token: RawToken, app: ApplicationCode) = post[StoreUserRequest, RawUserEntry] (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString / "user", request)
-    override def managerRemoveUser   (account: AccountId, code: UserCode)           (using token: RawToken, app: ApplicationCode) = delete[Boolean]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString / "user" / UserCode.value(code))
-    override def managerGetAccounts                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawAccount]]                 (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "accounts")
-    override def managerStoreAccount (request: StoreAccountRequest)                 (using token: RawToken, app: ApplicationCode) = post[StoreAccountRequest, RawAccount](Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account", request)
-    override def managerRemoveAccount(account: AccountId)                           (using token: RawToken, app: ApplicationCode) = delete[Boolean]                      (Some(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString)
+    override def managerGetUsers     (account: AccountId)                           (using token: RawToken, app: ApplicationCode) = get[Seq[RawUserEntry]]               (auth(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString / "users")
+    override def managerStoreUser    (request: StoreUserRequest, account: AccountId)(using token: RawToken, app: ApplicationCode) = post[StoreUserRequest, RawUserEntry] (auth(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString / "user", request)
+    override def managerRemoveUser   (account: AccountId, code: UserCode)           (using token: RawToken, app: ApplicationCode) = delete[Boolean]                      (auth(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString / "user" / UserCode.value(code))
+    override def managerGetAccounts                                                 (using token: RawToken, app: ApplicationCode) = get[Seq[RawAccount]]                 (auth(token),  base / "app" / ApplicationCode.value(app) / "manager" / "accounts")
+    override def managerStoreAccount (request: StoreAccountRequest)                 (using token: RawToken, app: ApplicationCode) = post[StoreAccountRequest, RawAccount](auth(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account", request)
+    override def managerRemoveAccount(account: AccountId)                           (using token: RawToken, app: ApplicationCode) = delete[Boolean]                      (auth(token),  base / "app" / ApplicationCode.value(app) / "manager" / "account" / AccountId.value(account).toString)
   }
 
   case class LocalMorbidClient(parser: io.jsonwebtoken.JwtParser, zone: ZoneId, remote: RemoteMorbidClient) extends MorbidClient {
@@ -223,27 +234,28 @@ object client {
       yield token
     }
 
-    override def proxy             (request: Request)                                                                 = remote.proxy(request)
-    override def provision         (request: ProvisionRequest)                                                        = remote.provision(request)
-    override def provisionRaw      (request: ProvisionRequest)                                                        = remote.provisionRaw(request)
-    override def accountByIdentifier(request: FindAccountByIdentifierRequest)                                         = remote.accountByIdentifier(request)
-    override def groups                                                 (using token: RawToken, app: ApplicationCode) = remote.groups
-    override def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode) = remote.groupsByCode(groups)
-    override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = remote.groupByCode(group)
-    override def usersByGroupByCode(group: GroupCode)                   (using token: RawToken, app: ApplicationCode) = remote.usersByGroupByCode(group)
-    override def groupsByUser      (request: GetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode) = remote.groupsByUser(request)
-    override def setUserGroups     (request: SetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode) = remote.setUserGroups(request)
-    override def users                                                  (using token: RawToken, app: ApplicationCode) = remote.users
-    override def roles                                                  (using token: RawToken, app: ApplicationCode) = remote.roles
-    override def storeGroup        (request: StoreGroupRequest)         (using token: RawToken, app: ApplicationCode) = remote.storeGroup(request)
-    override def removeGroup       (request: RemoveGroupRequest)        (using token: RawToken, app: ApplicationCode) = remote.removeGroup(request)
-    override def storeUser         (request: StoreUserRequest)          (using token: RawToken, app: ApplicationCode) = remote.storeUser(request)
-    override def removeUser        (request: RemoveUserRequest)         (using token: RawToken, app: ApplicationCode) = remote.removeUser(request)
-    override def passwordResetLink (request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode) = remote.passwordResetLink(request)
-    override def passwordChange    (request: ChangePasswordRequest)     (using token: RawToken, app: ApplicationCode) = remote.passwordChange(request)
-    override def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode) = remote.setPin(request)
-    override def validatePin       (request: ValidateUserPin)           (using token: RawToken                      ) = remote.validatePin(request)
-    override def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode) = remote.emailLoginLink(request)
+    override def proxy             (request: Request)                                                                      = remote.proxy(request)
+    override def provision         (request: ProvisionRequest)                                                             = remote.provision(request)
+    override def provisionRaw      (request: ProvisionRequest)                                                             = remote.provisionRaw(request)
+    override def accountByIdentifier(request: FindAccountByIdentifierRequest)                                              = remote.accountByIdentifier(request)
+    override def admins                                                  (using token: ServiceToken, app: ApplicationCode) = remote.admins
+    override def groups                                                 (using token: RawToken, app: ApplicationCode)      = remote.groups
+    override def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode)      = remote.groupsByCode(groups)
+    override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode)      = remote.groupByCode(group)
+    override def usersByGroupByCode(group: GroupCode)                   (using token: RawToken, app: ApplicationCode)      = remote.usersByGroupByCode(group)
+    override def groupsByUser      (request: GetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode)      = remote.groupsByUser(request)
+    override def setUserGroups     (request: SetUserGroupsRequest)      (using token: RawToken, app: ApplicationCode)      = remote.setUserGroups(request)
+    override def users                                                  (using token: RawToken, app: ApplicationCode)      = remote.users
+    override def roles                                                  (using token: RawToken, app: ApplicationCode)      = remote.roles
+    override def storeGroup        (request: StoreGroupRequest)         (using token: RawToken, app: ApplicationCode)      = remote.storeGroup(request)
+    override def removeGroup       (request: RemoveGroupRequest)        (using token: RawToken, app: ApplicationCode)      = remote.removeGroup(request)
+    override def storeUser         (request: StoreUserRequest)          (using token: RawToken, app: ApplicationCode)      = remote.storeUser(request)
+    override def removeUser        (request: RemoveUserRequest)         (using token: RawToken, app: ApplicationCode)      = remote.removeUser(request)
+    override def passwordResetLink (request: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode)      = remote.passwordResetLink(request)
+    override def passwordChange    (request: ChangePasswordRequest)     (using token: RawToken, app: ApplicationCode)      = remote.passwordChange(request)
+    override def setPin            (request: SetUserPin)                (using token: RawToken, app: ApplicationCode)      = remote.setPin(request)
+    override def validatePin       (request: ValidateUserPin)           (using token: RawToken                      )      = remote.validatePin(request)
+    override def emailLoginLink    (request: LoginViaEmailLinkRequest)  (using                  app: ApplicationCode)      = remote.emailLoginLink(request)
     override def managerGetUsers     (account: AccountId)                           (using token: RawToken, app: ApplicationCode) = remote.managerGetUsers(account)
     override def managerStoreUser    (request: StoreUserRequest, account: AccountId)(using token: RawToken, app: ApplicationCode) = remote.managerStoreUser(request, account)
     override def managerRemoveUser   (account: AccountId, code: UserCode)           (using token: RawToken, app: ApplicationCode) = remote.managerRemoveUser(account, code)
@@ -289,27 +301,28 @@ object client {
       RawUserEntry(UserId.of(3), LocalDateTime.now(), None, AccountId.of(1), None, code = UserCode.of("usr3"), active = true, Email.of("usr3@email.com"))
     )
 
-    override def validatePin       (request: ValidateUserPin)            (using token: RawToken)                        = ZIO.succeed(true)
-    override def groups                                                  (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_groups)
-    override def users                                                   (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_users)
-    override def groupByCode       (group: GroupCode)                    (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_groups.find(_.code == group))
-    override def groupsByCode      (groups: Seq[GroupCode])              (using token: RawToken, app: ApplicationCode) = ZIO.succeed { _groups.filter(g => groups.contains(g.code)) }
-    override def proxy             (request: Request)                                                                  = ZIO.fail(Exception("TODO"))
-    override def provision         (request: ProvisionRequest)                                                         = ZIO.fail(Exception("TODO"))
-    override def provisionRaw      (request: ProvisionRequest)                                                         = ZIO.fail(Exception("TODO"))
-    override def accountByIdentifier(request: FindAccountByIdentifierRequest)                                          = ZIO.fail(Exception("TODO"))
-    override def usersByGroupByCode(group: GroupCode)                    (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
-    override def groupsByUser      (request: GetUserGroupsRequest)       (using token: RawToken, app: ApplicationCode) = ZIO.succeed(_groups)
-    override def setUserGroups     (request: SetUserGroupsRequest)       (using token: RawToken, app: ApplicationCode) = ZIO.succeed(true)
-    override def roles                                                   (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
-    override def storeGroup        (request: StoreGroupRequest)          (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
-    override def storeUser         (request: StoreUserRequest)           (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
-    override def setPin            (request: SetUserPin)                 (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
-    override def passwordResetLink (request: RequestPasswordRequestLink) (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
-    override def removeGroup       (request: RemoveGroupRequest)         (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
-    override def removeUser        (request: RemoveUserRequest)          (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
-    override def emailLoginLink    (request: LoginViaEmailLinkRequest)   (using app: ApplicationCode)                  = ZIO.fail(Exception("TODO"))
-    override def passwordChange    (request: ChangePasswordRequest)      (using token: RawToken, app: ApplicationCode) = ZIO.fail(Exception("TODO"))
+    override def admins                                                  (using token: ServiceToken, app: ApplicationCode) = ZIO.succeed(Seq.empty)
+    override def validatePin       (request: ValidateUserPin)            (using token: RawToken)                          = ZIO.succeed(true)
+    override def groups                                                  (using token: RawToken, app: ApplicationCode)    = ZIO.succeed(_groups)
+    override def users                                                   (using token: RawToken, app: ApplicationCode)    = ZIO.succeed(_users)
+    override def groupByCode       (group: GroupCode)                    (using token: RawToken, app: ApplicationCode)    = ZIO.succeed(_groups.find(_.code == group))
+    override def groupsByCode      (groups: Seq[GroupCode])              (using token: RawToken, app: ApplicationCode)    = ZIO.succeed { _groups.filter(g => groups.contains(g.code)) }
+    override def proxy             (request: Request)                                                                     = ZIO.fail(Exception("TODO"))
+    override def provision         (request: ProvisionRequest)                                                            = ZIO.fail(Exception("TODO"))
+    override def provisionRaw      (request: ProvisionRequest)                                                            = ZIO.fail(Exception("TODO"))
+    override def accountByIdentifier(request: FindAccountByIdentifierRequest)                                             = ZIO.fail(Exception("TODO"))
+    override def usersByGroupByCode(group: GroupCode)                    (using token: RawToken, app: ApplicationCode)    = ZIO.fail(Exception("TODO"))
+    override def groupsByUser      (request: GetUserGroupsRequest)       (using token: RawToken, app: ApplicationCode)    = ZIO.succeed(_groups)
+    override def setUserGroups     (request: SetUserGroupsRequest)       (using token: RawToken, app: ApplicationCode)    = ZIO.succeed(true)
+    override def roles                                                   (using token: RawToken, app: ApplicationCode)    = ZIO.fail(Exception("TODO"))
+    override def storeGroup        (request: StoreGroupRequest)          (using token: RawToken, app: ApplicationCode)    = ZIO.fail(Exception("TODO"))
+    override def storeUser         (request: StoreUserRequest)           (using token: RawToken, app: ApplicationCode)    = ZIO.fail(Exception("TODO"))
+    override def setPin            (request: SetUserPin)                 (using token: RawToken, app: ApplicationCode)    = ZIO.fail(Exception("TODO"))
+    override def passwordResetLink (request: RequestPasswordRequestLink) (using token: RawToken, app: ApplicationCode)    = ZIO.fail(Exception("TODO"))
+    override def removeGroup       (request: RemoveGroupRequest)         (using token: RawToken, app: ApplicationCode)    = ZIO.fail(Exception("TODO"))
+    override def removeUser        (request: RemoveUserRequest)          (using token: RawToken, app: ApplicationCode)    = ZIO.fail(Exception("TODO"))
+    override def emailLoginLink    (request: LoginViaEmailLinkRequest)   (using app: ApplicationCode)                     = ZIO.fail(Exception("TODO"))
+    override def passwordChange    (request: ChangePasswordRequest)      (using token: RawToken, app: ApplicationCode)    = ZIO.fail(Exception("TODO"))
 
     override def tokenFrom(token: RawToken): Task[Token] = ZIO.attempt {
 
