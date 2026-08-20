@@ -873,6 +873,10 @@ object router {
       yield Response.json(true.toJson)
     }
 
+    private def admins(validateToken: ValidateToken)(app: String, request: Request) = {
+      entitiesByValidate(validateToken)(request, GetAdmins(request.query("account").toOption.map(AccountId.of), ApplicationCode.of(app)))
+    }
+
     private def requireRootAccount(request: Request) = {
       for
         tk <- tokenFrom(request)
@@ -892,6 +896,7 @@ object router {
     private def serviceRoutes = Routes(
       Method.GET / "service" / "app" / string("app") /"users"    -> handler(usersByApp(testServiceToken)),
       Method.GET / "service" / "app" / string("app") /"accounts" -> handler(accountsByApp(testServiceToken)),
+      Method.GET / "service" / "app" / string("app") /"admins"   -> handler(admins(testServiceToken)),
     ).sandbox
 
     private def regular = Routes(
