@@ -121,6 +121,7 @@ object repo {
     id      : UserId,
     created : LocalDateTime,
     deleted : Option[LocalDateTime],
+    updated : Option[LocalDateTime],
     account : AccountId,
     kind    : Option[UserKind],
     code    : UserCode,
@@ -797,8 +798,8 @@ object repo {
         )
       }
 
-      def store(raw: RawUserEntry): Task[RawUserEntry] = {
-        val row = raw.transformInto[UserRow]
+      def store(raw: RawUserEntry, now: LocalDateTime): Task[RawUserEntry] = {
+        val row = raw.into[UserRow].withFieldConst(_.updated, Some(now)).transform
 
         def insertWithoutId = {
 
@@ -823,12 +824,13 @@ object repo {
           inline def stmt = quote {
             users.filter(_.id == lift(row.id))
               .update(
+                _.updated -> lift(row.updated),
                 _.deleted -> lift(row.deleted),
-                _.active -> lift(row.active)
+                _.active  -> lift(row.active),
               )
           }
           for
-            _ <- ZIO.log(s"Updating user '${row.email}' id ${row.id}")
+            _ <- ZIO.log(s"Updating user '${row.email}' id ${row.id} (active:${row.active}, deleted:${row.deleted.getOrElse("_")} )")
             _ <- exec(run(stmt))
           yield raw
         }
@@ -843,7 +845,7 @@ object repo {
       for {
         now <- Clock.localDateTime
         raw =  build(now)
-        usr <- store(raw)
+        usr <- store(raw, now)
       } yield usr
 
     }

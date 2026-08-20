@@ -1,5 +1,8 @@
 # Morbid
 
+ - [Leandro] Logando `UserRow.active` e `UserRow.deleted` na atualização dos usuários (mascarenhas)
+ - [Leandro] Nova coluna `UserRow.updated`
+
 ## Release v2.6.0
 LTS: 17/07/2026
 
