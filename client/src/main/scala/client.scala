@@ -39,7 +39,7 @@ object client {
     def provisionRaw      (request: ProvisionRequest)                                                                       : Task[Response]
     def accountByIdentifier(request: FindAccountByIdentifierRequest)                                                        : Task[Option[RawAccount]]
     def tokenFrom         (token: RawToken)                                                                                 : Task[Token]
-    def admins                                                             (using token: ServiceToken, app: ApplicationCode): Task[Seq[RawAccountAdmin]]
+    def admins            (account: Option[AccountId] = None)              (using token: ServiceToken, app: ApplicationCode): Task[Seq[RawAccountAdmin]]
     def groups                                                             (using token: RawToken, app: ApplicationCode)    : Task[Seq[RawGroup]]
     def groupsByCode      (groups: Seq[GroupCode])                         (using token: RawToken, app: ApplicationCode)    : Task[Seq[RawGroup]]
     def groupByCode       (group: GroupCode)                               (using token: RawToken, app: ApplicationCode)    : Task[Option[RawGroup]]
@@ -186,7 +186,7 @@ object client {
     private def get [T]   (auth: Headers, url: URL)        (using dec: JsonDecoder[T])                     : Task[T] = exec(auth, Request.get(url))
     private def post[R, T](auth: Headers, url: URL, req: R)(using dec: JsonDecoder[T], enc: JsonEncoder[R]): Task[T] = exec(auth, Request.post(url, Body.fromString(req.toJson)).copy(headers = applicationJson))
 
-    override def admins                                                 (using token: ServiceToken, app: ApplicationCode) = get[Seq[RawAccountAdmin]]                                 (auth(token),  base / "service" / "app" / ApplicationCode.value(app) / "accounts" / "adms")
+    override def admins            (account: Option[AccountId] = None)  (using token: ServiceToken, app: ApplicationCode) = get[Seq[RawAccountAdmin]]                                 (auth(token), (base / "service" / "app" / ApplicationCode.value(app) / "accounts" / "admins").queryParams(account.map(acc => QueryParams("account" -> Chunk(AccountId.value(acc).toString))).getOrElse(QueryParams.empty)))
     override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode)     = get [Option[RawGroup]]                                    (auth(token),  base / "app" / ApplicationCode.value(app) / "group")
     override def storeGroup        (request: StoreGroupRequest)         (using token: RawToken, app: ApplicationCode)     = post[StoreGroupRequest, RawGroup]                         (auth(token),  base / "app" / ApplicationCode.value(app) / "group", request)
     override def removeGroup       (request: RemoveGroupRequest)        (using token: RawToken, app: ApplicationCode)     = post[RemoveGroupRequest, Long]                            (auth(token),  base / "app" / ApplicationCode.value(app) / "group" / "delete", request)
@@ -238,7 +238,7 @@ object client {
     override def provision         (request: ProvisionRequest)                                                             = remote.provision(request)
     override def provisionRaw      (request: ProvisionRequest)                                                             = remote.provisionRaw(request)
     override def accountByIdentifier(request: FindAccountByIdentifierRequest)                                              = remote.accountByIdentifier(request)
-    override def admins                                                  (using token: ServiceToken, app: ApplicationCode) = remote.admins
+    override def admins            (account: Option[AccountId] = None)  (using token: ServiceToken, app: ApplicationCode) = remote.admins(account)
     override def groups                                                 (using token: RawToken, app: ApplicationCode)      = remote.groups
     override def groupsByCode      (groups: Seq[GroupCode])             (using token: RawToken, app: ApplicationCode)      = remote.groupsByCode(groups)
     override def groupByCode       (group: GroupCode)                   (using token: RawToken, app: ApplicationCode)      = remote.groupByCode(group)
@@ -301,7 +301,7 @@ object client {
       RawUserEntry(UserId.of(3), LocalDateTime.now(), None, AccountId.of(1), None, code = UserCode.of("usr3"), active = true, Email.of("usr3@email.com"))
     )
 
-    override def admins                                                  (using token: ServiceToken, app: ApplicationCode) = ZIO.succeed(Seq.empty)
+    override def admins            (account: Option[AccountId] = None)   (using token: ServiceToken, app: ApplicationCode) = ZIO.succeed(Seq.empty)
     override def validatePin       (request: ValidateUserPin)            (using token: RawToken)                          = ZIO.succeed(true)
     override def groups                                                  (using token: RawToken, app: ApplicationCode)    = ZIO.succeed(_groups)
     override def users                                                   (using token: RawToken, app: ApplicationCode)    = ZIO.succeed(_users)
