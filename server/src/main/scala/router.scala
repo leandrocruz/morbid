@@ -752,8 +752,7 @@ object router {
     private def entitiesByValidate[R](validateToken: ValidateToken)(request: Request, command: Command[R])(using JsonCodec[R]) = ensureResponse {
       for
         _   <- validateToken(request)
-        tk  <- tokenFrom(request)
-        _   <- ZIO.logInfo(s"Executing 'EntitiesByValidate' | Requested by: ${tk.user.details.email} | Command: ${command.getClass.toString}")
+        _   <- ZIO.logInfo(s"Executing 'EntitiesByValidate' | Requested by: Service | Command: ${command.getClass.toString}")
         res <- repo.exec(command)
       yield Response.json(res.toJson)
     }.toTask

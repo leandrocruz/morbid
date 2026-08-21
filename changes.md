@@ -1,5 +1,11 @@
 # Morbid
 
+## Release v2.8.1
+LTS: 21/08/2026
+
+ - [Matheus] Removendo captura de Morbid-Token em rotas de service, mantendo apenas o ServiceToken
+ - [Matheus] Ajuste no client da rota admins para passar opcionalmente uma conta, passando uma conta, será feito a busca dos admins daquela conta, se omitido, será feito a busca de todos os admins de um app
+
 ## Release v2.8.0
 LTS: 20/08/2026
 
