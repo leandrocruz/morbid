@@ -1,5 +1,10 @@
 # Morbid
 
+## Release v2.8.2
+LTS: 24/08/2026
+
+ - [Matheus] Ajuste no método `admins` do client (rota errada)
+
 ## Release v2.8.1
 LTS: 21/08/2026
 
