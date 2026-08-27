@@ -160,13 +160,6 @@ object client {
 
     private def exec[T](auth: Headers, req: Request)(using dec: JsonDecoder[T]): Task[T] = {
 
-      def badGateway(cause: Throwable) = {
-        ReturnUnifiedError(
-          message = s"Error calling Morbid '${req.url.encode}'",
-          cause   = Some(cause)
-        )
-      }
-
       def handleParseError(res: Response, body: String)(error: String) = {
         ReturnUnifiedError(
           message = s"Error parsing morbid server response: '$error'",
@@ -175,8 +168,18 @@ object client {
         )
       }
 
+      def mapError(cause: Throwable) = {
+        cause match
+          case rue: ReturnUnifiedError => rue
+          case other                   =>
+            ReturnUnifiedError(
+              message = s"Error calling Morbid '${req.url.encode}'",
+              cause   = Some(cause)
+            )
+      }
+
       for
-        res    <- perform(req.copy(headers = req.headers ++ auth)).mapError(badGateway)
+        res    <- perform(req.copy(headers = req.headers ++ auth)).mapError(mapError)
         str    <- res.body.asString
         result <- ZIO.fromEither(str.fromJson[T]).mapError(handleParseError(res, str))
       yield result
@@ -223,15 +226,29 @@ object client {
       def isExpired(token: Token, now: ZonedDateTime): Boolean =
         token.expires.exists(now.isAfter)
 
-      for
-        _       <- ZIO.logDebug("Verifying token locally")
-        generic <- ZIO.attempt(parser.parse(token.string))
-        str     <- ZIO.attempt(generic.accept(Jws.CONTENT).getPayload)
-        token   <- asToken(new String(str))
-        now     <- Clock.localDateTime
-        expired =  isExpired(token, now.atZone(zone))
-        _       <- ZIO.when(expired) { ZIO.fail(Exception(s"Token is expired since '${token.expires.getOrElse("???")}'")) }
-      yield token
+      // Mirrors the morbid server, which answers token verification
+      // failures (expired, bad signature, malformed) with a 403 — a plain
+      // Exception here would be rendered by guara as a 500.
+      def forbidden(cause: Throwable) =
+        ReturnUnifiedError(
+          message = s"Error verifying token: ${cause.getMessage}",
+          status  = Status.Forbidden.code,
+          code    = Some(MorbidError.Forbidden),
+          cause   = Some(cause)
+        )
+
+      val verify =
+        for
+          _       <- ZIO.logDebug("Verifying token locally")
+          generic <- ZIO.attempt(parser.parse(token.string))
+          str     <- ZIO.attempt(generic.accept(Jws.CONTENT).getPayload)
+          token   <- asToken(new String(str))
+          now     <- Clock.localDateTime
+          expired =  isExpired(token, now.atZone(zone))
+          _       <- ZIO.when(expired) { ZIO.fail(Exception(s"Token is expired since '${token.expires.getOrElse("???")}'")) }
+        yield token
+
+      verify.mapError(forbidden)
     }
 
     override def proxy             (request: Request)                                                                      = remote.proxy(request)
