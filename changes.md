@@ -1,5 +1,8 @@
 # Morbid
 
+## Release v2.9.0
+LTS: 27/08/2026
+
  - [Leandro] `RemoteMorbidClient.exec` não converte mais falhas UEF em erro genérico 500: o `ReturnUnifiedError` vindo do servidor (ex: 403 "Error verifying token" para token expirado) agora é propagado com o status original, permitindo que os consumidores (ex: presto-api → console) tratem 401/403 corretamente (logout)
  - [Leandro] `LocalMorbidClient.tokenFrom` agora falha com `ReturnUnifiedError` 403 ("Error verifying token", code `MorbidError.Forbidden`) para token expirado/inválido, espelhando o comportamento do servidor — antes a exceção genérica virava 500 no guara
 
