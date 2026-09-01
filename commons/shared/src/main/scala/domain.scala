@@ -6,7 +6,6 @@ object domain {
   import types.*
   import domain.token.SingleAppUser
   import zio.json.*
-  //import zio.optics.Lens
   import zio.json.internal.Write
   import java.time.{LocalDateTime, ZonedDateTime}
 
@@ -188,16 +187,6 @@ object domain {
       permissions : Seq[RawPermission] = Seq.empty
     )
 
-//    val userDetailsLens = Lens[RawUser, RawUserDetails](
-//      get = user => Right(user.details),
-//      set = details => user => Right(user.copy(details = details))
-//    )
-//
-//    val idLens = Lens[RawUserDetails, UserId](
-//      get = details => Right(details.id),
-//      set = id => details => Right(details.copy(id = id))
-//    )
-
     given JsonCodec[RawApplicationDetails] = DeriveJsonCodec.gen
     given JsonCodec[RawFeature]            = DeriveJsonCodec.gen
     given JsonCodec[RawPlanFeature]        = DeriveJsonCodec.gen
@@ -221,20 +210,23 @@ object domain {
     import io.scalaland.chimney.Transformer
     import io.scalaland.chimney.dsl.*
 
-    opaque type RawToken = String
     opaque type ServiceToken = String
+    opaque type RawToken     = String
+
+    object ServiceToken {
+      def of(value: String): ServiceToken = value
+
+      given JsonCodec[ServiceToken] = JsonCodec.string
+    }
 
     object RawToken {
       def of(value: String): RawToken = value
       given JsonCodec[RawToken] = JsonCodec.string
     }
 
-    extension (it: RawToken)
+    extension (it: RawToken | ServiceToken)
       def string: String = it
 
-
-    extension (it: ServiceToken)
-      @targetName("ServiceToken.string") def string: String = it
 
     trait HasRoles {
       def hasRole(code: RoleCode): Boolean
