@@ -12,7 +12,7 @@ object client {
   import morbid.domain.*
   import morbid.domain.raw.*
   import morbid.domain.requests.{*, given}
-  import morbid.domain.token.{*, given}
+  import morbid.domain.token.*
   import morbid.types.*
   import zio.http.*
   import zio.http.netty.NettyConfig
@@ -28,7 +28,7 @@ object client {
   }
 
   object TokenHeader {
-    private def header(name: String, token: RawToken | ServiceToken) = Headers(Chunk(Header.Custom(name, token.toString)))
+    private def header(name: String, token: RawToken | ServiceToken) = Headers(Chunk(Header.Custom(name, token.string)))
     given TokenHeader[RawToken]     = header(morbid.MorbidHeaders.Token       , _)
     given TokenHeader[ServiceToken] = header(morbid.MorbidHeaders.ServiceToken, _)
   }
