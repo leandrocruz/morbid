@@ -742,8 +742,7 @@ object router {
     private def entitiesByValidate[R](validateToken: ValidateToken)(request: Request, command: Command[R])(using JsonCodec[R]) = ensureResponse {
       for
         _   <- validateToken(request)
-        tk  <- tokenFrom(request)
-        _   <- ZIO.logInfo(s"Executing 'EntitiesByValidate' | Requested by: ${tk.user.details.email} | Command: ${command.getClass.toString}")
+        _   <- ZIO.logInfo(s"Executing 'EntitiesByValidate' | Requested by: Service | Command: ${command.getClass.toString}")
         res <- repo.exec(command)
       yield Response.json(res.toJson)
     }.toTask
@@ -863,6 +862,10 @@ object router {
       yield Response.json(true.toJson)
     }
 
+    private def admins(validateToken: ValidateToken)(app: String, request: Request) = {
+      entitiesByValidate(validateToken)(request, GetAdmins(request.query("account").toOption.map(AccountId.of), ApplicationCode.of(app)))
+    }
+
     private def requireRootAccount(request: Request) = {
       for
         tk <- tokenFrom(request)
@@ -882,6 +885,7 @@ object router {
     private def serviceRoutes = Routes(
       Method.GET / "service" / "app" / string("app") /"users"    -> handler(usersByApp(testServiceToken)),
       Method.GET / "service" / "app" / string("app") /"accounts" -> handler(accountsByApp(testServiceToken)),
+      Method.GET / "service" / "app" / string("app") /"admins"   -> handler(admins(testServiceToken)),
     ).sandbox
 
     private def regular = Routes(

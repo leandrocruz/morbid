@@ -2,6 +2,7 @@ package morbid
 
 object domain {
 
+  import scala.annotation.targetName
   import types.*
   import domain.token.SingleAppUser
   import zio.json.*
@@ -39,6 +40,12 @@ object domain {
     case class RawTenant(
       id   : TenantId,
       code : TenantCode,
+    )
+
+    case class RawAccountAdmin(
+      id    : AccountId,
+      name  : AccountName,
+      users : Seq[RawUserEntry]
     )
 
     case class RawAccount(
@@ -204,6 +211,7 @@ object domain {
     given JsonCodec[RawUser]               = DeriveJsonCodec.gen
     given JsonCodec[RawUserEntry]          = DeriveJsonCodec.gen
     given JsonCodec[RawAccount]            = DeriveJsonCodec.gen
+    given JsonCodec[RawAccountAdmin]       = DeriveJsonCodec.gen
     given JsonCodec[RawIdentityProvider]   = DeriveJsonCodec.gen
   }
 
@@ -214,6 +222,7 @@ object domain {
     import io.scalaland.chimney.dsl.*
 
     opaque type RawToken = String
+    opaque type ServiceToken = String
 
     object RawToken {
       def of(value: String): RawToken = value
@@ -222,6 +231,10 @@ object domain {
 
     extension (it: RawToken)
       def string: String = it
+
+
+    extension (it: ServiceToken)
+      @targetName("ServiceToken.string") def string: String = it
 
     trait HasRoles {
       def hasRole(code: RoleCode): Boolean

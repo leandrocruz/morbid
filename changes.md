@@ -4,6 +4,37 @@
  - [Leandro] Usando sbt 1.9.6
  - [Leandro] Atualizando a versão das dependências
 
+## Release v2.9.0
+LTS: 27/08/2026
+
+ - [Leandro] `RemoteMorbidClient.exec` não converte mais falhas UEF em erro genérico 500: o `ReturnUnifiedError` vindo do servidor (ex: 403 "Error verifying token" para token expirado) agora é propagado com o status original, permitindo que os consumidores (ex: presto-api → console) tratem 401/403 corretamente (logout)
+ - [Leandro] `LocalMorbidClient.tokenFrom` agora falha com `ReturnUnifiedError` 403 ("Error verifying token", code `MorbidError.Forbidden`) para token expirado/inválido, espelhando o comportamento do servidor — antes a exceção genérica virava 500 no guara
+
+## Release v2.8.2
+LTS: 24/08/2026
+
+ - [Matheus] Ajuste no método `admins` do client (rota errada)
+
+## Release v2.8.1
+LTS: 21/08/2026
+
+ - [Matheus] Removendo captura de Morbid-Token em rotas de service, mantendo apenas o ServiceToken
+ - [Matheus] Ajuste no client da rota admins para passar opcionalmente uma conta, passando uma conta, será feito a busca dos admins daquela conta, se omitido, será feito a busca de todos os admins de um app
+
+## Release v2.8.0
+LTS: 20/08/2026
+
+ - [Matheus] Add endpoint to get admin users by accounts
+   - `GET /service/app/{app}/accounts/admins`
+ - [Matheus] Implementation to call service routes for MorbidClient (client.scala)
+
+## Release v2.7.0
+LTS: 20/08/2026
+
+ - [Leandro] Logando `UserRow.active` e `UserRow.deleted` na atualização dos usuários (mascarenhas)
+ - [Leandro] Nova coluna `UserRow.updated`
+ - [Leandro] Parsing UEF error at `RemoteMorbidClient.perform`
+
 ## Release v2.6.0
 LTS: 17/07/2026
 
