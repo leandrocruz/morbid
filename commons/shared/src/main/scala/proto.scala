@@ -1,9 +1,8 @@
 package morbid
 
-import morbid.domain.token.RawToken
-
 object proto {
 
+  import morbid.domain.token.RawToken
   import zio.json.*
   import types.*
 
