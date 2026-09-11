@@ -185,7 +185,7 @@ object client {
       yield result
     }
 
-    private def delete[T] (auth: Headers, url: URL)        (using dec: JsonDecoder[T])                     : Task[T] = exec(auth, Request.get(url))
+    private def delete[T] (auth: Headers, url: URL)        (using dec: JsonDecoder[T])                     : Task[T] = exec(auth, Request.delete(url))
     private def get [T]   (auth: Headers, url: URL)        (using dec: JsonDecoder[T])                     : Task[T] = exec(auth, Request.get(url))
     private def post[R, T](auth: Headers, url: URL, req: R)(using dec: JsonDecoder[T], enc: JsonEncoder[R]): Task[T] = exec(auth, Request.post(url, Body.fromString(req.toJson)).copy(headers = applicationJson))
 

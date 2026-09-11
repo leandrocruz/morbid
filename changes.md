@@ -1,5 +1,9 @@
 # Morbid
 
+## Unreleased
+
+ - [Leandro] Correção no `RemoteMorbidClient`: o helper `delete[T]` enviava `Request.get` em vez de `Request.delete`, fazendo com que `managerRemoveAccount` e `managerRemoveUser` chamassem o servidor com o método errado (nenhuma rota GET correspondente → 404). Encontrado durante os testes do partner-api
+
 ## Release v2.9.0
 LTS: 27/08/2026
 
