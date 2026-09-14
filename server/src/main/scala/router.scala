@@ -249,7 +249,11 @@ object router {
           _         <- ZIO.foreach(req.identifier) { ensureIdentifierAvailable }
           maybeUser <- repo.exec(FindUserByEmail(req.email)).mapError(GuaraError.of(UsersError, "Error checking existing user"))
           _         <- ZIO.foreach(maybeUser) { _ => ZIO.logWarning(s"User '${req.email}' already exists") *> errors.emailTaken(req.email) }
-          user      <- accounts.provision(req).mapError(GuaraError.of("Error provisioning account"))
+          user      <- accounts.provision(req).mapError {
+                         case errors.IdentifierTakenException(id, _) => errors.identifierTakenError(id)
+                         case errors.EmailTakenException(email, _)   => errors.emailTakenError(email)
+                         case other                                  => GuaraError.of("Error provisioning account")(other)
+                       }
           token     <- tokens.asToken(user)   .mapError(GuaraError.of("Error minting the token"))
           encoded   <- tokens.encode(token)   .mapError(GuaraError.of("Error encoding the token"))
           _         <- ZIO.logInfo(s"Account '${req.email}' provisioned")

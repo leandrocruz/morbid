@@ -3,6 +3,7 @@
 ## Unreleased
 
  - [Leandro] Correção no `RemoteMorbidClient`: o helper `delete[T]` enviava `Request.get` em vez de `Request.delete`, fazendo com que `managerRemoveAccount` e `managerRemoveUser` chamassem o servidor com o método errado (nenhuma rota GET correspondente → 404). Encontrado durante os testes do partner-api
+ - [Leandro] Falhas de corrida em `/provision` por identificador ou email já existentes (violação de unicidade durante a transação, após os prechecks) voltam a retornar 409 em vez do erro genérico "Error provisioning account" — restaura o comportamento documentado na v2.5.0, que havia regredido: o `mapError` genérico do router engolia `IdentifierTakenException`/`EmailTakenException`. `errors.scala` ganhou as variantes `emailTakenError`/`identifierTakenError` (valores) e os helpers de efeito passaram a delegar para elas — mensagem, código e status definidos em um único lugar
 
 ## Release v2.9.0
 LTS: 27/08/2026
