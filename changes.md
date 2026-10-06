@@ -1,5 +1,10 @@
 # Morbid
 
+## Release v2.9.1
+LTS: 06/10/2026
+
+ - [Junior] `usersByAccount` (rota `GET /app/{app}/manager/account/{acc}/users`) passa a retornar todos os usuários da conta, inclusive inativos e removidos, e também de contas inativas ou removidas, para exibição no console do Presto
+
 ## Release v2.9.0
 LTS: 27/08/2026
 

@@ -1526,8 +1526,8 @@ object repo {
         for
           app <- applications                           if app.active && app.deleted.isEmpty && app.code == lift(request.app)
           a2a <- account2app .join(_.app == app.id)     if               a2a.deleted.isEmpty && a2a.acc == lift(request.account)
-          acc <- accounts    .join(_.id == a2a.acc)     if acc.active && acc.deleted.isEmpty
-          usr <- users       .join(_.account == acc.id) if usr.active && usr.deleted.isEmpty
+          acc <- accounts    .join(_.id == a2a.acc)
+          usr <- users       .join(_.account == acc.id)
         yield usr
       }
 
