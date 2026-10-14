@@ -880,6 +880,40 @@ object router {
       entitiesByValidate(validateToken)(request, GetAdmins(request.query("account").toOption.map(AccountId.of), ApplicationCode.of(app)))
     }
 
+
+    // Service-to-service impersonation: given an account, elect its admin server-side and
+    // mint a session token for them, returning the encoded JWT (as /swap does). Gated by the
+    // service token AND magic, since this lets the holder act as any account's admin.
+    private def impersonateAccountAdmin(validateToken: ValidateToken)(app: String, acc: Long, request: Request): Task[Response] = ensureResponse {
+
+      // Deterministically elects an account's admin to impersonate: the oldest (lowest id)
+      // active admin user. GetAdmins already restricts to active users in the account's
+      // `admin` group, so this only tie-breaks between them for a reproducible choice.
+      def electAdmin(admins: Seq[RawAccountAdmin]): Option[RawUserEntry] = {
+        admins.flatMap(_.users).sortBy(user => UserId.value(user.id)).headOption
+      }
+
+      val account = AccountId.of(acc)
+      for
+        _         <- validateToken(request)
+        req       <- request.body.parse[ImpersonateAccountAdminRequest]().mapError(errors.badRequest("Error parsing ImpersonateAccountAdminRequest"))
+        _         <- ensureMagic(req.magic)
+        admins    <- repo.exec(GetAdmins(Some(account), ApplicationCode.of(app)))
+        entry     <- electAdmin(admins) match {
+                       case Some(entry) => ZIO.succeed(entry)
+                       case None        => errors.userNotFound(s"Account '$acc' has no admin user to impersonate")
+                     }
+        maybeUser <- repo.exec(FindUserByEmail(entry.email))
+        user      <- maybeUser match {
+                       case Some(usr) => ZIO.succeed(usr)
+                       case None      => errors.userNotFound(s"Admin user '${entry.email}' not found")
+                     }
+        token     <- tokens.asToken(user)
+        encoded   <- tokens.encode(token)
+        _         <- ZIO.logInfo(s"Admin '${entry.email}' of account '$acc' impersonated by service for app '$app'")
+      yield Response.text(encoded).loggedIn(encoded)
+    }.toTask
+
     private def requireRootAccount(request: Request) = {
       for
         tk <- tokenFrom(request)
@@ -897,9 +931,10 @@ object router {
     ).sandbox
 
     private def serviceRoutes = Routes(
-      Method.GET / "service" / "app" / string("app") /"users"    -> handler(usersByApp(testServiceToken)),
-      Method.GET / "service" / "app" / string("app") /"accounts" -> handler(accountsByApp(testServiceToken)),
-      Method.GET / "service" / "app" / string("app") /"admins"   -> handler(admins(testServiceToken)),
+      Method.GET  / "service" / "app" / string("app") / "users"                                        -> handler(usersByApp(testServiceToken)),
+      Method.GET  / "service" / "app" / string("app") / "accounts"                                     -> handler(accountsByApp(testServiceToken)),
+      Method.GET  / "service" / "app" / string("app") / "admins"                                       -> handler(admins(testServiceToken)),
+      Method.POST / "service" / "app" / string("app") / "account" / long("acc") / "impersonate-admin"  -> handler(impersonateAccountAdmin(testServiceToken)),
     ).sandbox
 
     private def regular = Routes(

@@ -591,6 +591,7 @@ object domain {
     case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email, identifier: Option[AccountIdentifier] = None)
     case class FindAccountByIdentifierRequest(magic: Magic, identifier: AccountIdentifier)
     case class ImpersonationRequest(email: Email, magic: Magic)
+    case class ImpersonateAccountAdminRequest(magic: Magic)
     case class LogoffResponse(restored: Boolean)
 
     case class ProvisionRequest(
@@ -611,26 +612,27 @@ object domain {
     case class GetAccountPlansRequest(account: AccountId, application: ApplicationCode)
 
 
-    given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
-    given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
-    given JsonCodec[RequestPasswordRequestLink] = DeriveJsonCodec.gen
-    given JsonCodec[PasswordResetLink]          = DeriveJsonCodec.gen
-    given JsonCodec[SetUserPin]                 = DeriveJsonCodec.gen
-    given JsonCodec[ValidateUserPin]            = DeriveJsonCodec.gen
-    given JsonCodec[RemoveUserRequest]          = DeriveJsonCodec.gen
-    given JsonCodec[RemoveGroupRequest]         = DeriveJsonCodec.gen
-    given JsonCodec[GetUserGroupsRequest]       = DeriveJsonCodec.gen
-    given JsonCodec[SetUserGroupsRequest]       = DeriveJsonCodec.gen
-    given JsonCodec[LoginViaEmailLinkRequest]   = DeriveJsonCodec.gen
-    given JsonCodec[LoginViaEmailLinkResponse]  = DeriveJsonCodec.gen
-    given JsonCodec[ProvisionRequest]              = DeriveJsonCodec.gen
-    given JsonCodec[GetAccountPlansRequest]        = DeriveJsonCodec.gen
-    given JsonCodec[StoreAccountRequest]        = DeriveJsonCodec.gen
-    given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
+    given JsonCodec[StoreGroupRequest]              = DeriveJsonCodec.gen
+    given JsonCodec[StoreUserRequest]               = DeriveJsonCodec.gen
+    given JsonCodec[RequestPasswordRequestLink]     = DeriveJsonCodec.gen
+    given JsonCodec[PasswordResetLink]              = DeriveJsonCodec.gen
+    given JsonCodec[SetUserPin]                     = DeriveJsonCodec.gen
+    given JsonCodec[ValidateUserPin]                = DeriveJsonCodec.gen
+    given JsonCodec[RemoveUserRequest]              = DeriveJsonCodec.gen
+    given JsonCodec[RemoveGroupRequest]             = DeriveJsonCodec.gen
+    given JsonCodec[GetUserGroupsRequest]           = DeriveJsonCodec.gen
+    given JsonCodec[SetUserGroupsRequest]           = DeriveJsonCodec.gen
+    given JsonCodec[LoginViaEmailLinkRequest]       = DeriveJsonCodec.gen
+    given JsonCodec[LoginViaEmailLinkResponse]      = DeriveJsonCodec.gen
+    given JsonCodec[ProvisionRequest]               = DeriveJsonCodec.gen
+    given JsonCodec[GetAccountPlansRequest]         = DeriveJsonCodec.gen
+    given JsonCodec[StoreAccountRequest]            = DeriveJsonCodec.gen
+    given JsonCodec[CreateAccount]                  = DeriveJsonCodec.gen
     given JsonCodec[FindAccountByIdentifierRequest] = DeriveJsonCodec.gen
-    given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
-    given JsonCodec[ImpersonationRequest]       = DeriveJsonCodec.gen
-    given JsonCodec[LogoffResponse]             = DeriveJsonCodec.gen
+    given JsonCodec[ChangePasswordRequest]          = DeriveJsonCodec.gen
+    given JsonCodec[ImpersonationRequest]           = DeriveJsonCodec.gen
+    given JsonCodec[ImpersonateAccountAdminRequest] = DeriveJsonCodec.gen
+    given JsonCodec[LogoffResponse]                 = DeriveJsonCodec.gen
   }
 }
 
