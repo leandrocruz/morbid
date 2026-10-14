@@ -1,6 +1,7 @@
 # Morbid
 
-## Unreleased
+## Release v2.9.2
+LTS: 14/10/2026
 
  - [Leandro] Nova rota de impersonação service-to-service: `POST /service/app/{app}/account/{acc}/impersonate-admin`. Dado o id de uma conta, o servidor elege o admin da conta (o admin ativo mais antigo — eleição determinística, reproduzível para auditoria) e devolve o JWT da sessão impersonada (corpo em texto, como `/swap`). Protegida pelo service token **e** pelo magic, pois diferente de `admins` (apenas leitura) esta rota *emite* uma sessão como admin de qualquer conta. Adicionado o método correspondente `impersonateAccountAdmin(account, magic)(using ServiceToken, ApplicationCode): Task[RawToken]` no `MorbidClient` (`Remote`/`Local`/`Fake`) e o DTO `ImpersonateAccountAdminRequest` em commons. Usado pelo partner-api para autenticar no presto-api (listagem de 2FA) sem precisar descobrir o email do admin nem lidar com o cookie de `/impersonate`
  - [Leandro] Correção no `RemoteMorbidClient`: o helper `delete[T]` enviava `Request.get` em vez de `Request.delete`, fazendo com que `managerRemoveAccount` e `managerRemoveUser` chamassem o servidor com o método errado (nenhuma rota GET correspondente → 404). Encontrado durante os testes do partner-api
