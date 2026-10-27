@@ -30,6 +30,7 @@ object accounts {
     def provision    (request: ProvisionRequest)                     : Task[RawUser]
     def create       (request: CreateAccount)(using ApplicationCode) : Task[Unit]
     def parseCSV     (account: RawAccount, csv: String)              : Task[Seq[(Email, Try[RawUserEntry])]]
+    def linkDefaultPlan(account: AccountId, app: ApplicationCode)    : Task[Unit]
   }
 
   object AccountManager {
@@ -42,6 +43,15 @@ object accounts {
     private val AdminGroup       = GroupCode.of("admin") //FIXME: this should not be here
     private val DefaultGroupName = GroupName.of("Todos") //FIXME: this should not be here
     private val AdminGroupName   = GroupName.of("Admin") //FIXME: this should not be here
+    private val DefaultPlan      = PlanCode.of("default")
+
+    /** Contas sem um plano explícito ficam sem features; apps sem o plano 'default' são ignorados. */
+    override def linkDefaultPlan(account: AccountId, app: ApplicationCode): Task[Unit] = {
+      repo.exec(FindPlanByCode(app, DefaultPlan)).flatMap {
+        case Some(plan) => repo.exec(LinkAccountToPlan(acc = account, plan = plan.id))
+        case None       => ZIO.logWarning(s"Plan '$DefaultPlan' not found for app '$app', account '$account' left without plan")
+      }
+    }
 
     override def provisionSSO(identity: CloudIdentity): Task[RawUser] = {
 
@@ -330,6 +340,7 @@ object accounts {
         app     <- ensureApp
         acc     <- ensureAccount(req)
         _       <- repo.exec(LinkAccountToApp(acc = acc.id,  app = app.details.id))
+        _       <- linkDefaultPlan(acc.id, app.details.code)
         user    <- ensureUser(req, acc)
         create  =  ensureGroup(_, _, _, Seq(user.code), app, acc)
         admin   <- create(GroupCode.admin, GroupName.of("Admin"), Seq(RoleCode.of("adm")))
