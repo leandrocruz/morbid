@@ -1,5 +1,7 @@
 # Morbid
 
+ - [Matheus] Ajuste de regex na validação de email, afrouxando validação de propósito (contas migradas do morbid legado causando problemas por causa do regex)
+
 ## Release v2.9.2
 LTS: 14/10/2026
 
