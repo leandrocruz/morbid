@@ -827,6 +827,7 @@ object router {
         val app = RawApplication(details)
         for
           _   <- repo.exec(LinkAccountToApp(account.id, app.details.id))
+          _   <- accounts.linkDefaultPlan(account.id, app.details.code)
           now <- Clock.localDateTime
           _   <- ZIO.when(req.update) { createGroups(now, app, account) }
         yield ()
