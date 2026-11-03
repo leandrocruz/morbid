@@ -1,5 +1,8 @@
 # Morbid
 
+## Release v2.11.0
+LTS: 03/11/2026
+
  - [Matheus] Plano `default` explícito no Presto (task #249903): toda conta nova (create e storeAccount) é vinculada ao plano `default`. Migração `sql/migrations/2026-10-23-presto-default-plan.sql` (rodar ANTES do deploy do console e da extensão): cria as features `credentials`, `vault`, `block` e `sign_documents`, monta os planos `default` e `presto_sign` e vincula ao `default` as contas do Presto sem plano base
 
 ## Release v2.10.0
