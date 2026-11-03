@@ -64,7 +64,8 @@ object types {
   private val domainFrom = ".+@(.+)"       .r
   private val userFrom   = "(.+)@.+"       .r
   private val domain     = "[\\w\\.\\-]+"  .r
-  private val email      = """^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}$""".r
+  // aceita acentos, terminação de uma letra (".com.b") e ponto no final (".com.br."): existem na base e quebravam a listagem de usuários
+  private val email      = """^[\p{L}\p{N}!#$%&'*+/=?^_`{|}~-]+(?:\.[\p{L}\p{N}!#$%&'*+/=?^_`{|}~-]+)*@(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+\p{L}+\.?$""".r
 
   given JsonEncoder      [TenantName]      = JsonEncoder.string
   given JsonEncoder      [TenantCode]      = JsonEncoder.string

@@ -24,6 +24,16 @@ object JsonSpec extends ZIOSpecDefault {
       test("valid code decode2")     { assert(safeCode(10).decodeJson("\"co_e\""))      { isRight (equalTo("co_e")) } },
       test("whitespace code decode") { assert(safeCode(10).decodeJson("\"c ode\""))     { isLeft  (equalTo("('c ode' has invalid chars)")) } },
 
+      test("valid emails decode") {
+        val emails = Seq("u1@x.com", "a.b+c@sub.dominio.com.br", "execução@bb.com", "legalops@zangiácomo.com.br", "luiz@pereiragionedis.com.b", "rafaela@ppcs.com.br.")
+        assertTrue(emails.forall(email => s"\"$email\"".fromJson[Email].isRight))
+      },
+
+      test("invalid emails decode") {
+        val emails = Seq("sem-arroba.com", "a@b", "a b@x.com", "a@x..com", "<script>@x.com", "controladoria@paulomiro@adv.br")
+        assertTrue(emails.forall(email => s"\"$email\"".fromJson[Email].isLeft))
+      },
+
       test("encode/decode") {
         val obj = CodeAndName(RoleCode.of("code"), RoleName.of("My Name is Tanaka"))
         assert(obj.toJson.fromJson[CodeAndName]) { isRight(equalTo(obj)) }
