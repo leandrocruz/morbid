@@ -7,6 +7,14 @@
  - [Leandro] Full CRUD for accounts, users, groups, applications in the admin UI (create/edit/delete + password change, password reset link, PIN set)
  - [Leandro] Shared `morbid.admin.api` DTOs (LoginRequest/Response, AccountResponse, UserResponse, GroupResponse, ApplicationResponse, RoleResponse and create/update bodies) in commons/shared so admin-api (JVM) and admin (JS) share the wire format; zio-schema instances for Endpoint DSL stay in admin-api
  - [Leandro] Added `medulla-firebase` dependency to the admin module and `FirebaseAdmin` config (dev/prod options by host)
+ - [Leandro] Added identity-provider lookup to the admin login flow: email is submitted to `POST /login/provider` and the UI then either prompts for a password (`up`) or offers a SAML SSO button (`signInWithPopup(SAMLAuthProvider(id))`); mirrors the presto-console behavior
+ - [Leandro] Added shared `LoginMode` enum and `GetProviderRequest`/`GetProviderResponse` DTOs in commons/shared
+ - [Leandro] Added filter bar to the Accounts page (name substring, status active/inactive, tenant select populated from loaded accounts) with a clear-filters button and empty-state message
+ - [Leandro] Added Docker + deploy scaffolding: `admin-api/build/Dockerfile` + `build-docker-image.sh` (JVM image on `oystr-base-java`), `admin/build/build.sh` (sbt + vite build with optional rsync to host), `admin/build/nginx-site/admin.morbid.{conf,bootstrap.conf}` (letsencrypt-ready nginx site)
+ - [Leandro] `docker-compose.yml`: added `morbid-admin-api` service and bind-mounted `/opt/morbid/admin-ui/shared/console/current` into the host nginx as `/var/www/admin-ui` (presto-console pattern: build locally, rsync static files, no separate frontend container)
+ - [Leandro] admin-api endpoint paths now follow the ingress-naming convention (routes at `/login`, `/accounts`, ... without `/api/` prefix — nginx strips `/api/` before proxying, matching presto-api)
+ - [Leandro] admin-api cookie extraction now parses each `Set-Cookie` response header individually (no more comma-split, which mangled `Expires=Wed, DD Mon ...`)
+ - [Leandro] admin-api proxies morbid via a `resolver`-backed variable (`set $upstream ...; proxy_pass $upstream/;`) so nginx reloads don't fail when `morbid-admin-api` isn't running yet
 
 ## Release v1.10.0
 LTS: 27/03/2026

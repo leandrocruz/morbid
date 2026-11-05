@@ -147,7 +147,7 @@ case class AdminAppRender(fetcher: Fetcher) extends BaseAppRender[AdminData, Lon
 
     def top = I18n.dictionary.map { dict =>
       given Dictionary = dict
-      TopBar.render
+      TopBar.render(using dict, user, fetcher)
     }
 
     SimpleGridLayout(logo, top, left, main).render

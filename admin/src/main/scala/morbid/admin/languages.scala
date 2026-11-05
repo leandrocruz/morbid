@@ -62,6 +62,28 @@ trait Dictionary {
   def groupsSubtitle     = "Manage user groups"
   def groupsNew          = "New Group"
 
+  // Summary
+  def summaryActive        = "active"
+  def summaryInactive      = "inactive"
+  def summaryTotal         = "total"
+
+  // Filters
+  def filterByName         = "Filter by name..."
+  def filterByEmail        = "Filter by email..."
+  def filterStatus         = "Status"
+  def filterStatusAll      = "All"
+  def filterStatusActive   = "Active"
+  def filterStatusInactive = "Inactive"
+  def filterTenant         = "Tenant"
+  def filterTenantAll      = "All tenants"
+  def filterKind           = "Kind"
+  def filterKindAll        = "All kinds"
+  def filterKindRegular    = "Regular"
+  def filterKindService    = "Service account"
+  def filterClear          = "Clear filters"
+  def filterNoResults      = "No accounts match the selected filters"
+  def filterNoUsers        = "No users match the selected filters"
+
   // Table
   def columnApps         = "Applications"
   def columnActions      = "Actions"
@@ -180,6 +202,28 @@ case class Portuguese(language: Language) extends Dictionary {
   override def groupsTitle        = "Grupos"
   override def groupsSubtitle     = "Gerencie os grupos de usuários"
   override def groupsNew          = "Novo Grupo"
+
+  // Summary
+  override def summaryActive        = "ativas/ativos"
+  override def summaryInactive      = "inativas/inativos"
+  override def summaryTotal         = "total"
+
+  // Filters
+  override def filterByName         = "Filtrar por nome..."
+  override def filterByEmail        = "Filtrar por email..."
+  override def filterStatus         = "Status"
+  override def filterStatusAll      = "Todos"
+  override def filterStatusActive   = "Ativas"
+  override def filterStatusInactive = "Inativas"
+  override def filterTenant         = "Tenant"
+  override def filterTenantAll      = "Todos os tenants"
+  override def filterKind           = "Tipo"
+  override def filterKindAll        = "Todos os tipos"
+  override def filterKindRegular    = "Regular"
+  override def filterKindService    = "Conta de serviço"
+  override def filterClear          = "Limpar filtros"
+  override def filterNoResults      = "Nenhuma conta corresponde aos filtros selecionados"
+  override def filterNoUsers        = "Nenhum usuário corresponde aos filtros selecionados"
 
   // Table
   override def columnApps         = "Applicativos"

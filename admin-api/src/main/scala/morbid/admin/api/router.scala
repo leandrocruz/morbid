@@ -79,7 +79,7 @@ case class AdminRouter(auth: AdminAuth, gw: MorbidGateway, cfg: AppConfig) exten
 
   private val logoffRoute: Routes[Any, Nothing] = Routes(
     Method.POST / "logoff" -> Handler.fromFunctionZIO[Request] { request =>
-      val resp     = Response.ok.addCookie(auth.logoutCookie)
+      val resp     = Response.json("true").addCookie(auth.logoutCookie)
       val maybeRaw = request.cookies.collectFirst { case c if c.name == cfg.cookie.name => c.content }
       maybeRaw.map(RawToken.of) match
         case Some(rawToken) => gw.logoff(rawToken).ignore.as(resp)

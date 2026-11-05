@@ -57,3 +57,25 @@ object MaterialIcon {
   def apply(name: String, extraCls: String = ""): HtmlElement =
     span(cls(s"material-symbols-outlined $extraCls"), name)
 }
+
+object StatusSummary {
+  def render(totals: Signal[(Int, Int)])(using dict: Dictionary): HtmlElement = {
+    def chip(colorClasses: String, label: String, count: Signal[Int]) =
+      div(
+        cls(s"inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm $colorClasses"),
+        span(cls("font-semibold text-base"), child.text <-- count.map(_.toString)),
+        span(label),
+      )
+
+    val active   = totals.map(_._1)
+    val inactive = totals.map(_._2)
+    val total    = totals.map { case (a, i) => a + i }
+
+    div(
+      cls("flex flex-wrap items-center gap-3 mb-4"),
+      chip("bg-green-100 text-green-800"             , dict.summaryActive  , active),
+      chip("bg-gray-100 text-gray-700"               , dict.summaryInactive, inactive),
+      chip("bg-admin-primary/10 text-admin-primary"  , dict.summaryTotal   , total),
+    )
+  }
+}

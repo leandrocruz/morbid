@@ -11,6 +11,7 @@ import morbid.admin.*
 import morbid.admin.api.*
 import morbid.admin.codec.given
 import morbid.admin.converters.given
+import morbid.domain.UserKind
 import morbid.types.*
 import org.scalajs.dom.window
 
@@ -33,6 +34,36 @@ object UsersView {
   private case class  PasswordMode(user: UserResponse)            extends ModalMode
   private case class  ResetMode   (user: UserResponse)            extends ModalMode
   private case class  PinMode     (user: UserResponse)            extends ModalMode
+
+  private enum StatusFilter:
+    case All, Active, Inactive
+
+  private enum KindFilter:
+    case All, Regular, Service
+
+  private case class Filters(
+    email  : String                 = "",
+    status : StatusFilter           = StatusFilter.All,
+    kind   : KindFilter             = KindFilter.All,
+  ) {
+    def isEmpty: Boolean = email.isEmpty && status == StatusFilter.All && kind == KindFilter.All
+  }
+
+  private def applyFilters(items: Seq[UserResponse], f: Filters): Seq[UserResponse] = {
+    val q = f.email.trim.toLowerCase
+    items
+      .filter(u => q.isEmpty || Email.value(u.email).toLowerCase.contains(q))
+      .filter(u => f.status match
+        case StatusFilter.All      => true
+        case StatusFilter.Active   => u.active
+        case StatusFilter.Inactive => !u.active
+      )
+      .filter(u => f.kind match
+        case KindFilter.All     => true
+        case KindFilter.Regular => u.kind.forall(_ == UserKind.RE)
+        case KindFilter.Service => u.kind.contains(UserKind.SA)
+      )
+  }
 
   def renderAll(using dict: Dictionary, fetcher: Fetcher): HtmlElement = {
     div(
@@ -78,13 +109,15 @@ object UsersView {
 
     val data    = Var(Option.empty[Try[Seq[UserResponse]]])
     val mode    = Var(Closed.asInstanceOf[ModalMode])
+    val filters = Var(Filters())
     val events  = EventBus[CrudEvent]()
     val changes = events.events.scanLeft(Seq.empty[CrudEvent])(_ :+ _)
     val tbl     = DataTable.simple(columns(mode), _.id)
-    val rows    = changes.combineWith(data).map {
+    val all     = changes.combineWith(data).map {
       case (chs, Some(Success(items))) => applyChanges(tbl)(chs, items).sortBy(u => Email.value(u.email))
       case _                           => Seq.empty[UserResponse]
     }
+    val rows    = all.combineWith(filters.signal).map((items, f) => applyFilters(items, f))
 
     val opened  = mode.signal.map {
       case Closed => false
@@ -107,8 +140,67 @@ object UsersView {
       case PinMode(u)         => renderPinModal(u, mode)
     }
 
+    def renderFilters = {
+      val emailInput = input(
+        cls("w-64 rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-admin-primary"),
+        typ("text"),
+        placeholder(dict.filterByEmail),
+        controlled(
+          value <-- filters.signal.map(_.email),
+          onInput.mapToValue --> { v => filters.update(_.copy(email = v)) },
+        ),
+      )
+
+      val statusSelect = select(
+        cls("rounded border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-admin-primary"),
+        value <-- filters.signal.map(_.status.toString),
+        onChange.mapToValue --> { v =>
+          val s = StatusFilter.values.find(_.toString == v).getOrElse(StatusFilter.All)
+          filters.update(_.copy(status = s))
+        },
+        option(value(StatusFilter.All.toString)     , dict.filterStatusAll),
+        option(value(StatusFilter.Active.toString)  , dict.filterStatusActive),
+        option(value(StatusFilter.Inactive.toString), dict.filterStatusInactive),
+      )
+
+      val kindSelect = select(
+        cls("rounded border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-admin-primary"),
+        value <-- filters.signal.map(_.kind.toString),
+        onChange.mapToValue --> { v =>
+          val k = KindFilter.values.find(_.toString == v).getOrElse(KindFilter.All)
+          filters.update(_.copy(kind = k))
+        },
+        option(value(KindFilter.All.toString)    , dict.filterKindAll),
+        option(value(KindFilter.Regular.toString), dict.filterKindRegular),
+        option(value(KindFilter.Service.toString), dict.filterKindService),
+      )
+
+      val clearButton = Buttons.secondary.amend(
+        dict.filterClear,
+        disabled <-- filters.signal.map(_.isEmpty),
+        onClick --> { _ => filters.set(Filters()) },
+      )
+
+      div(
+        cls("admin-card !p-4 mb-4 flex flex-wrap items-center gap-3"),
+        emailInput,
+        statusSelect,
+        kindSelect,
+        clearButton,
+      )
+    }
+
     def renderTable(loaded: Boolean) = Option.when(loaded) {
-      div(cls("admin-card"), tbl.render(rows))
+      val empty  = rows.map(_.isEmpty).combineWith(filters.signal).map((isEmpty, f) => isEmpty && !f.isEmpty)
+      val totals = rows.map(items => (items.count(_.active), items.count(u => !u.active)))
+      div(
+        renderFilters,
+        StatusSummary.render(totals),
+        div(cls("admin-card"), tbl.render(rows)),
+        child.maybe <-- empty.map(e => Option.when(e)(
+          div(cls("text-sm text-admin-muted text-center py-6"), dict.filterNoUsers)
+        )),
+      )
     }
 
     div(
