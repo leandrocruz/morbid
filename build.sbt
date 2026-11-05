@@ -35,6 +35,20 @@ lazy val client = (project in file("client"))
   )
   .dependsOn(commons.jvm)
 
+lazy val adminApi = (project in file("admin-api"))
+  .enablePlugins(JavaAppPackaging)
+  .settings(
+    name                            := "morbid-admin-api",
+    BuildHelper.stdSettings,
+    scalacOptions                   += "-Wconf:msg=match may not be exhaustive:e",
+    Compile / run / mainClass       := Option("morbid.admin.api.AdminApiServer"),
+    topLevelDirectory               := None,
+    executableScriptName            := "run",
+    Universal / packageName         := "package",
+    libraryDependencies             := BuildHelper.adminApiDependencies
+  )
+  .dependsOn(commons.jvm, client)
+
 lazy val legacy = (project in file("legacy"))
   .settings(
     name := "morbid-legacy-client",
@@ -62,6 +76,7 @@ lazy val admin = project.in(file("admin"))
     },
     libraryDependencies ++= Seq(
       "leandrocruz"       %%% "medulla-framework"     % BuildHelper.MedullaVersion changing(),
+      "leandrocruz"       %%% "medulla-firebase"      % BuildHelper.MedullaVersion changing(),
       "io.github.cquiroz" %%% "scala-java-time"       % "2.5.0",
       "io.github.cquiroz" %%% "scala-java-time-tzdb"  % "2.5.0",
     )

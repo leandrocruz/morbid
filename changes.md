@@ -1,5 +1,13 @@
 # Morbid
 
+## Unreleased
+
+ - [Leandro] Added new `admin-api` sbt module (ZIO-HTTP + Guara + Endpoint DSL, partner-api style) that proxies CRUD operations to Morbid via `MorbidClient` and gates access to root-account (AccountId 1) users only
+ - [Leandro] Added Firebase SSO login flow to the admin frontend; admin-api exchanges Firebase JWT for Morbid session, issues its own `morbid-admin-token` HttpOnly cookie
+ - [Leandro] Full CRUD for accounts, users, groups, applications in the admin UI (create/edit/delete + password change, password reset link, PIN set)
+ - [Leandro] Shared `morbid.admin.api` DTOs (LoginRequest/Response, AccountResponse, UserResponse, GroupResponse, ApplicationResponse, RoleResponse and create/update bodies) in commons/shared so admin-api (JVM) and admin (JS) share the wire format; zio-schema instances for Endpoint DSL stay in admin-api
+ - [Leandro] Added `medulla-firebase` dependency to the admin module and `FirebaseAdmin` config (dev/prod options by host)
+
 ## Release v1.10.0
 LTS: 27/03/2026
 

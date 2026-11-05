@@ -8,6 +8,9 @@
     "build": "vite build",
     "preview": "vite preview"
   },
+  "dependencies": {
+    "firebase": "^10.6.0"
+  },
   "devDependencies": {
     "@scala-js/vite-plugin-scalajs": "^1.0.0",
     "@tailwindcss/vite": "^4.0.0",

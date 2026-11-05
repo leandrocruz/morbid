@@ -15,9 +15,8 @@ export default defineConfig({
     watch: { usePolling: true },
     proxy: {
       '/api': {
-        target: 'http://localhost:9000',
+        target: 'http://localhost:9100',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '/v1')
       }
     }
   },

@@ -3,10 +3,12 @@ import sbt.Keys._
 
 object BuildHelper {
 
-  val ScalaVersion   = "3.7.2"
-  val ZioVersion     = "2.1.16" //same as guara
-  val ZioJsonVersion = "0.7.39" //same as guara
-  val MedullaVersion = "v0.0.1-SNAPSHOT"
+  val ScalaVersion       = "3.7.2"
+  val ZioVersion         = "2.1.16" //same as guara
+  val ZioJsonVersion     = "0.7.39" //same as guara
+  val MedullaVersion     = "v0.0.1-SNAPSHOT"
+  val AdminGuaraVersion  = "v1.4.0" // modern endpoint dsl + UEF for admin-api
+  val NeotypeVersion     = "0.3.36"
 
   lazy val dependencies = new {
     val betterFiles     = "com.github.pathikrit" %% "better-files"      % "3.9.2"
@@ -44,6 +46,22 @@ object BuildHelper {
     dependencies.jjwtApi,
     dependencies.jjwtImpl,
     dependencies.jjwtJackson,
+  )
+
+  lazy val adminApiDependencies = Seq(
+    "guara"                %% "guara-framework"    % AdminGuaraVersion            ,
+    "io.github.kitlangton" %% "neotype"            % NeotypeVersion               ,
+    "io.github.kitlangton" %% "neotype-zio-json"   % NeotypeVersion               ,
+    "io.github.kitlangton" %% "neotype-zio-schema" % NeotypeVersion               ,
+    dependencies.zio,
+    dependencies.zioJson,
+    dependencies.jjwtApi,
+    dependencies.jjwtImpl,
+    dependencies.jjwtJackson,
+    dependencies.chimney,
+    dependencies.commonsCodec,
+    dependencies.zioTest,
+    dependencies.zioTestSbt,
   )
 
   lazy val allDependencies = Seq(

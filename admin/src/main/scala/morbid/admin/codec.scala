@@ -18,12 +18,57 @@ object codec {
 
 object converters {
 
-  import morbid.types.ApplicationCode
+  import morbid.types.*
   import medulla.ui.inputs.SafeConverter
   import scala.util.Try
 
   given SafeConverter[ApplicationCode] = new SafeConverter[ApplicationCode] {
     override def fromText(str: String)      = Try(ApplicationCode.of(str))
     override def asText(t: ApplicationCode) = Try(ApplicationCode.value(t))
+  }
+
+  given SafeConverter[ApplicationName] = new SafeConverter[ApplicationName] {
+    override def fromText(str: String)      = Try(ApplicationName.of(str))
+    override def asText(t: ApplicationName) = Try(ApplicationName.value(t))
+  }
+
+  given SafeConverter[AccountCode] = new SafeConverter[AccountCode] {
+    override def fromText(str: String)  = Try(AccountCode.of(str))
+    override def asText(t: AccountCode) = Try(AccountCode.value(t))
+  }
+
+  given SafeConverter[AccountName] = new SafeConverter[AccountName] {
+    override def fromText(str: String)  = Try(AccountName.of(str))
+    override def asText(t: AccountName) = Try(AccountName.value(t))
+  }
+
+  given SafeConverter[GroupCode] = new SafeConverter[GroupCode] {
+    override def fromText(str: String) = Try(GroupCode.of(str))
+    override def asText(t: GroupCode)  = Try(GroupCode.value(t))
+  }
+
+  given SafeConverter[GroupName] = new SafeConverter[GroupName] {
+    override def fromText(str: String) = Try(GroupName.of(str))
+    override def asText(t: GroupName)  = Try(GroupName.value(t))
+  }
+
+  given SafeConverter[UserCode] = new SafeConverter[UserCode] {
+    override def fromText(str: String) = Try(UserCode.of(str))
+    override def asText(t: UserCode)   = Try(UserCode.value(t))
+  }
+
+  given SafeConverter[Email] = new SafeConverter[Email] {
+    override def fromText(str: String) = Try(Email.of(str))
+    override def asText(t: Email)      = Try(Email.value(t))
+  }
+
+  given SafeConverter[Password] = new SafeConverter[Password] {
+    override def fromText(str: String) = Try(Password.of(str))
+    override def asText(t: Password)   = Try(Password.value(t))
+  }
+
+  given SafeConverter[Pin] = new SafeConverter[Pin] {
+    override def fromText(str: String) = Try(Pin.of(str))
+    override def asText(t: Pin)        = Try(Pin.value(t))
   }
 }

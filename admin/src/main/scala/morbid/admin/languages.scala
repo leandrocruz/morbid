@@ -26,7 +26,11 @@ trait Dictionary {
   def loginEmail         = "Email"
   def loginPassword      = "Password"
   def loginButton        = "Sign In"
+  def loginContinue      = "Continue"
+  def loginSso           = "Sign in with SSO"
+  def loginCancel        = "Cancel"
   def loginForgot        = "Forgot your password?"
+  def loginProviderError = "Could not resolve your login provider. Check your email and try again."
 
   // Sidebar
   def sidebarManagement  = "Management"
@@ -70,6 +74,48 @@ trait Dictionary {
   def columnRoles        = "Roles"
   def columnStatus       = "Status"
 
+  // Columns
+  def columnTenant       = "Tenant"
+  def columnUser         = "User"
+  def columnPin          = "PIN"
+  def columnPassword     = "Password"
+
+  // Account validation
+  def accountsNameRequired   = "Account name is required"
+  def accountsCodeRequired   = "Account code is required"
+  def accountsTenantRequired = "Tenant is required"
+
+  // User validation
+  def usersEmailRequired     = "Email is required"
+  def usersEmailInvalid      = "Email is invalid"
+
+  // Group validation
+  def groupsNameRequired     = "Group name is required"
+
+  // Application validation
+  def appsNameRequired       = "Application name is required"
+  def appsCodeRequired       = "Application code is required"
+
+  // Password and PIN
+  def passwordTitle          = "Change Password"
+  def passwordSubtitle       = "Choose a new password"
+  def passwordRequired       = "Password is required"
+  def passwordMinLength      = "Password must have at least 6 characters"
+  def passwordChanged        = "Password changed"
+  def passwordReset          = "Reset Password"
+  def passwordResetTitle     = "Reset Password"
+  def passwordResetMessage   = "Clicking the button below will generate a password reset link."
+  def passwordResetInfo      = "Link created. Send it to the user so they can reset their password."
+  def pinTitle               = "Set PIN"
+  def pinChanged             = "PIN changed"
+  def pinMinLength           = "PIN must have at least 4 digits"
+  def copyLink               = "Copy Link"
+
+  // Permissions / access
+  def accessDenied           = "Access denied"
+  def accessOnlyRoot         = "Only users of the root account can use the admin console"
+  def loginErrorGeneric      = "Login error. Please check your credentials."
+
   // Common
   def active             = "Active"
   def inactive           = "Inactive"
@@ -99,7 +145,11 @@ case class Portuguese(language: Language) extends Dictionary {
   override def loginEmail         = "Email"
   override def loginPassword      = "Senha"
   override def loginButton        = "Entrar"
+  override def loginContinue      = "Avançar"
+  override def loginSso           = "Entrar via SSO"
+  override def loginCancel        = "Cancelar"
   override def loginForgot        = "Esqueceu a senha?"
+  override def loginProviderError = "Não foi possível identificar seu provedor de login. Verifique o email e tente de novo."
 
   // Sidebar
   override def sidebarManagement  = "Gerenciamento"
@@ -156,6 +206,48 @@ case class Portuguese(language: Language) extends Dictionary {
   override def noRecords          = "Nenhum registro encontrado"
   override def loading            = "Carregando..."
   override def logout             = "Sair"
+
+  // Columns
+  override def columnTenant       = "Tenant"
+  override def columnUser         = "Usuário"
+  override def columnPin          = "PIN"
+  override def columnPassword     = "Senha"
+
+  // Account validation
+  override def accountsNameRequired   = "Nome da conta é obrigatório"
+  override def accountsCodeRequired   = "Código da conta é obrigatório"
+  override def accountsTenantRequired = "Tenant é obrigatório"
+
+  // User validation
+  override def usersEmailRequired     = "Email é obrigatório"
+  override def usersEmailInvalid      = "Email inválido"
+
+  // Group validation
+  override def groupsNameRequired     = "Nome do grupo é obrigatório"
+
+  // Application validation
+  override def appsNameRequired       = "Nome da aplicação é obrigatório"
+  override def appsCodeRequired       = "Código da aplicação é obrigatório"
+
+  // Password and PIN
+  override def passwordTitle          = "Alterar senha"
+  override def passwordSubtitle       = "Escolha uma nova senha"
+  override def passwordRequired       = "Senha é obrigatória"
+  override def passwordMinLength      = "A senha deve ter pelo menos 6 caracteres"
+  override def passwordChanged        = "Senha alterada"
+  override def passwordReset          = "Redefinir senha"
+  override def passwordResetTitle     = "Redefinir senha"
+  override def passwordResetMessage   = "Ao clicar no botão abaixo, o link para redefinição de senha será gerado."
+  override def passwordResetInfo      = "Link criado. Envie-o para o usuário redefinir a senha."
+  override def pinTitle               = "Definir PIN"
+  override def pinChanged             = "PIN alterado"
+  override def pinMinLength           = "O PIN deve ter ao menos 4 dígitos"
+  override def copyLink               = "Copiar link"
+
+  // Permissions / access
+  override def accessDenied           = "Acesso negado"
+  override def accessOnlyRoot         = "Somente usuários da conta raiz podem usar o console de administração"
+  override def loginErrorGeneric      = "Erro de login. Verifique suas credenciais."
 }
 
 object Dictionary {

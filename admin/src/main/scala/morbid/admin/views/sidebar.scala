@@ -15,13 +15,11 @@ object Sidebar {
         Seq(
           (dict.sidebarApps,     "apps",      ApplicationsPage),
           (dict.sidebarAccounts, "apartment", AccountsPage),
-          (dict.sidebarUsers,    "group",     UsersPage),
         )
       ),
       SidebarSection(
         dict.sidebarSecurity,
         Seq(
-          (dict.sidebarProviders, "key",                  ProvidersPage),
           (dict.sidebarRoles,     "admin_panel_settings", RolesPage),
         )
       ),

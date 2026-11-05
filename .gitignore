@@ -7,3 +7,4 @@ target
 tmp
 node_modules
 *.csv
+dist/
