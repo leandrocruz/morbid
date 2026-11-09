@@ -20,25 +20,45 @@ import scala.util.{Failure, Success, Try}
 object ApplicationsView {
 
   sealed trait CrudEvent
-  case class Created(item: ApplicationResponse) extends CrudEvent
-  case class Updated(item: ApplicationResponse) extends CrudEvent
+  case class Created(item: ApplicationResponse)      extends CrudEvent
+  case class Updated(item: ApplicationResponse)      extends CrudEvent
+  case class Deleted(code: ApplicationCode)          extends CrudEvent
 
   private sealed trait ModalMode
-  private case object Closed     extends ModalMode
-  private case object CreateMode extends ModalMode
-  private case class EditMode(app: ApplicationResponse) extends ModalMode
+  private case object Closed                                 extends ModalMode
+  private case object CreateMode                             extends ModalMode
+  private case class  EditMode  (app: ApplicationResponse)   extends ModalMode
+  private case class  DeleteMode(app: ApplicationResponse)   extends ModalMode
 
   def render(using dict: Dictionary, fetcher: Fetcher): HtmlElement = {
+
+    val admin = Session.isAdmin
 
     def columns(mode: Var[ModalMode]) = Seq(
       DataTable.Column[ApplicationResponse](dict.columnName    , it => span(ApplicationName.value(it.name))),
       DataTable.Column[ApplicationResponse](dict.columnCode    , it => span(cls("font-mono text-xs"), ApplicationCode.value(it.code))),
       DataTable.Column[ApplicationResponse](dict.columnStatus  , it => StatusLabel.render(it.active)),
-      DataTable.Column[ApplicationResponse](dict.columnGroups  , it => Pills.of(Seq(a(dict.groups, AdminRouter.instance.linkTo(GroupsPage(it.code)))))),
+      DataTable.Column[ApplicationResponse](dict.accountsTitle , it =>
+        a(
+          cls("inline-flex items-center gap-1 text-admin-muted hover:text-admin-text cursor-pointer"),
+          onClick --> { _ =>
+            Session.setSelectedApp(Some(it.code))
+            AdminRouter.instance.navigateTo(AccountsPage)
+          },
+          MaterialIcon("apartment", "text-lg"),
+          span(cls("text-sm"), dict.accountsTitle),
+        )
+      ),
+      DataTable.Column[ApplicationResponse](dict.columnRoles   , it => Pills.of(Seq(a(dict.sidebarRoles, AdminRouter.instance.linkTo(AppRolesPage(it.code)))))),
       DataTable.Column[ApplicationResponse](dict.columnActions , it =>
         div(
           cls("flex items-center gap-2"),
-          button(cls("cursor-pointer text-admin-muted hover:text-admin-text"), MaterialIcon("edit", "text-lg"), onClick.mapTo(EditMode(it)) --> mode),
+          child.maybe <-- admin.map(Option.when(_)(
+            button(cls("cursor-pointer text-admin-muted hover:text-admin-text")    , MaterialIcon("edit",   "text-lg"), onClick.mapTo(EditMode(it))   --> mode)
+          )),
+          child.maybe <-- admin.map(Option.when(_)(
+            button(cls("cursor-pointer text-admin-muted hover:text-admin-error-fg"), MaterialIcon("delete", "text-lg"), onClick.mapTo(DeleteMode(it)) --> mode)
+          )),
         )
       ),
     )
@@ -53,6 +73,7 @@ object ApplicationsView {
               js.timers.setTimeout(1500)(row.highlight(false))
             }
             buffer.filterNot(_.id == item.id) :+ item
+          case Deleted(code) => buffer.filterNot(_.code == code)
       }
 
       maybe match
@@ -78,18 +99,25 @@ object ApplicationsView {
     }
 
     val modalContent = mode.signal.map {
-      case Closed        => div()
-      case CreateMode    => renderCreateModal(mode, events)
-      case EditMode(app) => renderEditModal(app, mode, events)
+      case Closed          => div()
+      case CreateMode      => renderCreateModal(mode, events)
+      case EditMode(app)   => renderEditModal(app, mode, events)
+      case DeleteMode(app) => renderDeleteModal(app, mode, events)
     }
 
     def renderTable(loaded: Boolean) = Option.when(loaded) {
       div(cls("admin-card"), tbl.render(rows))
     }
 
+    val headerAction = div(
+      child.maybe <-- admin.map(Option.when(_)(
+        Buttons.primary.amend(dict.appsNew, onClick.mapTo(CreateMode) --> mode)
+      ))
+    )
+
     div(
       fetcher.execute(Endpoints.listApplications).map(Some(_)) --> data,
-      PageHeader.render(dict.appsTitle, dict.appsSubtitle, Buttons.primary.amend(dict.appsNew, onClick.mapTo(CreateMode) --> mode)),
+      PageHeader.render(dict.appsTitle, dict.appsSubtitle, headerAction),
       child.maybe <-- status.map(_._2),
       child.maybe <-- status.map(_._1).map(renderTable),
       child.maybe <-- Modal(opened, modalContent),
@@ -133,6 +161,46 @@ object ApplicationsView {
         cls("flex items-center justify-end gap-2 p-6 border-t border-gray-200"),
         Buttons.secondary.amend(dict.cancel, disabled <-- med.disabled, onClick.mapTo(Closed) --> mode),
         Buttons.primary.amend(dict.save, disabled <-- med.disabled, onClick.mapToUnit --> med.trigger),
+      )
+    )
+  }
+
+  private def renderDeleteModal(
+    app    : ApplicationResponse,
+    mode   : Var[ModalMode],
+    events : EventBus[CrudEvent]
+  )(using dict: Dictionary, fetcher: Fetcher): HtmlElement = {
+
+    val trigger = EventBus[Unit]()
+    val result  = trigger.events.flatMapSwitch { _ => fetcher.execute(Endpoints.deleteApplication(app.code)) }
+    val busy    = Var(false)
+
+    div(
+      trigger.events.mapTo(true) --> busy,
+      result --> { r =>
+        busy.set(false)
+        r match
+          case Success(_) => events.emit(Deleted(app.code)); mode.set(Closed)
+          case Failure(_) => ()
+      },
+      cls("flex flex-col h-full"),
+      div(
+        cls("flex items-center justify-between p-6 border-b border-gray-200"),
+        h2(cls("text-lg font-semibold text-admin-error-fg"), dict.deleteTitle),
+        button(cls("text-admin-muted hover:text-admin-text"), MaterialIcon("close"), onClick.mapTo(Closed) --> mode)
+      ),
+      div(
+        cls("flex flex-col gap-4 p-6 flex-1"),
+        div(
+          cls("flex items-center gap-3 p-4 bg-red-50 rounded-lg"),
+          MaterialIcon("warning", "text-admin-error-fg text-2xl"),
+          p(cls("text-sm text-admin-text"), dict.deleteMessage(ApplicationName.value(app.name)))
+        ),
+      ),
+      div(
+        cls("flex items-center justify-end gap-2 p-6 border-t border-gray-200"),
+        Buttons.secondary.amend(dict.cancel, disabled <-- busy.signal, onClick.mapTo(Closed) --> mode),
+        Buttons.primary.amend(cls("!bg-admin-error-fg hover:!bg-red-700"), dict.confirm, disabled <-- busy.signal, onClick.mapToUnit --> trigger),
       )
     )
   }

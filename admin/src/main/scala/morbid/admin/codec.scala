@@ -71,4 +71,29 @@ object converters {
     override def fromText(str: String) = Try(Pin.of(str))
     override def asText(t: Pin)        = Try(Pin.value(t))
   }
+
+  given SafeConverter[TenantCode] = new SafeConverter[TenantCode] {
+    override def fromText(str: String) = Try(TenantCode.of(str))
+    override def asText(t: TenantCode) = Try(TenantCode.value(t))
+  }
+
+  given SafeConverter[TenantName] = new SafeConverter[TenantName] {
+    override def fromText(str: String) = Try(TenantName.of(str))
+    override def asText(t: TenantName) = Try(TenantName.value(t))
+  }
+
+  given SafeConverter[ProviderCode] = new SafeConverter[ProviderCode] {
+    override def fromText(str: String) = Try(ProviderCode.of(str))
+    override def asText(t: ProviderCode) = Try(ProviderCode.value(t))
+  }
+
+  given SafeConverter[ProviderName] = new SafeConverter[ProviderName] {
+    override def fromText(str: String) = Try(ProviderName.of(str))
+    override def asText(t: ProviderName) = Try(ProviderName.value(t))
+  }
+
+  given SafeConverter[Domain] = new SafeConverter[Domain] {
+    override def fromText(str: String) = Try(Domain.of(str))
+    override def asText(t: Domain)     = Try(Domain.value(t))
+  }
 }

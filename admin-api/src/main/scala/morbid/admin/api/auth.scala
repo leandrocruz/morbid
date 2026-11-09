@@ -3,7 +3,7 @@ package morbid.admin.api
 import ApiError.{forbidden, unauthorized}
 import morbid.domain.RootAccount
 import morbid.domain.token.{RawToken, Token}
-import morbid.types.AccountId
+import morbid.types.{AccountId, ApplicationCode, RoleCode}
 import zio.*
 import zio.http.*
 import zio.http.Cookie.SameSite
@@ -11,19 +11,36 @@ import zio.http.Cookie.SameSite
 /** The outcome of authenticating the admin-session cookie: the raw Morbid token (to
   * forward to Morbid) alongside the parsed/verified token. Only root-account users
   * reach this point — the account check happens up-front at login time and again on
-  * each request, so the handlers can assume the caller is an admin.
+  * each request. The admin role is per-application; the caller must specify which
+  * application they are working on via the `X-Admin-App` header, and the role check
+  * runs against *that* application.
   */
 case class AdminSession(raw: RawToken, token: Token) {
   def account = token.user.details.account
   def email   = token.user.details.email
+
+  def isAdminOn(app: ApplicationCode): Boolean = {
+    given ApplicationCode = app
+    token.hasRole(AdminRole)
+  }
+
+  /** True when the admin holds the `adm` role on at least one application.
+    * Used to gate system-wide endpoints (applications, tenants) where no
+    * specific app context is meaningful. */
+  def isAdminAnywhere: Boolean =
+    token.user.applications.exists(a => isAdminOn(a.code))
 }
 
+val AdminRole: RoleCode = RoleCode.of("adm")
+
 trait AdminAuth {
-  def authenticate (header: Option[AuthorizationHeader], cookie: Option[String]) : IO[ApiError, AdminSession]
-  def requireRoot  (session: AdminSession)                                       : IO[ApiError, Unit]
-  def login        (firebaseToken: String)                                       : IO[ApiError, (AdminSession, Cookie.Response)]
-  def logoutCookie                                                               : Cookie.Response
-  def cookieFor    (rawToken: String)                                            : Cookie.Response
+  def authenticate         (header: Option[AuthorizationHeader], cookie: Option[String]) : IO[ApiError, AdminSession]
+  def requireRoot          (session: AdminSession)                                       : IO[ApiError, Unit]
+  def requireAdmin         (session: AdminSession, app: ApplicationCode)                 : IO[ApiError, Unit]
+  def requireAdminAnywhere (session: AdminSession)                                       : IO[ApiError, Unit]
+  def login                (firebaseToken: String)                                       : IO[ApiError, (AdminSession, Cookie.Response)]
+  def logoutCookie                                                                       : Cookie.Response
+  def cookieFor            (rawToken: String)                                            : Cookie.Response
 }
 
 object AdminAuth {
@@ -79,6 +96,16 @@ case class MorbidAdminAuth(cfg: AppConfig, gw: MorbidGateway) extends AdminAuth 
   override def requireRoot(session: AdminSession): IO[ApiError, Unit] =
     ZIO.unless(session.account == RootAccount) {
       ZIO.fail(forbidden(s"Only root-account users can use the admin console"))
+    }.unit
+
+  override def requireAdmin(session: AdminSession, app: ApplicationCode): IO[ApiError, Unit] =
+    ZIO.unless(session.isAdminOn(app)) {
+      ZIO.fail(forbidden(s"This operation requires the 'adm' role on application '${ApplicationCode.value(app)}'"))
+    }.unit
+
+  override def requireAdminAnywhere(session: AdminSession): IO[ApiError, Unit] =
+    ZIO.unless(session.isAdminAnywhere) {
+      ZIO.fail(forbidden("This operation requires the 'adm' role on at least one application"))
     }.unit
 
   override def login(firebaseToken: String): IO[ApiError, (AdminSession, Cookie.Response)] = {

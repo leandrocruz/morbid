@@ -1,6 +1,6 @@
 package morbid.admin.api
 
-import morbid.domain.UserKind
+import morbid.domain.{ProviderKind, UserKind}
 import morbid.types.*
 import zio.schema.Schema
 
@@ -27,4 +27,10 @@ object schemas {
   given Schema[RoleName]        = Schema[String].transform(RoleName.of       , RoleName.value)
   given Schema[Link]            = Schema[String].transform(Link.of           , Link.value)
   given Schema[UserKind]        = Schema[String].transform(UserKind.valueOf  , _.toString)
+  given Schema[ProviderId]      = Schema[Long]  .transform(ProviderId.of     , ProviderId.value)
+  given Schema[ProviderCode]    = Schema[String].transform(ProviderCode.of   , ProviderCode.value)
+  given Schema[ProviderName]    = Schema[String].transform(ProviderName.of   , ProviderName.value)
+  given Schema[ProviderKind]    = Schema[String].transform(ProviderKind.valueOf, _.toString)
+  given Schema[Domain]          = Schema[String].transform(Domain.of         , Domain.value)
+  given Schema[TenantName]      = Schema[String].transform(TenantName.of     , TenantName.value)
 }

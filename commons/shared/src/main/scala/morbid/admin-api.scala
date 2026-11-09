@@ -1,6 +1,6 @@
 package morbid.admin.api
 
-import morbid.domain.UserKind
+import morbid.domain.{ProviderKind, UserKind}
 import morbid.types.*
 import zio.json.*
 
@@ -9,7 +9,18 @@ import java.time.LocalDateTime
 /* auth */
 
 case class LoginRequest(firebaseToken: String)
-case class LoginResponse(email: Email, account: AccountId, name: Option[String])
+
+case class AppAccess(
+  code    : ApplicationCode,
+  isAdmin : Boolean,
+)
+
+case class LoginResponse(
+  email   : Email,
+  account : AccountId,
+  name    : Option[String],
+  apps    : List[AppAccess] = List.empty,
+)
 
 enum LoginMode {
   case up, saml
@@ -132,6 +143,73 @@ case class RoleResponse(
   name : RoleName,
 )
 
+/* tenants */
+
+case class TenantResponse(
+  id   : TenantId,
+  code : TenantCode,
+)
+
+case class CreateTenantBody(
+  code : TenantCode,
+  name : TenantName,
+)
+
+case class UpdateTenantBody(
+  code : TenantCode,
+  name : TenantName,
+  active : Boolean,
+)
+
+/* identity providers (per-account) */
+
+case class ProviderResponse(
+  id      : ProviderId,
+  code    : ProviderCode,
+  name    : ProviderName,
+  domain  : Domain,
+  kind    : ProviderKind,
+  active  : Boolean,
+  created : LocalDateTime,
+)
+
+case class CreateProviderBody(
+  code   : ProviderCode,
+  name   : ProviderName,
+  domain : Domain,
+  kind   : ProviderKind,
+  active : Boolean = true,
+)
+
+case class UpdateProviderBody(
+  code   : ProviderCode,
+  name   : ProviderName,
+  domain : Domain,
+  kind   : ProviderKind,
+  active : Boolean,
+)
+
+/* api keys / service accounts (per-account) */
+
+case class ApiKeyResponse(
+  id      : UserId,
+  code    : UserCode,
+  email   : Email,
+  active  : Boolean,
+  created : LocalDateTime,
+)
+
+case class CreateApiKeyBody(
+  email : Email,
+  name  : Option[String] = None,
+  days  : Option[Int]    = None,
+)
+
+case class ApiKeyIssuedResponse(
+  user  : ApiKeyResponse,
+  token : String,
+)
+
 object codecs {
 
   given JsonEncoder[LoginMode] = JsonEncoder.string.contramap(_.toString)
@@ -142,6 +220,7 @@ object codecs {
   }
 
   given JsonCodec[LoginRequest]           = DeriveJsonCodec.gen
+  given JsonCodec[AppAccess]              = DeriveJsonCodec.gen
   given JsonCodec[LoginResponse]          = DeriveJsonCodec.gen
   given JsonCodec[GetProviderRequest]     = DeriveJsonCodec.gen
   given JsonCodec[GetProviderResponse]    = DeriveJsonCodec.gen
@@ -161,4 +240,13 @@ object codecs {
   given JsonCodec[CreateApplicationBody]  = DeriveJsonCodec.gen
   given JsonCodec[UpdateApplicationBody]  = DeriveJsonCodec.gen
   given JsonCodec[RoleResponse]           = DeriveJsonCodec.gen
+  given JsonCodec[TenantResponse]         = DeriveJsonCodec.gen
+  given JsonCodec[CreateTenantBody]       = DeriveJsonCodec.gen
+  given JsonCodec[UpdateTenantBody]       = DeriveJsonCodec.gen
+  given JsonCodec[ProviderResponse]       = DeriveJsonCodec.gen
+  given JsonCodec[CreateProviderBody]     = DeriveJsonCodec.gen
+  given JsonCodec[UpdateProviderBody]     = DeriveJsonCodec.gen
+  given JsonCodec[ApiKeyResponse]         = DeriveJsonCodec.gen
+  given JsonCodec[CreateApiKeyBody]       = DeriveJsonCodec.gen
+  given JsonCodec[ApiKeyIssuedResponse]   = DeriveJsonCodec.gen
 }

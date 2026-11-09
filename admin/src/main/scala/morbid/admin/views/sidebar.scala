@@ -13,14 +13,9 @@ object Sidebar {
       SidebarSection(
         dict.sidebarManagement,
         Seq(
-          (dict.sidebarApps,     "apps",      ApplicationsPage),
-          (dict.sidebarAccounts, "apartment", AccountsPage),
-        )
-      ),
-      SidebarSection(
-        dict.sidebarSecurity,
-        Seq(
-          (dict.sidebarRoles,     "admin_panel_settings", RolesPage),
+          (dict.sidebarApps,     "apps",           ApplicationsPage),
+          (dict.sidebarAccounts, "apartment",      AccountsPage),
+          (dict.sidebarTenants,  "corporate_fare", TenantsPage),
         )
       ),
     )

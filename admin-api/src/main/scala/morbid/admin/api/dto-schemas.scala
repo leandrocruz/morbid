@@ -29,4 +29,13 @@ object dtoSchemas {
   given Schema[CreateApplicationBody]  = DeriveSchema.gen
   given Schema[UpdateApplicationBody]  = DeriveSchema.gen
   given Schema[RoleResponse]           = DeriveSchema.gen
+  given Schema[TenantResponse]         = DeriveSchema.gen
+  given Schema[CreateTenantBody]       = DeriveSchema.gen
+  given Schema[UpdateTenantBody]       = DeriveSchema.gen
+  given Schema[ProviderResponse]       = DeriveSchema.gen
+  given Schema[CreateProviderBody]     = DeriveSchema.gen
+  given Schema[UpdateProviderBody]     = DeriveSchema.gen
+  given Schema[ApiKeyResponse]         = DeriveSchema.gen
+  given Schema[CreateApiKeyBody]       = DeriveSchema.gen
+  given Schema[ApiKeyIssuedResponse]   = DeriveSchema.gen
 }

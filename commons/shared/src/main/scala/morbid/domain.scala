@@ -37,6 +37,15 @@ object domain {
       code : TenantCode,
     )
 
+    case class RawTenantDetails(
+      id      : TenantId,
+      created : LocalDateTime,
+      deleted : Option[LocalDateTime],
+      active  : Boolean,
+      code    : TenantCode,
+      name    : TenantName,
+    )
+
     case class RawAccount(
       id         : AccountId,
       created    : LocalDateTime,
@@ -164,6 +173,7 @@ object domain {
     given JsonCodec[RawUserEntry]          = DeriveJsonCodec.gen
     given JsonCodec[RawAccount]            = DeriveJsonCodec.gen
     given JsonCodec[RawIdentityProvider]   = DeriveJsonCodec.gen
+    given JsonCodec[RawTenantDetails]      = DeriveJsonCodec.gen
     given JsonCodec[AccountWithApps]       = DeriveJsonCodec.gen
   }
 
@@ -280,6 +290,31 @@ object domain {
     case class LoginViaEmailLinkResponse(link: Link)
     case class CreateAccount(tenant: TenantId, id: AccountId, code: AccountCode, name: AccountName, user: UserId, email: Email)
     case class ImpersonationRequest(email: Email, magic: Magic)
+    case class StoreTenantRequest(
+      id     : Option[TenantId],
+      code   : TenantCode,
+      name   : TenantName,
+      active : Boolean,
+    )
+    case class StoreIdentityProviderRequest(
+      id      : Option[ProviderId],
+      active  : Boolean,
+      domain  : Domain,
+      kind    : ProviderKind,
+      code    : ProviderCode,
+      name    : ProviderName,
+    )
+
+    case class CreateApiKeyRequest(
+      email : Email,
+      name  : Option[String] = None,
+      days  : Option[Int]    = None,
+    )
+
+    case class ApiKeyIssued(
+      user  : morbid.domain.raw.RawUserEntry,
+      token : String,
+    )
 
     given JsonCodec[StoreGroupRequest]          = DeriveJsonCodec.gen
     given JsonCodec[StoreUserRequest]           = DeriveJsonCodec.gen
@@ -295,5 +330,9 @@ object domain {
     given JsonCodec[CreateAccount]              = DeriveJsonCodec.gen
     given JsonCodec[ChangePasswordRequest]      = DeriveJsonCodec.gen
     given JsonCodec[ImpersonationRequest]       = DeriveJsonCodec.gen
+    given JsonCodec[StoreTenantRequest]            = DeriveJsonCodec.gen
+    given JsonCodec[StoreIdentityProviderRequest]  = DeriveJsonCodec.gen
+    given JsonCodec[CreateApiKeyRequest]           = DeriveJsonCodec.gen
+    given JsonCodec[ApiKeyIssued]                  = DeriveJsonCodec.gen
   }
 }

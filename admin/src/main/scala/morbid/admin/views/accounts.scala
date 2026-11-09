@@ -68,11 +68,47 @@ object AccountsView {
           span(cls("text-sm"), dict.usersTitle),
         )
       ),
+      DataTable.Column[AccountResponse](dict.groupsTitle  , it =>
+        a(
+          cls("inline-flex items-center gap-1 text-admin-muted hover:text-admin-text cursor-pointer"),
+          AdminRouter.instance.linkTo(AccountGroupsPage(it.id)),
+          MaterialIcon("groups", "text-lg"),
+          span(cls("text-sm"), dict.groups),
+        )
+      ),
+      DataTable.Column[AccountResponse](dict.providersTitle, it =>
+        a(
+          cls("inline-flex items-center gap-1 text-admin-muted hover:text-admin-text cursor-pointer"),
+          AdminRouter.instance.linkTo(AccountProvidersPage(it.id)),
+          MaterialIcon("vpn_key", "text-lg"),
+          span(cls("text-sm"), dict.sidebarProviders),
+        )
+      ),
+      DataTable.Column[AccountResponse](dict.apiKeysTitle , it =>
+        a(
+          cls("inline-flex items-center gap-1 text-admin-muted hover:text-admin-text cursor-pointer"),
+          AdminRouter.instance.linkTo(AccountApiKeysPage(it.id)),
+          MaterialIcon("api", "text-lg"),
+          span(cls("text-sm"), dict.sidebarApiKeys),
+        )
+      ),
+      DataTable.Column[AccountResponse](dict.accountAppsTitle, it =>
+        a(
+          cls("inline-flex items-center gap-1 text-admin-muted hover:text-admin-text cursor-pointer"),
+          AdminRouter.instance.linkTo(AccountAppsPage(it.id)),
+          MaterialIcon("apps", "text-lg"),
+          span(cls("text-sm"), dict.sidebarApps),
+        )
+      ),
       DataTable.Column[AccountResponse](dict.columnActions, it =>
         div(
           cls("flex items-center gap-2"),
-          button(cls("cursor-pointer text-admin-muted hover:text-admin-text")    , MaterialIcon("edit",   "text-lg"), onClick.mapTo(EditMode(it))   --> mode),
-          button(cls("cursor-pointer text-admin-muted hover:text-admin-error-fg"), MaterialIcon("delete", "text-lg"), onClick.mapTo(DeleteMode(it)) --> mode),
+          child.maybe <-- Session.isAdmin.map(Option.when(_)(
+            button(cls("cursor-pointer text-admin-muted hover:text-admin-text")    , MaterialIcon("edit",   "text-lg"), onClick.mapTo(EditMode(it))   --> mode)
+          )),
+          child.maybe <-- Session.isAdmin.map(Option.when(_)(
+            button(cls("cursor-pointer text-admin-muted hover:text-admin-error-fg"), MaterialIcon("delete", "text-lg"), onClick.mapTo(DeleteMode(it)) --> mode)
+          )),
         )
       ),
     )
@@ -96,6 +132,16 @@ object AccountsView {
     val filters = Var(Filters())
     val events  = EventBus[CrudEvent]()
     val changes = events.events.scanLeft(Seq.empty[CrudEvent])(_ :+ _)
+
+    /** Re-fetch whenever the TopBar app selector changes. With an app picked,
+      * the admin-api `/accounts` call carries `X-Admin-App` and the server
+      * filters by `account_to_app`; without a pick, the header is dropped and
+      * admin-api returns every account in the system. */
+    val loadTrigger  = EventBus[Option[ApplicationCode]]()
+    val accountsFlow: EventStream[Option[Try[Seq[AccountResponse]]]] =
+      loadTrigger.events.flatMapSwitch { _ =>
+        fetcher.execute(Endpoints.listAccounts).map(Some(_))
+      }
     val tbl     = DataTable.simple(columns(mode), _.id)
     val all     = changes.combineWith(data).map {
       case (chs, Some(Success(items))) => applyChanges(tbl)(chs, items).sortBy(a => AccountName.value(a.name))
@@ -187,8 +233,17 @@ object AccountsView {
     }
 
     div(
-      fetcher.execute(Endpoints.listAccounts).map(Some(_)) --> data,
-      PageHeader.render(dict.accountsTitle, dict.accountsSubtitle, Buttons.primary.amend(dict.accountsNew, onClick.mapTo(CreateMode) --> mode)),
+      /* subscribe to the flow BEFORE emitting the initial trigger: the EventBus has
+       * no replay, so an emission before accountsFlow is subscribed would be lost
+       * (causing a permanent loading state on fresh mount). */
+      accountsFlow --> data,
+      onMountCallback { _ => loadTrigger.emit(Session.selectedApp.now()) },
+      Session.selectedApp.signal.changes --> loadTrigger.writer,
+      PageHeader.render(dict.accountsTitle, dict.accountsSubtitle, div(
+        child.maybe <-- Session.isAdmin.map(Option.when(_)(
+          Buttons.primary.amend(dict.accountsNew, onClick.mapTo(CreateMode) --> mode)
+        ))
+      )),
       child.maybe <-- status.map(_._2),
       child.maybe <-- status.map(_._1).map(renderTable),
       child.maybe <-- Modal(opened, modalContent),

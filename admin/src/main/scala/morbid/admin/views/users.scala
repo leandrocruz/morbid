@@ -65,16 +65,6 @@ object UsersView {
       )
   }
 
-  def renderAll(using dict: Dictionary, fetcher: Fetcher): HtmlElement = {
-    div(
-      PageHeader.render(dict.usersTitle, dict.usersSubtitle),
-      div(
-        cls("admin-card p-6 text-sm text-admin-muted"),
-        p("Escolha uma conta na seção de contas para visualizar seus usuários.")
-      )
-    )
-  }
-
   def renderForAccount(acc: AccountId)(using dict: Dictionary, fetcher: Fetcher): HtmlElement = {
 
     def columns(mode: Var[ModalMode]) = Seq(
@@ -84,11 +74,21 @@ object UsersView {
       DataTable.Column[UserResponse](dict.columnActions, u =>
         div(
           cls("flex items-center gap-2"),
-          button(cls("cursor-pointer text-admin-muted hover:text-admin-text")    , MaterialIcon("edit",         "text-lg"), onClick.mapTo(EditMode(u))     --> mode),
-          button(cls("cursor-pointer text-admin-muted hover:text-admin-text")    , MaterialIcon("lock_reset",   "text-lg"), onClick.mapTo(PasswordMode(u)) --> mode),
-          button(cls("cursor-pointer text-admin-muted hover:text-admin-text")    , MaterialIcon("mail",         "text-lg"), onClick.mapTo(ResetMode(u))    --> mode),
-          button(cls("cursor-pointer text-admin-muted hover:text-admin-text")    , MaterialIcon("pin",          "text-lg"), onClick.mapTo(PinMode(u))      --> mode),
-          button(cls("cursor-pointer text-admin-muted hover:text-admin-error-fg"), MaterialIcon("delete",       "text-lg"), onClick.mapTo(DeleteMode(u))   --> mode),
+          child.maybe <-- Session.isAdmin.map(Option.when(_)(
+            button(cls("cursor-pointer text-admin-muted hover:text-admin-text")  , MaterialIcon("edit",         "text-lg"), onClick.mapTo(EditMode(u))     --> mode)
+          )),
+          child.maybe <-- Session.isAdmin.map(Option.when(_)(
+            button(cls("cursor-pointer text-admin-muted hover:text-admin-text")  , MaterialIcon("lock_reset",   "text-lg"), onClick.mapTo(PasswordMode(u)) --> mode)
+          )),
+          child.maybe <-- Session.isAdmin.map(Option.when(_)(
+            button(cls("cursor-pointer text-admin-muted hover:text-admin-text")  , MaterialIcon("mail",         "text-lg"), onClick.mapTo(ResetMode(u))    --> mode)
+          )),
+          child.maybe <-- Session.isAdmin.map(Option.when(_)(
+            button(cls("cursor-pointer text-admin-muted hover:text-admin-text")  , MaterialIcon("pin",          "text-lg"), onClick.mapTo(PinMode(u))      --> mode)
+          )),
+          child.maybe <-- Session.isAdmin.map(Option.when(_)(
+            button(cls("cursor-pointer text-admin-muted hover:text-admin-error-fg"), MaterialIcon("delete",     "text-lg"), onClick.mapTo(DeleteMode(u))   --> mode)
+          )),
         )
       ),
     )
@@ -205,7 +205,11 @@ object UsersView {
 
     div(
       fetcher.execute(Endpoints.listUsers(acc)).map(Some(_)) --> data,
-      PageHeader.render(dict.usersTitle, dict.usersSubtitle, Buttons.primary.amend(dict.usersNew, onClick.mapTo(CreateMode) --> mode)),
+      PageHeader.render(dict.usersTitle, dict.usersSubtitle, div(
+        child.maybe <-- Session.isAdmin.map(Option.when(_)(
+          Buttons.primary.amend(dict.usersNew, onClick.mapTo(CreateMode) --> mode)
+        ))
+      )),
       child.maybe <-- status.map(_._2),
       child.maybe <-- status.map(_._1).map(renderTable),
       child.maybe <-- Modal(opened, modalContent),

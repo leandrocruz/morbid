@@ -17,39 +17,66 @@ import zio.json.*
   * The admin-api acts on behalf of the authenticated admin user: every call forwards the
   * user's Morbid token (X-MorbidToken) so Morbid applies its own authorization rules.
   */
+/** The admin always works on behalf of a specific `application` — the one picked
+  * in the UI's app selector and forwarded via the `X-Admin-App` header. Every
+  * manager call that targets a per-app morbid route takes `ApplicationCode` as a
+  * given. Auth routes and app-crud routes are application-agnostic and don't. */
 trait MorbidGateway {
 
-  // auth
+  // auth (application-agnostic)
   def loginWithFirebase  (firebaseToken: String)                             : Task[(Token, String)]
   def loginProvider      (email: Email)                                      : Task[GetProviderResponse]
   def verify             (rawToken: RawToken)                                : Task[Token]
   def logoff             (rawToken: RawToken)                                : Task[Unit]
 
-  // accounts (manager routes; require root account)
-  def accounts           ()                           (using RawToken)       : Task[Seq[RawAccount]]
-  def storeAccount       (req: StoreAccountRequest)   (using RawToken)       : Task[RawAccount]
-  def removeAccount      (account: AccountId)         (using RawToken)       : Task[Boolean]
+  // accounts (manager routes; require root account; scoped to the chosen app)
+  def accounts           ()                           (using RawToken, ApplicationCode) : Task[Seq[RawAccount]]
+  def allAccounts        ()                           (using RawToken)                  : Task[Seq[RawAccount]]
+  def storeAccount       (req: StoreAccountRequest)   (using RawToken, ApplicationCode) : Task[RawAccount]
+  def removeAccount      (account: AccountId)         (using RawToken, ApplicationCode) : Task[Boolean]
 
   // users
-  def usersOfAccount     (account: AccountId)         (using RawToken)       : Task[Seq[RawUserEntry]]
-  def storeUserFor       (account: AccountId, req: StoreUserRequest)(using RawToken): Task[RawUserEntry]
-  def removeUserFrom     (account: AccountId, code: UserCode)(using RawToken): Task[Boolean]
-  def passwordChange     (req: ChangePasswordRequest) (using RawToken)       : Task[Boolean]
-  def passwordResetLink  (req: RequestPasswordRequestLink)(using RawToken)   : Task[PasswordResetLink]
-  def setPin             (req: SetUserPin)            (using RawToken)       : Task[Boolean]
+  def usersOfAccount     (account: AccountId)         (using RawToken, ApplicationCode) : Task[Seq[RawUserEntry]]
+  def storeUserFor       (account: AccountId, req: StoreUserRequest)(using RawToken, ApplicationCode) : Task[RawUserEntry]
+  def removeUserFrom     (account: AccountId, code: UserCode)(using RawToken, ApplicationCode) : Task[Boolean]
+  def passwordChange     (req: ChangePasswordRequest) (using RawToken, ApplicationCode) : Task[Boolean]
+  def passwordResetLink  (req: RequestPasswordRequestLink)(using RawToken, ApplicationCode) : Task[PasswordResetLink]
+  def setPin             (req: SetUserPin)            (using RawToken, ApplicationCode) : Task[Boolean]
 
-  // groups
-  def groupsOfApp        (app: ApplicationCode)       (using RawToken)       : Task[Seq[RawGroup]]
+  // groups — scoped per-(account, app); the acc comes from the URL and the app is picked on the Groups page
+  def groupsOfApp        (app: ApplicationCode, acc: AccountId)(using RawToken) : Task[Seq[RawGroup]]
+  def usersInGroup       (app: ApplicationCode, acc: AccountId, grp: GroupCode)(using RawToken) : Task[Seq[RawUserEntry]]
   def storeGroup         (app: ApplicationCode, req: StoreGroupRequest)(using RawToken): Task[RawGroup]
   def removeGroup        (app: ApplicationCode, req: RemoveGroupRequest)(using RawToken): Task[Long]
 
-  // applications
-  def applications       ()                           (using RawToken)       : Task[Seq[RawApplicationDetails]]
+  // applications (list/CRUD — application-agnostic)
+  def applications       ()                                     (using RawToken) : Task[Seq[RawApplicationDetails]]
+  def accountApps        (acc: AccountId)                        (using RawToken) : Task[Seq[RawApplicationDetails]]
+  def linkAccountApp     (acc: AccountId, code: ApplicationCode) (using RawToken) : Task[Boolean]
+  def unlinkAccountApp   (acc: AccountId, code: ApplicationCode) (using RawToken) : Task[Boolean]
   def createApplication  (req: CreateApplicationRequest)(using RawToken)     : Task[RawApplicationDetails]
   def updateApplication  (req: UpdateApplicationRequest)(using RawToken)     : Task[RawApplicationDetails]
+  def removeApplication  (id: ApplicationId)          (using RawToken)       : Task[Long]
 
-  // roles
+  // roles (app is explicit — the app whose roles we're looking at)
   def rolesOfApp         (app: ApplicationCode)       (using RawToken)       : Task[Seq[RawRole]]
+
+  // tenants (routed under /app/:app/manager/tenants on morbid-server; app is from the header)
+  def tenants            ()                                      (using RawToken) : Task[Seq[RawTenantDetails]]
+  def storeTenant        (req: StoreTenantRequest)               (using RawToken) : Task[RawTenantDetails]
+  def updateTenant       (id: TenantId, req: StoreTenantRequest) (using RawToken) : Task[RawTenantDetails]
+  def removeTenant       (id: TenantId)                          (using RawToken) : Task[Long]
+
+  // identity providers (per account; scoped to the chosen app)
+  def providersOfAccount (account: AccountId)         (using RawToken, ApplicationCode) : Task[Seq[RawIdentityProvider]]
+  def storeProvider      (account: AccountId, req: StoreIdentityProviderRequest)(using RawToken, ApplicationCode) : Task[RawIdentityProvider]
+  def updateProvider     (account: AccountId, id: ProviderId, req: StoreIdentityProviderRequest)(using RawToken, ApplicationCode) : Task[RawIdentityProvider]
+  def removeProvider     (account: AccountId, id: ProviderId)(using RawToken, ApplicationCode) : Task[Long]
+
+  // api keys (service accounts per account; scoped to the chosen app)
+  def listApiKeys        (account: AccountId)         (using RawToken, ApplicationCode) : Task[Seq[RawUserEntry]]
+  def issueApiKey        (account: AccountId, req: CreateApiKeyRequest)(using RawToken, ApplicationCode) : Task[ApiKeyIssued]
+  def removeApiKey       (account: AccountId, code: UserCode)(using RawToken, ApplicationCode) : Task[Boolean]
 }
 
 case class VerifyGoogleTokenRequest(token: String)
@@ -67,8 +94,6 @@ case class HttpMorbidGateway(cfg: MorbidCfg, client: MorbidClient) extends Morbi
 
   private val applicationJson           = Headers(Chunk(Header.ContentType(MediaType("application", "json"))))
   private def morbidToken(token: RawToken) = Headers(Chunk(Header.Custom("X-MorbidToken", token.string)))
-
-  private def app: ApplicationCode = ApplicationCode.of(cfg.application)
 
   private def perform(request: Request): Task[Response] = client.proxy(request)
 
@@ -140,35 +165,41 @@ case class HttpMorbidGateway(cfg: MorbidCfg, client: MorbidClient) extends Morbi
       _   <- ZIO.when(res.status.code != 200) { ZIO.fail(ReturnResponseError(res)) }
     yield ()
 
-  override def accounts()(using token: RawToken): Task[Seq[RawAccount]] =
+  override def accounts()(using token: RawToken, app: ApplicationCode): Task[Seq[RawAccount]] =
     client.managerGetAccounts(using token, app)
 
-  override def storeAccount(req: StoreAccountRequest)(using token: RawToken): Task[RawAccount] =
+  override def allAccounts()(using token: RawToken): Task[Seq[RawAccount]] =
+    get[Seq[RawAccount]](Some(token), systemManagerUrl("accounts/all"))
+
+  override def storeAccount(req: StoreAccountRequest)(using token: RawToken, app: ApplicationCode): Task[RawAccount] =
     client.managerStoreAccount(req)(using token, app)
 
-  override def removeAccount(account: AccountId)(using token: RawToken): Task[Boolean] =
+  override def removeAccount(account: AccountId)(using token: RawToken, app: ApplicationCode): Task[Boolean] =
     client.managerRemoveAccount(account)(using token, app)
 
-  override def usersOfAccount(account: AccountId)(using token: RawToken): Task[Seq[RawUserEntry]] =
+  override def usersOfAccount(account: AccountId)(using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]] =
     client.managerGetUsers(account)(using token, app)
 
-  override def storeUserFor(account: AccountId, req: StoreUserRequest)(using token: RawToken): Task[RawUserEntry] =
+  override def storeUserFor(account: AccountId, req: StoreUserRequest)(using token: RawToken, app: ApplicationCode): Task[RawUserEntry] =
     client.managerStoreUser(req, account)(using token, app)
 
-  override def removeUserFrom(account: AccountId, code: UserCode)(using token: RawToken): Task[Boolean] =
+  override def removeUserFrom(account: AccountId, code: UserCode)(using token: RawToken, app: ApplicationCode): Task[Boolean] =
     client.managerRemoveUser(account, code)(using token, app)
 
-  override def passwordChange(req: ChangePasswordRequest)(using token: RawToken): Task[Boolean] =
+  override def passwordChange(req: ChangePasswordRequest)(using token: RawToken, app: ApplicationCode): Task[Boolean] =
     client.passwordChange(req)(using token, app)
 
-  override def passwordResetLink(req: RequestPasswordRequestLink)(using token: RawToken): Task[PasswordResetLink] =
+  override def passwordResetLink(req: RequestPasswordRequestLink)(using token: RawToken, app: ApplicationCode): Task[PasswordResetLink] =
     client.passwordResetLink(req)(using token, app)
 
-  override def setPin(req: SetUserPin)(using token: RawToken): Task[Boolean] =
+  override def setPin(req: SetUserPin)(using token: RawToken, app: ApplicationCode): Task[Boolean] =
     client.setPin(req)(using token, app)
 
-  override def groupsOfApp(application: ApplicationCode)(using token: RawToken): Task[Seq[RawGroup]] =
-    client.groups(using token, application)
+  override def groupsOfApp(application: ApplicationCode, acc: AccountId)(using token: RawToken): Task[Seq[RawGroup]] =
+    get[Seq[RawGroup]](Some(token), systemManagerUrl(s"account/${AccountId.value(acc)}/apps/${ApplicationCode.value(application)}/groups"))
+
+  override def usersInGroup(application: ApplicationCode, acc: AccountId, grp: GroupCode)(using token: RawToken): Task[Seq[RawUserEntry]] =
+    get[Seq[RawUserEntry]](Some(token), systemManagerUrl(s"account/${AccountId.value(acc)}/apps/${ApplicationCode.value(application)}/groups/${GroupCode.value(grp)}/users"))
 
   override def storeGroup(application: ApplicationCode, req: StoreGroupRequest)(using token: RawToken): Task[RawGroup] =
     client.storeGroup(req)(using token, application)
@@ -176,8 +207,26 @@ case class HttpMorbidGateway(cfg: MorbidCfg, client: MorbidClient) extends Morbi
   override def removeGroup(application: ApplicationCode, req: RemoveGroupRequest)(using token: RawToken): Task[Long] =
     client.removeGroup(req)(using token, application)
 
+  /** The morbid-server manager routes carry an `:app` path segment that the
+    * system-wide (`manager/applications`, `manager/account/:acc/apps`) handlers
+    * ignore. We pass [[cfg.morbid.application]] as a placeholder so the URL is
+    * well-formed without forcing an `ApplicationCode` on callers that have no
+    * natural one to provide (e.g. building the LoginResponse before the admin
+    * has picked an app). */
+  private def systemManagerUrl(suffix: String): String =
+    s"/app/${cfg.application}/manager/$suffix"
+
   override def applications()(using token: RawToken): Task[Seq[RawApplicationDetails]] =
-    get[Seq[RawApplicationDetails]](Some(token), s"/applications")
+    get[Seq[RawApplicationDetails]](Some(token), systemManagerUrl("applications"))
+
+  override def accountApps(acc: AccountId)(using token: RawToken): Task[Seq[RawApplicationDetails]] =
+    get[Seq[RawApplicationDetails]](Some(token), systemManagerUrl(s"account/${AccountId.value(acc)}/apps"))
+
+  override def linkAccountApp(acc: AccountId, code: ApplicationCode)(using token: RawToken): Task[Boolean] =
+    post[String, Boolean](Some(token), systemManagerUrl(s"account/${AccountId.value(acc)}/apps/${ApplicationCode.value(code)}"), "")
+
+  override def unlinkAccountApp(acc: AccountId, code: ApplicationCode)(using token: RawToken): Task[Boolean] =
+    delete[Boolean](Some(token), systemManagerUrl(s"account/${AccountId.value(acc)}/apps/${ApplicationCode.value(code)}"))
 
   override def createApplication(req: CreateApplicationRequest)(using token: RawToken): Task[RawApplicationDetails] =
     post[CreateApplicationRequest, RawApplicationDetails](Some(token), "/application", req)
@@ -193,7 +242,63 @@ case class HttpMorbidGateway(cfg: MorbidCfg, client: MorbidClient) extends Morbi
     yield out
 
   override def rolesOfApp(application: ApplicationCode)(using token: RawToken): Task[Seq[RawRole]] =
-    client.roles(using token, application)
+    get[Seq[RawRole]](Some(token), systemManagerUrl(s"applications/${ApplicationCode.value(application)}/roles"))
+
+  /* tenants / providers / api-keys / application-delete are not on MorbidClient yet,
+     so we hit the server with raw HTTP under the chosen application
+     path ("/app/:app/manager/..."). */
+
+  private def managerUrl(path: String)(using app: ApplicationCode): String =
+    s"/app/${ApplicationCode.value(app)}/manager/$path"
+
+  private def managerAccountUrl(account: AccountId, path: String)(using app: ApplicationCode): String =
+    s"/app/${ApplicationCode.value(app)}/manager/account/${AccountId.value(account)}/$path"
+
+  private def put[R, T](token: Option[RawToken], url: String, req: R)(using JsonDecoder[T], JsonEncoder[R]): Task[T] = {
+    for
+      base <- ZIO.fromEither(URL.decode(url)).mapError(e => Exception(s"Bad URL: $e"))
+      r     = Request(method = Method.PUT, url = base, headers = applicationJson ++ token.map(morbidToken).getOrElse(Headers.empty), body = Body.fromString(req.toJson), version = Version.Default, remoteAddress = None, remoteCertificate = None)
+      res  <- perform(r)
+      _    <- ZIO.when(res.status.code != 200) { ZIO.fail(ReturnResponseError(res)) }
+      out  <- res.body.parse[T]().mapError(_ => ReturnResponseError(res))
+    yield out
+  }
+
+  override def tenants()(using token: RawToken): Task[Seq[RawTenantDetails]] =
+    get[Seq[RawTenantDetails]](Some(token), systemManagerUrl("tenants"))
+
+  override def storeTenant(req: StoreTenantRequest)(using token: RawToken): Task[RawTenantDetails] =
+    post[StoreTenantRequest, RawTenantDetails](Some(token), systemManagerUrl("tenants"), req)
+
+  override def updateTenant(id: TenantId, req: StoreTenantRequest)(using token: RawToken): Task[RawTenantDetails] =
+    put[StoreTenantRequest, RawTenantDetails](Some(token), systemManagerUrl(s"tenants/${TenantId.value(id)}"), req)
+
+  override def removeTenant(id: TenantId)(using token: RawToken): Task[Long] =
+    delete[Long](Some(token), systemManagerUrl(s"tenants/${TenantId.value(id)}"))
+
+  override def providersOfAccount(account: AccountId)(using token: RawToken, app: ApplicationCode): Task[Seq[RawIdentityProvider]] =
+    get[Seq[RawIdentityProvider]](Some(token), managerAccountUrl(account, "providers"))
+
+  override def storeProvider(account: AccountId, req: StoreIdentityProviderRequest)(using token: RawToken, app: ApplicationCode): Task[RawIdentityProvider] =
+    post[StoreIdentityProviderRequest, RawIdentityProvider](Some(token), managerAccountUrl(account, "providers"), req)
+
+  override def updateProvider(account: AccountId, id: ProviderId, req: StoreIdentityProviderRequest)(using token: RawToken, app: ApplicationCode): Task[RawIdentityProvider] =
+    put[StoreIdentityProviderRequest, RawIdentityProvider](Some(token), managerAccountUrl(account, s"providers/${ProviderId.value(id)}"), req)
+
+  override def removeProvider(account: AccountId, id: ProviderId)(using token: RawToken, app: ApplicationCode): Task[Long] =
+    delete[Long](Some(token), managerAccountUrl(account, s"providers/${ProviderId.value(id)}"))
+
+  override def listApiKeys(account: AccountId)(using token: RawToken, app: ApplicationCode): Task[Seq[RawUserEntry]] =
+    get[Seq[RawUserEntry]](Some(token), managerAccountUrl(account, "api-keys"))
+
+  override def issueApiKey(account: AccountId, req: CreateApiKeyRequest)(using token: RawToken, app: ApplicationCode): Task[ApiKeyIssued] =
+    post[CreateApiKeyRequest, ApiKeyIssued](Some(token), managerAccountUrl(account, "api-keys"), req)
+
+  override def removeApiKey(account: AccountId, code: UserCode)(using token: RawToken, app: ApplicationCode): Task[Boolean] =
+    delete[Boolean](Some(token), managerAccountUrl(account, s"api-keys/${UserCode.value(code)}"))
+
+  override def removeApplication(id: ApplicationId)(using token: RawToken): Task[Long] =
+    delete[Long](Some(token), s"/application/${ApplicationId.value(id)}")
 }
 
 object MorbidGateway {

@@ -20,6 +20,29 @@ case class AdminRouter(auth: AdminAuth, gw: MorbidGateway, cfg: AppConfig) exten
     auth.authenticate(header, raw)
   }
 
+  /** Parses the mandatory `X-Admin-App` header: the application the admin is
+    * working on. All protected routes carry it; missing header is a 400. */
+  private def parseAdminApp(header: Option[String]): IO[ApiError, ApplicationCode] =
+    header.map(_.trim).filter(_.nonEmpty) match {
+      case Some(code) => ZIO.succeed(ApplicationCode.of(code))
+      case None       => ZIO.fail(badInput("Missing 'X-Admin-App' header: select an application"))
+    }
+
+  /** Read session gated by app context. `app` only scopes the morbid URL; no admin check. */
+  private def readSession(header: Option[AuthorizationHeader], cookies: Option[String], adminApp: Option[String]): IO[ApiError, (AdminSession, ApplicationCode)] =
+    for
+      s   <- session(header, cookies)
+      app <- parseAdminApp(adminApp)
+    yield (s, app)
+
+  /** Write session gated by app context: requires the admin role on the selected app. */
+  private def writeSession(header: Option[AuthorizationHeader], cookies: Option[String], adminApp: Option[String]): IO[ApiError, (AdminSession, ApplicationCode)] =
+    for
+      pair <- readSession(header, cookies, adminApp)
+      (s, app) = pair
+      _    <- auth.requireAdmin(s, app)
+    yield (s, app)
+
   private def extractCookie(name: String)(header: String): Option[String] =
     header.split(";").iterator
       .map(_.trim)
@@ -53,8 +76,19 @@ case class AdminRouter(auth: AdminAuth, gw: MorbidGateway, cfg: AppConfig) exten
   private def toRole(r: RawRole): RoleResponse =
     RoleResponse(r.id, r.code, r.name)
 
-  private def toLoginResponse(session: AdminSession): LoginResponse =
-    LoginResponse(session.email, session.account, None)
+  /** Build the LoginResponse — the app list drives the TopBar selector, so it
+    * must be system-wide, not scoped to the admin's account. We fetch all
+    * applications from morbid-server and derive `isAdmin` per app from the
+    * token's own role claims (an admin only has `adm` on apps that were
+    * granted to them; the extra apps in the selector just let the admin
+    * navigate, with CRUD gated per app by RBAC). */
+  private def toLoginResponse(session: AdminSession): IO[ApiError, LoginResponse] = {
+    given RawToken = session.raw
+    gw.applications().api.map { all =>
+      val apps = all.map(a => AppAccess(code = a.code, isAdmin = session.isAdminOn(a.code))).toList
+      LoginResponse(session.email, session.account, None, apps)
+    }
+  }
 
   /* auth */
 
@@ -67,12 +101,13 @@ case class AdminRouter(auth: AdminAuth, gw: MorbidGateway, cfg: AppConfig) exten
   private val loginWithCookie: Routes[Any, Nothing] = Routes(
     Method.POST / "login" -> Handler.fromFunctionZIO[Request] { request =>
       val handle: ZIO[Any, Response, Response] = for
-        raw   <- request.body.asString.mapError(e => errorResponse(badInput(s"Could not read body: ${e.getMessage}")))
-        body  <- ZIO.fromEither(zio.json.JsonDecoder[LoginRequest].decodeJson(raw))
-                   .mapError(err => errorResponse(badInput(err)))
-        pair  <- auth.login(body.firebaseToken).mapError(errorResponse)
+        raw      <- request.body.asString.mapError(e => errorResponse(badInput(s"Could not read body: ${e.getMessage}")))
+        body     <- ZIO.fromEither(zio.json.JsonDecoder[LoginRequest].decodeJson(raw))
+                      .mapError(err => errorResponse(badInput(err)))
+        pair     <- auth.login(body.firebaseToken).mapError(errorResponse)
         (session, cookie) = pair
-      yield Response.json(zio.json.EncoderOps(toLoginResponse(session)).toJson).addCookie(cookie)
+        response <- toLoginResponse(session).mapError(errorResponse)
+      yield Response.json(zio.json.EncoderOps(response).toJson).addCookie(cookie)
       handle.merge
     }
   ).sandbox
@@ -93,33 +128,47 @@ case class AdminRouter(auth: AdminAuth, gw: MorbidGateway, cfg: AppConfig) exten
 
   private val whoamiRoute = endpoints.whoami.implement { case (cookies, header) =>
     for
-      s <- session(header, cookies)
-    yield toLoginResponse(s)
+      s   <- session(header, cookies)
+      out <- toLoginResponse(s)
+    yield out
   }
 
   /* accounts */
 
-  private val listAccountsRoute = endpoints.listAccounts.implement { case (cookies, header) =>
+  /** List accounts. With `X-Admin-App`, the server-side manager route filters
+    * by `account_to_app` on that app; without it, the route returns every
+    * account in the system (root-only). Admin UI drops the header when no app
+    * is picked in the TopBar. */
+  private val listAccountsRoute = endpoints.listAccounts.implement { case (cookies, header, adminApp) =>
     for
       s     <- session(header, cookies)
       given RawToken = s.raw
-      items <- gw.accounts().api
+      items <- adminApp.map(_.trim).filter(_.nonEmpty) match
+                 case Some(code) =>
+                   given ApplicationCode = ApplicationCode.of(code)
+                   gw.accounts().api
+                 case None =>
+                   gw.allAccounts().api
     yield items.map(toAccount).toList
   }
 
-  private val createAccountRoute = endpoints.createAccount.implement { case (cookies, header, body) =>
+  private val createAccountRoute = endpoints.createAccount.implement { case (cookies, header, adminApp, body) =>
     for
-      s     <- session(header, cookies)
-      given RawToken = s.raw
-      req    = StoreAccountRequest(id = None, tenant = body.tenant, name = body.name, code = body.code, active = body.active, update = false)
-      acc   <- gw.storeAccount(req).api
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      req       = StoreAccountRequest(id = None, tenant = body.tenant, name = body.name, code = body.code, active = body.active, update = false)
+      acc      <- gw.storeAccount(req).api
     yield toAccount(acc)
   }
 
-  private val updateAccountRoute = endpoints.updateAccount.implement { case (acc, cookies, header, body) =>
+  private val updateAccountRoute = endpoints.updateAccount.implement { case (acc, cookies, header, adminApp, body) =>
     for
-      s        <- session(header, cookies)
-      given RawToken = s.raw
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
       id       <- parseAccountId(acc)
       existing <- gw.accounts().api.map(_.find(_.id == id)).someOrFail(notFound(s"Account '$acc' not found"))
       req       = StoreAccountRequest(id = Some(id), tenant = existing.tenant, name = body.name, code = existing.code, active = body.active, update = true)
@@ -127,40 +176,48 @@ case class AdminRouter(auth: AdminAuth, gw: MorbidGateway, cfg: AppConfig) exten
     yield toAccount(updated)
   }
 
-  private val deleteAccountRoute = endpoints.deleteAccount.implement { case (acc, cookies, header) =>
+  private val deleteAccountRoute = endpoints.deleteAccount.implement { case (acc, cookies, header, adminApp) =>
     for
-      s  <- session(header, cookies)
-      given RawToken = s.raw
-      id <- parseAccountId(acc)
-      _  <- gw.removeAccount(id).api
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      id       <- parseAccountId(acc)
+      _        <- gw.removeAccount(id).api
     yield true
   }
 
   /* users */
 
-  private val listUsersRoute = endpoints.listUsers.implement { case (acc, cookies, header) =>
+  private val listUsersRoute = endpoints.listUsers.implement { case (acc, cookies, header, adminApp) =>
     for
-      s     <- session(header, cookies)
-      given RawToken = s.raw
-      id    <- parseAccountId(acc)
-      items <- gw.usersOfAccount(id).api
+      pair     <- readSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      id       <- parseAccountId(acc)
+      items    <- gw.usersOfAccount(id).api
     yield items.map(toUser).toList
   }
 
-  private val createUserRoute = endpoints.createUser.implement { case (acc, cookies, header, body) =>
+  private val createUserRoute = endpoints.createUser.implement { case (acc, cookies, header, adminApp, body) =>
     for
-      s    <- session(header, cookies)
-      given RawToken = s.raw
-      id   <- parseAccountId(acc)
-      req   = StoreUserRequest(id = None, code = None, kind = body.kind, email = body.email, password = None, tenant = None, active = body.active, update = false)
-      user <- gw.storeUserFor(id, req).api
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      id       <- parseAccountId(acc)
+      req       = StoreUserRequest(id = None, code = None, kind = body.kind, email = body.email, password = None, tenant = None, active = body.active, update = false)
+      user     <- gw.storeUserFor(id, req).api
     yield toUser(user)
   }
 
-  private val updateUserRoute = endpoints.updateUser.implement { case (acc, usr, cookies, header, body) =>
+  private val updateUserRoute = endpoints.updateUser.implement { case (acc, usr, cookies, header, adminApp, body) =>
     for
-      s        <- session(header, cookies)
-      given RawToken = s.raw
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
       id       <- parseAccountId(acc)
       code     <- parseUserCode(usr)
       current  <- gw.usersOfAccount(id).api.map(_.find(_.code == code)).someOrFail(notFound(s"User '$usr' not found"))
@@ -169,69 +226,91 @@ case class AdminRouter(auth: AdminAuth, gw: MorbidGateway, cfg: AppConfig) exten
     yield toUser(updated)
   }
 
-  private val deleteUserRoute = endpoints.deleteUser.implement { case (acc, usr, cookies, header) =>
+  private val deleteUserRoute = endpoints.deleteUser.implement { case (acc, usr, cookies, header, adminApp) =>
     for
-      s     <- session(header, cookies)
-      given RawToken = s.raw
-      id    <- parseAccountId(acc)
-      code  <- parseUserCode(usr)
-      _     <- gw.removeUserFrom(id, code).api
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      id       <- parseAccountId(acc)
+      code     <- parseUserCode(usr)
+      _        <- gw.removeUserFrom(id, code).api
     yield true
   }
 
-  private val changePasswordRoute = endpoints.changePassword.implement { case (cookies, header, body) =>
+  private val changePasswordRoute = endpoints.changePassword.implement { case (cookies, header, adminApp, body) =>
     for
-      s <- session(header, cookies)
-      given RawToken = s.raw
-      _ <- gw.passwordChange(ChangePasswordRequest(body.email, body.password)).api
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      _        <- gw.passwordChange(ChangePasswordRequest(body.email, body.password)).api
     yield true
   }
 
-  private val resetPasswordRoute = endpoints.resetPassword.implement { case (cookies, header, body) =>
+  private val resetPasswordRoute = endpoints.resetPassword.implement { case (cookies, header, adminApp, body) =>
     for
-      s    <- session(header, cookies)
-      given RawToken = s.raw
-      link <- gw.passwordResetLink(RequestPasswordRequestLink(body.email)).api
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      link     <- gw.passwordResetLink(RequestPasswordRequestLink(body.email)).api
     yield PasswordResetResponse(link.link)
   }
 
-  private val setPinRoute = endpoints.setPin.implement { case (cookies, header, body) =>
+  private val setPinRoute = endpoints.setPin.implement { case (cookies, header, adminApp, body) =>
     for
-      s <- session(header, cookies)
-      given RawToken = s.raw
-      _ <- gw.setPin(SetUserPin(body.email, body.pin)).api
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      _        <- gw.setPin(SetUserPin(body.email, body.pin)).api
     yield true
   }
 
   /* groups */
 
-  private val listGroupsRoute = endpoints.listGroups.implement { case (app, cookies, header) =>
+  private val listGroupsRoute = endpoints.listGroups.implement { case (appParam, cookies, header, accQ) =>
     for
-      s     <- session(header, cookies)
+      s       <- session(header, cookies)
       given RawToken = s.raw
-      code  <- parseAppCode(app)
-      items <- gw.groupsOfApp(code).api
+      code    <- parseAppCode(appParam)
+      acc      = accQ.map(AccountId.of).getOrElse(s.account)
+      items   <- gw.groupsOfApp(code, acc).api
     yield items.map(toGroup).toList
   }
 
-  private val createGroupRoute = endpoints.createGroup.implement { case (app, cookies, header, body) =>
+  private val createGroupRoute = endpoints.createGroup.implement { case (appParam, cookies, header, adminApp, body) =>
     for
-      s     <- session(header, cookies)
+      pair    <- writeSession(header, cookies, adminApp)
+      (s, _)   = pair
       given RawToken = s.raw
-      code  <- parseAppCode(app)
-      req    = StoreGroupRequest(id = None, code = body.code, name = body.name, users = body.users, roles = body.roles)
-      group <- gw.storeGroup(code, req).api
+      code    <- parseAppCode(appParam)
+      req      = StoreGroupRequest(id = None, code = body.code, name = body.name, users = body.users, roles = body.roles)
+      group   <- gw.storeGroup(code, req).api
     yield toGroup(group)
   }
 
-  private val deleteGroupRoute = endpoints.deleteGroup.implement { case (app, grp, cookies, header) =>
+  private val deleteGroupRoute = endpoints.deleteGroup.implement { case (appParam, grp, cookies, header, adminApp) =>
+    for
+      pair    <- writeSession(header, cookies, adminApp)
+      (s, _)   = pair
+      given RawToken = s.raw
+      code    <- parseAppCode(appParam)
+      gcode   <- parseGroupCode(grp)
+      _       <- gw.removeGroup(code, RemoveGroupRequest(gcode)).api
+    yield true
+  }
+
+  private val listGroupUsersRoute = endpoints.listGroupUsers.implement { case (accParam, appParam, grpParam, cookies, header) =>
     for
       s     <- session(header, cookies)
       given RawToken = s.raw
-      code  <- parseAppCode(app)
-      gcode <- parseGroupCode(grp)
-      _     <- gw.removeGroup(code, RemoveGroupRequest(gcode)).api
-    yield true
+      acc   <- parseAccountId(accParam)
+      code  <- parseAppCode(appParam)
+      gcode <- parseGroupCode(grpParam)
+      items <- gw.usersInGroup(code, acc, gcode).api
+    yield items.map(toUser).toList
   }
 
   /* applications */
@@ -246,31 +325,224 @@ case class AdminRouter(auth: AdminAuth, gw: MorbidGateway, cfg: AppConfig) exten
 
   private val createApplicationRoute = endpoints.createApplication.implement { case (cookies, header, body) =>
     for
-      s   <- session(header, cookies)
+      s       <- session(header, cookies)
+      _       <- auth.requireAdminAnywhere(s)
       given RawToken = s.raw
-      req  = morbid.protocol.CreateApplicationRequest(body.code, body.name)
-      app <- gw.createApplication(req).api
-    yield toApp(app)
+      req      = morbid.protocol.CreateApplicationRequest(body.code, body.name)
+      created <- gw.createApplication(req).api
+    yield toApp(created)
   }
 
   private val updateApplicationRoute = endpoints.updateApplication.implement { case (cookies, header, body) =>
     for
-      s   <- session(header, cookies)
+      s       <- session(header, cookies)
+      _       <- auth.requireAdminAnywhere(s)
       given RawToken = s.raw
-      req  = morbid.protocol.UpdateApplicationRequest(body.id, body.active, body.name)
-      app <- gw.updateApplication(req).api
-    yield toApp(app)
+      req      = morbid.protocol.UpdateApplicationRequest(body.id, body.active, body.name)
+      updated <- gw.updateApplication(req).api
+    yield toApp(updated)
   }
 
   /* roles */
 
-  private val listRolesRoute = endpoints.listRoles.implement { case (app, cookies, header) =>
+  private val listRolesRoute = endpoints.listRoles.implement { case (appParam, cookies, header) =>
     for
       s     <- session(header, cookies)
       given RawToken = s.raw
-      code  <- parseAppCode(app)
+      code  <- parseAppCode(appParam)
       items <- gw.rolesOfApp(code).api
     yield items.map(toRole).toList
+  }
+
+  /* tenants */
+
+  private def parseTenantId(raw: String): IO[ApiError, TenantId] =
+    ZIO.fromTry(Try(TenantId.of(raw.toLong))).mapError(_ => badInput(s"Invalid tenant id '$raw'"))
+
+  private def parseProviderId(raw: String): IO[ApiError, ProviderId] =
+    ZIO.fromTry(Try(ProviderId.of(raw.toLong))).mapError(_ => badInput(s"Invalid provider id '$raw'"))
+
+  private def parseApplicationId(raw: String): IO[ApiError, ApplicationId] =
+    ZIO.fromTry(Try(ApplicationId.of(raw.toLong))).mapError(_ => badInput(s"Invalid application id '$raw'"))
+
+  private def toTenant(t: RawTenantDetails): TenantResponse = TenantResponse(t.id, t.code)
+
+  private def toProvider(p: RawIdentityProvider): ProviderResponse =
+    ProviderResponse(p.id, p.code, p.name, p.domain, p.kind, p.active, p.created)
+
+  private def toApiKey(u: RawUserEntry): ApiKeyResponse =
+    ApiKeyResponse(u.id, u.code, u.email, u.active, u.created)
+
+  private val listTenantsRoute = endpoints.listTenants.implement { case (cookies, header) =>
+    for
+      s     <- session(header, cookies)
+      given RawToken = s.raw
+      items <- gw.tenants().api
+    yield items.map(toTenant).toList
+  }
+
+  private val createTenantRoute = endpoints.createTenant.implement { case (cookies, header, body) =>
+    for
+      s   <- session(header, cookies)
+      _   <- auth.requireAdminAnywhere(s)
+      given RawToken = s.raw
+      req  = StoreTenantRequest(id = None, code = body.code, name = body.name, active = true)
+      out <- gw.storeTenant(req).api
+    yield toTenant(out)
+  }
+
+  private val updateTenantRoute = endpoints.updateTenant.implement { case (tn, cookies, header, body) =>
+    for
+      s   <- session(header, cookies)
+      _   <- auth.requireAdminAnywhere(s)
+      given RawToken = s.raw
+      id  <- parseTenantId(tn)
+      req  = StoreTenantRequest(id = Some(id), code = body.code, name = body.name, active = body.active)
+      out <- gw.updateTenant(id, req).api
+    yield toTenant(out)
+  }
+
+  private val deleteTenantRoute = endpoints.deleteTenant.implement { case (tn, cookies, header) =>
+    for
+      s   <- session(header, cookies)
+      _   <- auth.requireAdminAnywhere(s)
+      given RawToken = s.raw
+      id  <- parseTenantId(tn)
+      _   <- gw.removeTenant(id).api
+    yield true
+  }
+
+  /* identity providers */
+
+  private val listProvidersRoute = endpoints.listProviders.implement { case (acc, cookies, header, adminApp) =>
+    for
+      pair     <- readSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      id       <- parseAccountId(acc)
+      items    <- gw.providersOfAccount(id).api
+    yield items.map(toProvider).toList
+  }
+
+  private val createProviderRoute = endpoints.createProvider.implement { case (acc, cookies, header, adminApp, body) =>
+    for
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      id       <- parseAccountId(acc)
+      req       = StoreIdentityProviderRequest(id = None, active = body.active, domain = body.domain, kind = body.kind, code = body.code, name = body.name)
+      out      <- gw.storeProvider(id, req).api
+    yield toProvider(out)
+  }
+
+  private val updateProviderRoute = endpoints.updateProvider.implement { case (acc, prv, cookies, header, adminApp, body) =>
+    for
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      accId    <- parseAccountId(acc)
+      prvId    <- parseProviderId(prv)
+      req       = StoreIdentityProviderRequest(id = Some(prvId), active = body.active, domain = body.domain, kind = body.kind, code = body.code, name = body.name)
+      out      <- gw.updateProvider(accId, prvId, req).api
+    yield toProvider(out)
+  }
+
+  private val deleteProviderRoute = endpoints.deleteProvider.implement { case (acc, prv, cookies, header, adminApp) =>
+    for
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      accId    <- parseAccountId(acc)
+      prvId    <- parseProviderId(prv)
+      _        <- gw.removeProvider(accId, prvId).api
+    yield true
+  }
+
+  /* api keys */
+
+  private val listApiKeysRoute = endpoints.listApiKeys.implement { case (acc, cookies, header, adminApp) =>
+    for
+      pair     <- readSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      id       <- parseAccountId(acc)
+      items    <- gw.listApiKeys(id).api
+    yield items.map(toApiKey).toList
+  }
+
+  private val issueApiKeyRoute = endpoints.issueApiKey.implement { case (acc, cookies, header, adminApp, body) =>
+    for
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      id       <- parseAccountId(acc)
+      req       = CreateApiKeyRequest(email = body.email, name = body.name, days = body.days)
+      out      <- gw.issueApiKey(id, req).api
+    yield ApiKeyIssuedResponse(toApiKey(out.user), out.token)
+  }
+
+  private val deleteApiKeyRoute = endpoints.deleteApiKey.implement { case (acc, key, cookies, header, adminApp) =>
+    for
+      pair     <- writeSession(header, cookies, adminApp)
+      (s, app)  = pair
+      given RawToken        = s.raw
+      given ApplicationCode = app
+      id       <- parseAccountId(acc)
+      code     <- parseUserCode(key)
+      _        <- gw.removeApiKey(id, code).api
+    yield true
+  }
+
+  /* application delete */
+
+  private val deleteApplicationRoute = endpoints.deleteApplication.implement { case (appParam, cookies, header) =>
+    for
+      s  <- session(header, cookies)
+      _  <- auth.requireAdminAnywhere(s)
+      given RawToken = s.raw
+      id <- parseApplicationId(appParam)
+      _  <- gw.removeApplication(id).api
+    yield true
+  }
+
+  /* account-apps: enable/disable apps per account */
+
+  private val listAccountAppsRoute = endpoints.listAccountApps.implement { case (acc, cookies, header, adminApp) =>
+    for
+      pair    <- readSession(header, cookies, adminApp)
+      (s, _)   = pair
+      given RawToken = s.raw
+      id      <- parseAccountId(acc)
+      items   <- gw.accountApps(id).api
+    yield items.map(toApp).toList
+  }
+
+  private val linkAccountAppRoute = endpoints.linkAccountApp.implement { case (acc, appParam, cookies, header, adminApp) =>
+    for
+      pair    <- writeSession(header, cookies, adminApp)
+      (s, _)   = pair
+      given RawToken = s.raw
+      id      <- parseAccountId(acc)
+      code    <- parseAppCode(appParam)
+      _       <- gw.linkAccountApp(id, code).api
+    yield true
+  }
+
+  private val unlinkAccountAppRoute = endpoints.unlinkAccountApp.implement { case (acc, appParam, cookies, header, adminApp) =>
+    for
+      pair    <- writeSession(header, cookies, adminApp)
+      (s, _)   = pair
+      given RawToken = s.raw
+      id      <- parseAccountId(acc)
+      code    <- parseAppCode(appParam)
+      _       <- gw.unlinkAccountApp(id, code).api
+    yield true
   }
 
   /* wiring */
@@ -285,9 +557,13 @@ case class AdminRouter(auth: AdminAuth, gw: MorbidGateway, cfg: AppConfig) exten
     listAccountsRoute, createAccountRoute, updateAccountRoute, deleteAccountRoute,
     listUsersRoute, createUserRoute, updateUserRoute, deleteUserRoute,
     changePasswordRoute, resetPasswordRoute, setPinRoute,
-    listGroupsRoute, createGroupRoute, deleteGroupRoute,
-    listApplicationsRoute, createApplicationRoute, updateApplicationRoute,
+    listGroupsRoute, createGroupRoute, deleteGroupRoute, listGroupUsersRoute,
+    listApplicationsRoute, createApplicationRoute, updateApplicationRoute, deleteApplicationRoute,
     listRolesRoute,
+    listTenantsRoute, createTenantRoute, updateTenantRoute, deleteTenantRoute,
+    listProvidersRoute, createProviderRoute, updateProviderRoute, deleteProviderRoute,
+    listApiKeysRoute, issueApiKeyRoute, deleteApiKeyRoute,
+    listAccountAppsRoute, linkAccountAppRoute, unlinkAccountAppRoute,
   ) @@ uefHeader
 
   private val open = Routes(

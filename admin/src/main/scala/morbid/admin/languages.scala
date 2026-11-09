@@ -41,6 +41,8 @@ trait Dictionary {
   def sidebarSecurity    = "Security"
   def sidebarProviders   = "Providers"
   def sidebarRoles       = "Roles"
+  def sidebarTenants     = "Tenants"
+  def sidebarApiKeys     = "API Keys"
 
   // Accounts
   def accountsTitle      = "Accounts"
@@ -57,10 +59,56 @@ trait Dictionary {
   def appsSubtitle       = "Manage system applications"
   def appsNew            = "New Application"
 
+  // Tenants
+  def tenantsTitle       = "Tenants"
+  def tenantsSubtitle    = "Manage system tenants"
+  def tenantsNew         = "New Tenant"
+  def tenantsNameRequired = "Tenant name is required"
+  def tenantsCodeRequired = "Tenant code is required"
+
+  // Providers (per account)
+  def providersTitle     = "Identity Providers"
+  def providersSubtitle  = "Manage identity providers for this account"
+  def providersNew       = "New Provider"
+  def providersDomain    = "Domain"
+  def providersKind      = "Kind"
+  def providersKindUP    = "Username + Password"
+  def providersKindSAML  = "SAML"
+  def providersCodeRequired   = "Provider code is required"
+  def providersNameRequired   = "Provider name is required"
+  def providersDomainRequired = "Provider domain is required"
+
+  // API Keys (service accounts per account)
+  def apiKeysTitle       = "API Keys"
+  def apiKeysSubtitle    = "Service accounts and tokens for this account"
+  def apiKeysNew         = "New API Key"
+  def apiKeysDays        = "Valid for (days)"
+  def apiKeysDaysHint    = "Leave blank for the default (365 days)"
+  def apiKeysIssued      = "API key issued"
+  def apiKeysIssuedHint  = "Copy the token now. It will not be shown again."
+  def apiKeysCopyToken   = "Copy token"
+  def apiKeysRevoke      = "Revoke"
+  def apiKeysRevoked     = "API key revoked"
+
+  // Account apps (per-account enable/disable)
+  def accountAppsTitle   = "Apps"
+  def accountAppsSubtitle= "Applications enabled for this account"
+  def accountAppsEnabled = "Enabled"
+
   // Groups
   def groupsTitle        = "Groups"
   def groupsSubtitle     = "Manage user groups"
   def groupsNew          = "New Group"
+  def groupsNoApps       = "This account is not linked to any application"
+
+  // Roles
+  def rolesSubtitle      = "Roles available on this application"
+
+  // App selector (top bar)
+  def selectApp          = "Select an application"
+  def selectAccount      = "Select an account"
+  def noAppSelected      = "No application selected"
+  def noAppSelectedHint  = "Pick an application in the top bar to start working."
 
   // Summary
   def summaryActive        = "active"
@@ -101,6 +149,10 @@ trait Dictionary {
   def columnUser         = "User"
   def columnPin          = "PIN"
   def columnPassword     = "Password"
+  def columnKind         = "Kind"
+
+  // Group users page
+  def groupUsersTitle    = "Group users"
 
   // Account validation
   def accountsNameRequired   = "Account name is required"
@@ -182,6 +234,8 @@ case class Portuguese(language: Language) extends Dictionary {
   override def sidebarSecurity    = "Segurança"
   override def sidebarProviders   = "Provedores"
   override def sidebarRoles       = "Papéis"
+  override def sidebarTenants     = "Tenants"
+  override def sidebarApiKeys     = "Chaves de API"
 
   // Accounts
   override def accountsTitle      = "Contas"
@@ -198,10 +252,25 @@ case class Portuguese(language: Language) extends Dictionary {
   override def appsSubtitle       = "Gerencie as aplicações do sistema"
   override def appsNew            = "Nova Aplicação"
 
+  // Account apps (por conta)
+  override def accountAppsTitle    = "Apps"
+  override def accountAppsSubtitle = "Aplicações habilitadas nesta conta"
+  override def accountAppsEnabled  = "Habilitada"
+
   // Groups
   override def groupsTitle        = "Grupos"
   override def groupsSubtitle     = "Gerencie os grupos de usuários"
   override def groupsNew          = "Novo Grupo"
+  override def groupsNoApps       = "Esta conta não está vinculada a nenhuma aplicação"
+
+  // Roles
+  override def rolesSubtitle      = "Papéis disponíveis nesta aplicação"
+
+  // App selector (top bar)
+  override def selectApp          = "Selecione uma aplicação"
+  override def selectAccount      = "Selecione uma conta"
+  override def noAppSelected      = "Nenhuma aplicação selecionada"
+  override def noAppSelectedHint  = "Escolha uma aplicação na barra superior para começar."
 
   // Summary
   override def summaryActive        = "ativas/ativos"
@@ -256,6 +325,10 @@ case class Portuguese(language: Language) extends Dictionary {
   override def columnUser         = "Usuário"
   override def columnPin          = "PIN"
   override def columnPassword     = "Senha"
+  override def columnKind         = "Tipo"
+
+  // Group users page
+  override def groupUsersTitle    = "Usuários do grupo"
 
   // Account validation
   override def accountsNameRequired   = "Nome da conta é obrigatório"
@@ -292,6 +365,37 @@ case class Portuguese(language: Language) extends Dictionary {
   override def accessDenied           = "Acesso negado"
   override def accessOnlyRoot         = "Somente usuários da conta raiz podem usar o console de administração"
   override def loginErrorGeneric      = "Erro de login. Verifique suas credenciais."
+
+  // Tenants
+  override def tenantsTitle           = "Tenants"
+  override def tenantsSubtitle        = "Gerencie os tenants do sistema"
+  override def tenantsNew             = "Novo Tenant"
+  override def tenantsNameRequired    = "Nome do tenant é obrigatório"
+  override def tenantsCodeRequired    = "Código do tenant é obrigatório"
+
+  // Providers
+  override def providersTitle         = "Provedores de Identidade"
+  override def providersSubtitle      = "Gerencie os provedores de identidade desta conta"
+  override def providersNew           = "Novo Provedor"
+  override def providersDomain        = "Domínio"
+  override def providersKind          = "Tipo"
+  override def providersKindUP        = "Usuário + Senha"
+  override def providersKindSAML      = "SAML"
+  override def providersCodeRequired  = "Código do provedor é obrigatório"
+  override def providersNameRequired  = "Nome do provedor é obrigatório"
+  override def providersDomainRequired = "Domínio do provedor é obrigatório"
+
+  // API Keys
+  override def apiKeysTitle           = "Chaves de API"
+  override def apiKeysSubtitle        = "Contas de serviço e tokens desta conta"
+  override def apiKeysNew             = "Nova Chave"
+  override def apiKeysDays            = "Validade (dias)"
+  override def apiKeysDaysHint        = "Deixe em branco para o padrão (365 dias)"
+  override def apiKeysIssued          = "Chave de API emitida"
+  override def apiKeysIssuedHint      = "Copie o token agora. Ele não será mostrado novamente."
+  override def apiKeysCopyToken       = "Copiar token"
+  override def apiKeysRevoke          = "Revogar"
+  override def apiKeysRevoked         = "Chave de API revogada"
 }
 
 object Dictionary {
