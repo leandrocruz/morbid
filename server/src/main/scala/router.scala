@@ -1034,7 +1034,7 @@ object router {
                       user => ZIO.unit,
                     )
         _        <- ZIO.when(response.status.code != 200) { ZIO.fail(ReturnResponseError(response)) }
-        pair     <- tokenGiven(req.email, req.days.getOrElse(365), Some(owner)) { ensureUser(req.email) }
+        pair     <- tokenGiven(req.email, req.days.getOrElse(365), owner = None) { ensureUser(req.email) }
         (_, enc)  = pair
         maybe    <- repo.exec(FindUserByEmail(req.email))
         user     <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Service account '${req.email}' missing after creation"))
