@@ -145,6 +145,7 @@ object ApiKeysView {
         ),
         span(cls("text-sm text-admin-text"), GroupName.value(it.name)),
         span(cls("font-mono text-xs text-admin-muted"), GroupCode.value(it.code)),
+        Option.when(it.roles.nonEmpty)(Pills.of(it.roles.map(r => RoleCode.value(r)))),
       )
     }
 
