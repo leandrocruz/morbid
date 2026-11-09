@@ -107,24 +107,64 @@ object ApiKeysView {
     events : EventBus[CrudEvent]
   )(using dict: Dictionary, fetcher: Fetcher): HtmlElement = {
 
-    val email = InputVar.of[Email](Email.of(""))
-    val days  = Var("")
+    val email    = InputVar.of[Email](Email.of(""))
+    val days     = Var("")
+    val selected = Var(Set.empty[GroupCode])
+    val groups   = Var(Option.empty[Try[Seq[GroupResponse]]])
 
-    val req = email.must.combineWith(days.signal).map { (emailTry, daysStr) =>
+    val loadTrigger = EventBus[Option[ApplicationCode]]()
+    val groupsFlow: EventStream[Option[Try[Seq[GroupResponse]]]] = loadTrigger.events.flatMapSwitch {
+      case Some(code) => fetcher.execute(Endpoints.listGroups(code, Some(acc))).map(Some(_))
+      case None       => EventStream.fromValue(Option.empty[Try[Seq[GroupResponse]]])
+    }
+
+    val req = email.must.combineWith(days.signal, selected.signal).map { (emailTry, daysStr, chosen) =>
       emailTry.flatMap { theEmail =>
         if Email.value(theEmail).isBlank then Failure(Exception(dict.usersEmailRequired))
         else
           val maybeDays = daysStr.trim match
             case "" => None
             case s  => s.toIntOption
-          Success(CreateApiKeyBody(email = theEmail, name = None, days = maybeDays))
+          Success(CreateApiKeyBody(email = theEmail, name = None, days = maybeDays, groups = chosen.toList))
       }
     }
 
     val med = Mediator.make(req, r => fetcher.execute(Endpoints.issueApiKey(acc, r)))
 
+    def toggle(code: GroupCode, on: Boolean): Unit =
+      selected.update(s => if on then s + code else s - code)
+
+    def renderGroupRow(it: GroupResponse): HtmlElement = {
+      val isOn = selected.signal.map(_.contains(it.code))
+      label(
+        cls("flex items-center gap-3 py-1 cursor-pointer"),
+        input(
+          typ("checkbox"),
+          cls("h-4 w-4 accent-admin-accent cursor-pointer"),
+          controlled(checked <-- isOn, onInput.mapToChecked --> { on => toggle(it.code, on) }),
+        ),
+        span(cls("text-sm text-admin-text"), GroupName.value(it.name)),
+        span(cls("font-mono text-xs text-admin-muted"), GroupCode.value(it.code)),
+      )
+    }
+
+    val groupsSection = groups.signal.combineWith(Session.selectedApp.signal).map {
+      case (_, None)                              => div(cls("text-sm text-admin-muted"), dict.apiKeysSelectAppFirst)
+      case (None, _)                              => div(cls("text-sm text-admin-muted"), dict.loading)
+      case (Some(Failure(err)), _)                => div(cls("text-sm text-admin-error-fg"), err.getMessage)
+      case (Some(Success(items)), _) if items.isEmpty => div(cls("text-sm text-admin-muted"), dict.apiKeysGroupsEmpty)
+      case (Some(Success(items)), _)              =>
+        div(
+          cls("flex flex-col gap-1 max-h-48 overflow-y-auto border border-admin-border rounded p-2"),
+          items.sortBy(g => GroupName.value(g.name)).map(renderGroupRow),
+        )
+    }
+
     div(
       med.wire,
+      groupsFlow --> groups,
+      onMountCallback { _ => loadTrigger.emit(Session.selectedApp.now()) },
+      Session.selectedApp.signal.changes --> loadTrigger.writer,
       med.onlySuccesses --> { r =>
         events.emit(Issued(r.user))
         mode.set(IssuedMode(r))
@@ -136,7 +176,7 @@ object ApiKeysView {
         button(cls("text-admin-muted hover:text-admin-text"), MaterialIcon("close"), onClick.mapTo(Closed) --> mode)
       ),
       div(
-        cls("flex flex-col gap-4 p-6 flex-1"),
+        cls("flex flex-col gap-4 p-6 flex-1 overflow-y-auto"),
         div(label(cls("block text-sm font-medium text-admin-text mb-1"), dict.columnEmail), Input.basic(email)),
         div(
           label(cls("block text-sm font-medium text-admin-text mb-1"), dict.apiKeysDays),
@@ -147,6 +187,11 @@ object ApiKeysView {
             controlled(value <-- days.signal, onInput.mapToValue --> days)
           ),
           p(cls("text-xs text-admin-muted mt-1"), dict.apiKeysDaysHint),
+        ),
+        div(
+          label(cls("block text-sm font-medium text-admin-text mb-1"), dict.apiKeysGroups),
+          child <-- groupsSection,
+          p(cls("text-xs text-admin-muted mt-1"), dict.apiKeysGroupsHint),
         ),
       ),
       child <-- med.onlyErrors.map(err => div(cls("px-6 text-sm text-admin-error-fg"), err.getMessage)),

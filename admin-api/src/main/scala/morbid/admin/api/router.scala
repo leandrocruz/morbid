@@ -482,7 +482,7 @@ case class AdminRouter(auth: AdminAuth, gw: MorbidGateway, cfg: AppConfig) exten
       given RawToken        = s.raw
       given ApplicationCode = app
       id       <- parseAccountId(acc)
-      req       = CreateApiKeyRequest(email = body.email, name = body.name, days = body.days)
+      req       = CreateApiKeyRequest(email = body.email, name = body.name, days = body.days, groups = body.groups)
       out      <- gw.issueApiKey(id, req).api
     yield ApiKeyIssuedResponse(toApiKey(out.user), out.token)
   }

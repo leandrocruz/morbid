@@ -89,6 +89,10 @@ trait Dictionary {
   def apiKeysCopyToken   = "Copy token"
   def apiKeysRevoke      = "Revoke"
   def apiKeysRevoked     = "API key revoked"
+  def apiKeysGroups      = "Groups"
+  def apiKeysGroupsHint  = "Pick the groups this service account belongs to. If empty, it joins only 'all'."
+  def apiKeysGroupsEmpty = "No groups available for this application on this account."
+  def apiKeysSelectAppFirst = "Pick an application in the top bar to see the available groups."
 
   // Account apps (per-account enable/disable)
   def accountAppsTitle   = "Apps"
@@ -396,6 +400,10 @@ case class Portuguese(language: Language) extends Dictionary {
   override def apiKeysCopyToken       = "Copiar token"
   override def apiKeysRevoke          = "Revogar"
   override def apiKeysRevoked         = "Chave de API revogada"
+  override def apiKeysGroups          = "Grupos"
+  override def apiKeysGroupsHint      = "Selecione os grupos aos quais esta conta de serviço pertence. Se vazio, entra apenas no grupo 'all'."
+  override def apiKeysGroupsEmpty     = "Nenhum grupo disponível para esta aplicação nesta conta."
+  override def apiKeysSelectAppFirst  = "Selecione uma aplicação na barra superior para ver os grupos disponíveis."
 }
 
 object Dictionary {

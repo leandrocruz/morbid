@@ -420,9 +420,10 @@ object domain {
     )
 
     case class CreateApiKeyRequest(
-      email : Email,
-      name  : Option[String] = None,
-      days  : Option[Int]    = None,
+      email  : Email,
+      name   : Option[String] = None,
+      days   : Option[Int]    = None,
+      groups : Seq[GroupCode] = Seq.empty,
     )
 
     case class ApiKeyIssued(

@@ -1010,11 +1010,14 @@ object router {
           case None                    => ZIO.fail(Exception(s"Service account '$email' not found after creation"))
       }
 
+      val appCode = ApplicationCode.of(app)
+
       for
         owner    <- tokenFrom(request)
         _        <- requireRootAccount(request)
         req      <- request.body.parse[CreateApiKeyRequest]().mapError(errors.badRequest("Error parsing CreateApiKeyRequest"))
-        _        <- ZIO.logInfo(s"Issue API key for '${req.email}' on account $acc || Requested by: ${owner.user.details.email}")
+        _        <- ZIO.logInfo(s"Issue API key for '${req.email}' on account $acc || groups: [${req.groups.map(GroupCode.value).mkString(",")}] || Requested by: ${owner.user.details.email}")
+        account  <- repo.exec(FindAccountById(AccountId.of(acc))).orFail(AccountNotFound, s"Can't find account '$acc'")
         storeReq  = StoreUserRequest(
                       id       = None,
                       code     = None,
@@ -1029,15 +1032,19 @@ object router {
         synthetic = request.copy(body = Body.fromString(bodyJson))
         response <- storeUserCommon(
                       synthetic,
-                      ()   => repo.exec(FindAccountById(AccountId.of(acc))).orFail(AccountNotFound, s"Can't find account '$acc'"),
-                      ()   => repo.exec(FindApplicationDetails(ApplicationCode.of(app))).orFail(ApplicationNotFound, s"Can't find application '$app'"),
+                      ()   => ZIO.succeed(account),
+                      ()   => repo.exec(FindApplicationDetails(appCode)).orFail(ApplicationNotFound, s"Can't find application '$app'"),
                       user => ZIO.unit,
                     )
         _        <- ZIO.when(response.status.code != 200) { ZIO.fail(ReturnResponseError(response)) }
-        pair     <- tokenGiven(req.email, req.days.getOrElse(365), owner = None) { ensureUser(req.email) }
-        (_, enc)  = pair
         maybe    <- repo.exec(FindUserByEmail(req.email))
         user     <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Service account '${req.email}' missing after creation"))
+        _        <- ZIO.when(req.groups.nonEmpty) {
+                      repo.exec(SetUserGroups(account.code, appCode, user.details.code, req.groups))
+                        .mapError(GuaraError.of(GroupError, s"Error setting groups for service account '${req.email}'"))
+                    }
+        pair     <- tokenGiven(req.email, req.days.getOrElse(365), owner = None) { ensureUser(req.email) }
+        (_, enc)  = pair
         entry     = user.details.transformInto[RawUserEntry]
       yield Response.json(ApiKeyIssued(entry, enc).toJson)
     }.toTask

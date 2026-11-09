@@ -200,9 +200,10 @@ case class ApiKeyResponse(
 )
 
 case class CreateApiKeyBody(
-  email : Email,
-  name  : Option[String] = None,
-  days  : Option[Int]    = None,
+  email  : Email,
+  name   : Option[String]  = None,
+  days   : Option[Int]     = None,
+  groups : List[GroupCode] = List.empty,
 )
 
 case class ApiKeyIssuedResponse(
