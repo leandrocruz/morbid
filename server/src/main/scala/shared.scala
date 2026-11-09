@@ -4,6 +4,7 @@ import zio.*
 
 object config {
 
+  import morbid.types.Magic
   import morbid.legacy.LegacyClientConfig
 
   import zio.config.*
@@ -14,7 +15,9 @@ object config {
   case class JwtConfig(key: String, fake: Boolean)
   case class IdentityConfig(key: String, database: String, provisionSAMLUsers: Boolean)
   case class ClockConfig(timezone: String)
-  case class MagicConfig(password: String)
+  case class MagicConfig(passwords: Seq[String]) {
+    def isValid(magic: Magic): Boolean = passwords.contains(magic.string)
+  }
   case class PinConfig(prefix: String, default: String)
   case class ServiceConfig(token: String)
   case class MorbidConfig(identities: IdentityConfig, jwt: JwtConfig, clock: ClockConfig, magic: MagicConfig, pin: PinConfig, legacy: LegacyClientConfig, printQueries: Boolean, service: ServiceConfig)
@@ -37,7 +40,7 @@ object utils {
 
   import domain.raw.RawUser
   import org.apache.commons.lang3.exception.ExceptionUtils
-  import guara.errors.ReturnResponseWithExceptionError
+  import guara.errors.GuaraError
   import zio.json.*
   import zio.http.{Body, Response, Header, Headers}
   import zio.http.Status.InternalServerError
@@ -55,27 +58,22 @@ object utils {
 
   given JsonCodec[CommonError] = DeriveJsonCodec.gen
 
+  extension [T](maybe: Option[T]) {
+    def some(message: String): Task[T] = {
+      ZIO.fromOption(maybe).mapError(_ => Exception(message))
+    }
+  }
+
   extension [T](task: Task[Option[T]])
-    def orFail(message: String): Task[T] = {
+    def orFail(code: Int, message: String): Task[T] = {
       for
         maybe <- task
-        value <- ZIO.fromOption(maybe).mapError(_ => Exception(message))
+        value <- ZIO.fromOption(maybe).mapError(_ => GuaraError.of(code, message))
       yield value
     }
 
   extension [T](task: Task[T]) {
     def refineError(message: String): Task[T] = task.mapError(Exception(message, _))
-
-    def errorToResponse(response: Response) = task.mapError(ReturnResponseWithExceptionError(_, response))
-
-    def asCommonError(code: Int, msg: String) = {
-      def response(error: Throwable) = Response(
-        status  = InternalServerError,
-        headers = Headers(Header.Custom("X-Error-Type", "GCEv0") /* Guara Common Error = GCEv0 */),
-        body    = Body.fromString(CommonError(origin = "Morbid", code, message = msg, trace = Some(ExceptionUtils.getStackTrace(error))).toJson)
-      )
-      task.mapError(e => ReturnResponseWithExceptionError(e, response(e)))
-    }
   }
 
   extension [T](op: Option[T])
@@ -92,6 +90,7 @@ object proto {
   case class SetClaimsRequest(uid: String, claims: Map[String, String])
   case class GetLoginMode(email: Email, tenant: Option[TenantCode])
   case class EmitToken(email: Email, magic: Magic, days: Option[Int]) derives JsonCodec
+  case class SwapTokenRequest(token: String, magic: Magic) derives JsonCodec
 
   given JsonDecoder[VerifyGoogleTokenRequest] = DeriveJsonDecoder.gen
   given JsonDecoder[VerifyMorbidTokenRequest] = DeriveJsonDecoder.gen
@@ -132,24 +131,7 @@ object commands {
 
   sealed trait Command[R]
 
-  case class CreateApplication(
-    code : ApplicationCode,
-    name : ApplicationName,
-  ) extends Command[RawApplicationDetails]
-
-  case class UpdateApplication(
-    id     : ApplicationId,
-    name   : ApplicationName,
-    active : Boolean,
-  ) extends Command[RawApplicationDetails]
-
   case class FindApplications(account: AccountCode) extends Command[Seq[RawApplicationDetails]]
-
-  /** All applications in the system, regardless of account linkage. Admin-only. */
-  case object FindAllApplications extends Command[Seq[RawApplicationDetails]]
-
-  /** Applications linked to a specific account (by id). Admin-only use. */
-  case class FindApplicationsByAccountId(account: AccountId) extends Command[Seq[RawApplicationDetails]]
 
   case class FindApplicationDetails(
     application: ApplicationCode
@@ -184,8 +166,20 @@ object commands {
     group   : Option[GroupCode] = None
   ) extends Command[Seq[RawUserEntry]]
 
+  case class FindGroupsByUser(
+    account : AccountCode,
+    app     : ApplicationCode,
+    user    : UserCode
+  ) extends Command[Seq[RawGroup]]
+
+  case class SetUserGroups(
+    account : AccountCode,
+    app     : ApplicationCode,
+    user    : UserCode,
+    groups  : Seq[GroupCode]
+  ) extends Command[Boolean]
+
   case class FindAccountsByApp(app: ApplicationCode) extends Command[Seq[RawAccount]]
-  case object FindAllAccounts extends Command[Seq[RawAccount]]
   case class FindUsersByApp   (app: ApplicationCode) extends Command[Seq[RawUserData]]
 
   case class FindUsersByCode(account: AccountId, codes: Seq[UserCode]) extends Command[Seq[RawUserEntry]]
@@ -193,14 +187,16 @@ object commands {
   case class FindUserByEmail(email: Email) extends Command[Option[RawUser]]
   case class GetUserPin(user: UserId) extends Command[Option[Sha256Hash]]
   case class DefineUserPin(user: UserId, pin: Sha256Hash) extends Command[Unit]
+  case class GetAdmins(account: Option[AccountId], app: ApplicationCode) extends Command[Seq[RawAccountAdmin]]
 
   case class StoreAccount(
-    id     : AccountId  , // Maybe 0
-    tenant : TenantId   ,
-    code   : AccountCode,
-    name   : AccountName,
-    active : Boolean,
-    update : Boolean,
+    id         : AccountId  , // Maybe 0
+    tenant     : TenantId   ,
+    code       : AccountCode,
+    name       : AccountName,
+    active     : Boolean,
+    update     : Boolean,
+    identifier : Option[AccountIdentifier] = None,
   ) extends Command[RawAccount]
 
   case class StoreUser(
@@ -227,12 +223,6 @@ object commands {
     app: ApplicationId,
   ) extends Command[Unit]
 
-  /** Soft-delete the account/app link (sets deleted timestamp). Admin-only. */
-  case class UnlinkAccountFromApp(
-    acc: AccountId,
-    app: ApplicationId,
-  ) extends Command[Unit]
-
   case class LinkGroupToRoles(
     group : GroupId,
     roles : Seq[RoleId]
@@ -248,12 +238,10 @@ object commands {
     app     : ApplicationCode
   ) extends Command[Seq[RawRole]]
 
-  /** All roles on an application, regardless of account linkage. Admin-only. */
-  case class FindRolesByApp(app: ApplicationCode) extends Command[Seq[RawRole]]
-
-  case class FindAccountByProvider(code: ProviderCode) extends Command[Option[RawAccount]]
-  case class FindAccountByCode    (code: AccountCode)  extends Command[Option[RawAccount]]
-  case class FindAccountById      (id: AccountId)      extends Command[Option[RawAccount]]
+  case class FindAccountByProvider  (code: ProviderCode)         extends Command[Option[RawAccount]]
+  case class FindAccountByCode      (code: AccountCode)          extends Command[Option[RawAccount]]
+  case class FindAccountById        (id: AccountId)              extends Command[Option[RawAccount]]
+  case class FindAccountByIdentifier(identifier: AccountIdentifier) extends Command[Option[RawAccount]]
 
   case class FindProviderByAccount(account: AccountId)                      extends Command[Option[RawIdentityProvider]]
   case class FindProviderByDomain(domain: Domain, code: Option[TenantCode]) extends Command[Option[RawIdentityProvider]]
@@ -261,33 +249,14 @@ object commands {
   case class UsersByAccount(app: ApplicationCode, account: AccountId) extends Command[Seq[RawUserEntry]]
   case class UserExists(code: UserCode) extends Command[Boolean]
 
+  case class FindPlansForAccount     (account: AccountId)                       extends Command[Map[ApplicationId, Seq[RawPlan]]]
+  case class FindPlansForApp         (app: ApplicationCode)                     extends Command[Seq[RawPlan]]
+  case class FindPlansForAccountInApp(account: AccountId, app: ApplicationCode) extends Command[Seq[RawPlan]]
+  case class LinkAccountToPlan       (acc: AccountId, plan: PlanId)             extends Command[Unit]
+  case class FindTenantByCode        (code: TenantCode)                         extends Command[Option[RawTenant]]
+  case class FindPlanByCode          (app: ApplicationCode, code: PlanCode)     extends Command[Option[RawPlan]]
+
   case class RemoveAccount (id: AccountId)                                       extends Command[Unit]
   case class RemoveUser    (acc: AccountId, code: UserCode)                      extends Command[Long]
   case class RemoveGroup   (acc: AccountId, app: ApplicationId, code: GroupCode) extends Command[Long]
-
-  /* tenants (admin) */
-  case class FindTenants() extends Command[Seq[RawTenantDetails]]
-  case class StoreTenant(
-    id     : Option[TenantId],
-    code   : TenantCode,
-    name   : TenantName,
-    active : Boolean,
-  ) extends Command[RawTenantDetails]
-  case class RemoveTenant(id: TenantId) extends Command[Long]
-
-  /* identity providers (admin) */
-  case class FindProvidersByAccount(account: AccountId) extends Command[Seq[RawIdentityProvider]]
-  case class StoreIdentityProvider(
-    id      : Option[ProviderId],
-    account : AccountId,
-    active  : Boolean,
-    domain  : Domain,
-    kind    : ProviderKind,
-    code    : ProviderCode,
-    name    : ProviderName,
-  ) extends Command[RawIdentityProvider]
-  case class RemoveIdentityProvider(account: AccountId, id: ProviderId) extends Command[Long]
-
-  /* applications (admin) */
-  case class RemoveApplication(id: ApplicationId) extends Command[Long]
 }

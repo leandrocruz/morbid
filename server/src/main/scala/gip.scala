@@ -34,8 +34,8 @@ object gip {
     def providerGiven       (account: AccountId)                                   : Task[Option[RawIdentityProvider]]
     def verify              (req: VerifyGoogleTokenRequest)                        : Task[CloudIdentity]
     def claims              (req: SetClaimsRequest)                                : Task[Unit]
-    def getUserByEmail      (email: Email, tenant: TenantCode)                     : Task[UserRecord]
-    def createUser          (email: Email, tenant: TenantCode, password: Password) : Task[UserRecord]
+    def getUserByEmail      (email: Email, tenant: TenantCode)                     : Task[CloudUser]
+    def createUser          (email: Email, tenant: TenantCode, password: Password) : Task[CloudUser]
   }
 
   case class CloudIdentity(
@@ -48,9 +48,17 @@ object gip {
     attributes : Map[String, String]  = Map.empty
   )
 
+  trait CloudUser {
+    def id   : String
+    def email: String
+  }
+
   given JsonEncoder[CloudIdentity] = DeriveJsonEncoder.gen[CloudIdentity]
 
   object Identities {
+
+    val fake: ULayer[Identities] = ZLayer.succeed(FakeIdentities())
+
     val layer = ZLayer {
 
       def acquire(config: MorbidConfig) = ZIO.attempt(new FileInputStream(config.identities.key))
@@ -79,7 +87,32 @@ object gip {
     }
   }
 
+  private case class FakeIdentities() extends Identities {
+    override def providerGiven(email: Email, tenant: Option[TenantCode]) = ZIO.none
+    override def providerGiven(account: AccountId)                       = ZIO.none
+    override def claims(req: SetClaimsRequest)                           = ZIO.unit
+    override def verify             (req: VerifyGoogleTokenRequest)    = ZIO.fail(Exception("TODO: verify"))
+    override def getUserByEmail     (email: Email, tenant: TenantCode) = ZIO.fail(Exception("TODO: getUserByEmail"))
+    override def passwordResetLink  (email: Email)                     = ZIO.fail(Exception("TODO: passwordResetLink"))
+    override def signInWithEmailLink(email: Email, url: String)        = ZIO.fail(Exception("TODO: signInWithEmailLink"))
+    override def changePassword     (email: Email, password: Password) = ZIO.fail(Exception("TODO: changePassword"))
+
+    override def createUser(eml: Email, tenant: TenantCode, password: Password) = {
+      for
+        rnd <- Random.nextIntBetween(0, 99)
+      yield new CloudUser {
+        override def id    = "usr" + rnd
+        override def email = Email.value(eml)
+      }
+    }
+  }
+
   private case class GoogleIdentities(auth: FirebaseAuth, repo: Repo) extends Identities {
+
+    private def wrap(record: UserRecord): CloudUser = new CloudUser {
+      override def id    = record.getUid
+      override def email = record.getEmail
+    }
 
     override def providerGiven(account: AccountId): Task[Option[RawIdentityProvider]] = {
       repo.exec(FindProviderByAccount(account))
@@ -91,7 +124,7 @@ object gip {
         case _            => ZIO.succeed(None)
     }
 
-    override def verify(req: VerifyGoogleTokenRequest): Task[CloudIdentity] = {
+    override def verify(req: VerifyGoogleTokenRequest) = {
 
       def build(token: FirebaseToken) = {
         CloudIdentity(
@@ -103,7 +136,7 @@ object gip {
         )
       }
 
-      def valueFrom[T](token: FirebaseToken, key: String): Task[T] = {
+      def valueFrom[T](token: FirebaseToken, key: String) = {
         val claims = token.getClaims.asScala.toMap
 
         val maybe = for {
@@ -127,7 +160,7 @@ object gip {
       )
     }
 
-    override def claims(req: SetClaimsRequest): Task[Unit] = {
+    override def claims(req: SetClaimsRequest) = {
       ZIO.attempt {
         auth.setCustomUserClaims(req.uid, req.claims.asJava)
       }
@@ -139,7 +172,7 @@ object gip {
         case Some(value)                     => auth.getTenantManager.getAuthForTenant(TenantCode.value(value))
     }
 
-    override def changePassword(email: Email, password: Password): Task[Unit] = {
+    override def changePassword(email: Email, password: Password) = {
       ZIO.attemptBlockingIO {
         val record = auth.getUserByEmail(Email.value(email))
         val req    = new UpdateRequest(record.getUid).setPassword(Password.value(password))
@@ -148,27 +181,31 @@ object gip {
     }
 
     //See https://firebase.google.com/docs/auth/admin/manage-users
-    override def createUser(email: Email, tenant: TenantCode, password: Password): Task[UserRecord] = {
+    override def createUser(email: Email, tenant: TenantCode, password: Password) = {
       val req = new CreateRequest()
         .setEmail    (Email.value(email))
         .setPassword (Password.value(password)  )
         .setDisabled (false)
 
-      ZIO.attempt { authGiven(Some(tenant)).createUser(req) }
+      for
+        record <- ZIO.attempt { authGiven(Some(tenant)).createUser(req) }
+      yield wrap(record)
     }
 
-    override def getUserByEmail(email: Email, tenant: TenantCode): Task[UserRecord] = {
-      ZIO.attempt { authGiven(Some(tenant)).getUserByEmail(Email.value(email)) }
+    override def getUserByEmail(email: Email, tenant: TenantCode) = {
+      for
+        record <- ZIO.attempt { authGiven(Some(tenant)).getUserByEmail(Email.value(email)) }
+      yield wrap(record)
     }
 
-    override def passwordResetLink(email: Email): Task[Link] = {
+    override def passwordResetLink(email: Email) = {
       for
         link   <- ZIO.attempt { auth.generatePasswordResetLink(Email.value(email)) }.mapError(e => Exception(s"Error generating password reset link for '$email': ${e.getMessage}", e))
         result <- ZIO.fromOption(Option(link))                                      .mapError(_ => Exception(s"Failed to generate password reset link for '$email'"))
       yield Link.of(result)
     }
 
-    override def signInWithEmailLink(email: Email, url: String): Task[Link] = {
+    override def signInWithEmailLink(email: Email, url: String) = {
       val settings = ActionCodeSettings
         .builder()
         .setUrl(url)

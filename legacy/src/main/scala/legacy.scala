@@ -2,17 +2,17 @@ package morbid
 
 object legacy {
 
-  import guara.utils.parse
-  import morbid.types.{AccountId, AccountName, Email, UserId}
+  import java.util.Date
+  import morbid.types.{AccountId, AccountIdentifier, AccountName, Email, UserId}
   import zio.*
   import zio.http.*
   import zio.json.*
 
-  case class LegacyAccount(id: AccountId, name: AccountName)
+  case class LegacyAccount(id: AccountId, name: AccountName, identifier: Option[AccountIdentifier] = None)
   case class LegacyToken(token: String)
   case class LegacyUser(id: UserId, email: Email, account: LegacyAccount)
 
-  case class CreateLegacyAccountRequest(name: AccountName, `type`: String)
+  case class CreateLegacyAccountRequest(name: AccountName, `type`: String, identifier: Option[AccountIdentifier] = None)
   case class CreateLegacyUserRequest(account: AccountId, name: String, email: Email, `type`: String, password: Option[String] = None) //matches legacy morbid CreateUserRequest
 
   case class LegacyClientConfig(url: String)
@@ -24,16 +24,19 @@ object legacy {
         url    <- ZIO.fromEither(URL.decode(cfg.url))
         client <- ZIO.service[Client]
         scope  <- ZIO.service[Scope]
+        _      <- ZIO.logInfo(s"Legacy Morbid URL is '${url.encode}'")
       } yield LegacyMorbidImpl(url, client, scope)
     }
   }
 
   trait LegacyMorbid {
-    def accountById  (id: AccountId)                      : Task[Option[LegacyAccount]]
-    def createAccount(request: CreateLegacyAccountRequest): Task[LegacyAccount]
-    def createUser   (request: CreateLegacyUserRequest)   : Task[LegacyUser]
-    def userByEmail  (email: Email)                       : Task[Option[LegacyUser]]
-    def userById     (id: UserId)                         : Task[Option[LegacyUser]]
+    def accountById          (id: AccountId)                      : Task[Option[LegacyAccount]]
+    def accountByIdentifier  (identifier: AccountIdentifier)      : Task[Option[LegacyAccount]]
+    def createAccount        (request: CreateLegacyAccountRequest): Task[LegacyAccount]
+    def createUser           (request: CreateLegacyUserRequest)   : Task[LegacyUser]
+    def userByEmail          (email: Email)                       : Task[Option[LegacyUser]]
+    def userById             (id: UserId)                         : Task[Option[LegacyUser]]
+    def userByToken          (token: String)                      : Task[Option[LegacyUser]]
   }
 
   case class LegacyMorbidImpl(url: URL, client: Client, scope: Scope) extends LegacyMorbid {
@@ -42,10 +45,11 @@ object legacy {
 
     private def handleGetUserResponse[T](response: Response, key: T) = {
       for
+        text <- response.body.asString
         user <- response.status.code match
           case 404  => ZIO.succeed(None)
-          case 200  => response.body.parse[LegacyUser]().map(Some(_)).mapError(err => Exception("Error parsing LegacyUser from body", err))
-          case code => ZIO.fail(Exception(s"Error retrieving legacy user '$key'. Result code from legacy is $code"))
+          case 200  => ZIO.fromEither(text.fromJson[LegacyUser]).map(Some(_)).mapError(err => Exception(s"Error parsing LegacyUser from body: $text. Cause: $err"))
+          case code => ZIO.fail(Exception(s"Error retrieving legacy user '$key'. Result code from legacy is $code. Body => $text"))
       yield user
     }
 
@@ -63,41 +67,65 @@ object legacy {
       yield user
     }
 
+    override def userByToken(token: String): Task[Option[LegacyUser]] = {
+      for
+        response <- client.url(url).get(s"/user/token/${java.net.URLEncoder.encode(token, "UTF-8")}").provideSome(ZLayer.succeed(scope))
+        user     <- handleGetUserResponse(response, token)
+      yield user
+    }
+
     override def accountById(id: AccountId): Task[Option[LegacyAccount]] = {
       for
         response <- client.url(url).get(s"/account/id/$id").provideSome(ZLayer.succeed(scope))
-        user     <- response.status.code match
+        text     <- response.body.asString
+        account  <- response.status.code match
           case 404  => ZIO.none
-          case 200  => response.body.parse[LegacyAccount]().map(Some(_)).mapError(err => Exception("Error parsing LegacyAccount from body", err))
-          case code => ZIO.fail(Exception(s"Error retrieving legacy account. Result code from legacy is $code"))
-      yield user
+          case 200  => ZIO.fromEither(text.fromJson[LegacyAccount]).map(Some(_)).mapError(err => Exception(s"Error parsing LegacyAccount from body: $text. Cause: $err"))
+          case code => ZIO.fail(Exception(s"Error retrieving legacy account '$id'. Result code from legacy is $code. Body => $text"))
+      yield account
+    }
+
+    override def accountByIdentifier(identifier: AccountIdentifier): Task[Option[LegacyAccount]] = {
+      for
+        response <- client.url(url).get(s"/account/identifier/$identifier").provideSome(ZLayer.succeed(scope))
+        text     <- response.body.asString
+        account  <- response.status.code match
+          case 404  => ZIO.none
+          case 200  => ZIO.fromEither(text.fromJson[LegacyAccount]).map(Some(_)).mapError(err => Exception(s"Error parsing LegacyAccount from body: $text. Cause: $err"))
+          case code => ZIO.fail(Exception(s"Error retrieving legacy account by identifier '$identifier'. Result code from legacy is $code. Body => $text"))
+      yield account
     }
 
     override def createUser(request: CreateLegacyUserRequest): Task[LegacyUser] = {
       for
         body     <- ZIO.attempt(Body.fromString(request.toJson))
         response <- client.url(url).addHeaders(headers).post("/user")(body).provideSome(ZLayer.succeed(scope))
+        text     <- response.body.asString
         user     <- response.status.code match
-          case 200  => response.body.parse[LegacyUser]().mapError(err => Exception("Error parsing LegacyUser from body", err))
-          case code => ZIO.fail(Exception(s"Error creating user '${request.email}' for account '${request.account}'. Result code from legacy is $code"))
+          case 200  => ZIO.fromEither(text.fromJson[LegacyUser]).mapError(err => Exception(s"Error parsing LegacyUser from body: $text. Cause: $err"))
+          case code => ZIO.fail(Exception(s"Error creating user '${request.email}' for account '${request.account}'. Result code from legacy is $code. Body => $text"))
       yield user
     }
 
     override def createAccount(request: CreateLegacyAccountRequest): Task[LegacyAccount] = {
       for
         body     <- ZIO.attempt(Body.fromString(request.toJson))
-        response <- client.url(url).addHeaders(headers).post("/user")(body).provideSome(ZLayer.succeed(scope))
+        response <- client.url(url).addHeaders(headers).post("/account")(body).provideSome(ZLayer.succeed(scope))
+        text     <- response.body.asString
         account  <- response.status.code match
-          case 200  => response.body.parse[LegacyAccount]().mapError(err => Exception("Error parsing LegacyUser from body", err))
-          case code => ZIO.fail(Exception(s"Error creating account '${request.name}'. Result code from legacy is $code"))
+          case 200  => ZIO.fromEither(text.fromJson[LegacyAccount]).mapError(err => Exception(s"Error parsing LegacyAccount from body: $text. Cause: $err"))
+          case code => ZIO.fail(Exception(s"Error creating account '${request.name}'. Result code from legacy is $code. Body => $text"))
       yield account
     }
   }
 
+  val format = java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss")
+
+  given JsonEncoder[Date]                     = JsonEncoder.string.contramap(format.format)
+  given JsonDecoder[Date]                     = JsonDecoder.string.map(format.parse)
   given JsonCodec[LegacyAccount]              = DeriveJsonCodec.gen
   given JsonCodec[LegacyUser]                 = DeriveJsonCodec.gen
   given JsonCodec[LegacyToken]                = DeriveJsonCodec.gen
   given JsonCodec[CreateLegacyUserRequest]    = DeriveJsonCodec.gen
   given JsonCodec[CreateLegacyAccountRequest] = DeriveJsonCodec.gen
-
 }

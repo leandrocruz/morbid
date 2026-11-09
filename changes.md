@@ -37,6 +37,175 @@
  - [Leandro] admin: Groups moved from `/applications` to `/accounts` (groups are per-(account, app), not per-app). The Groups column on the Applications page was removed; a new Groups column on the Accounts page links to `AccountGroupsPage(acc)` at `/accounts/:acc/groups`. The Groups page shows an app picker (apps linked to the account, from the existing `/accounts/:acc/apps` endpoint) and auto-selects the first linked app; switching re-fetches. New morbid-server route `GET /app/:app/manager/account/:acc/apps/:code/groups` (root-only) resolves the account by id and runs `FindGroups(acc.code, [appCode])` without the caller's `account_to_app` filter. admin-api gateway `groupsOfApp` now takes `(app, acc)`; admin-api `/apps/:app/groups` accepts an `acc` query param (defaults to the signed-in admin's account) and no longer requires `X-Admin-App` for reads. Create/Delete stay enabled only when viewing the viewer's own account AND they are admin on the picked app (storeGroup/removeGroup still write in the caller's scope). TopBar hides the app selector on the Groups page (the picker is on the page itself). Fixes the 404 "Can't find groups" on `console`/`oystr360` for the root admin.
  - Note on plans: a `Plans` entity does not yet exist in morbid's data model (no `plans` or `features` tables in `repo.scala`), so plan management is deferred until the schema is added — nothing to proxy today.
 
+## Release v2.11.0
+LTS: 03/11/2026
+
+ - [Matheus] Plano `default` explícito no Presto (task #249903): toda conta nova (create e storeAccount) é vinculada ao plano `default`. Migração `sql/migrations/2026-10-23-presto-default-plan.sql` (rodar ANTES do deploy do console e da extensão): cria as features `credentials`, `vault`, `block` e `sign_documents`, monta os planos `default` e `presto_sign` e vincula ao `default` as contas do Presto sem plano base
+
+## Release v2.10.0
+LTS: 28/10/2026
+
+ - [Matheus] Ajuste de regex na validação de email, afrouxando validação de propósito (contas migradas do morbid legado causando problemas por causa do regex)
+
+## Release v2.9.2
+LTS: 14/10/2026
+
+ - [Leandro] Nova rota de impersonação service-to-service: `POST /service/app/{app}/account/{acc}/impersonate-admin`. Dado o id de uma conta, o servidor elege o admin da conta (o admin ativo mais antigo — eleição determinística, reproduzível para auditoria) e devolve o JWT da sessão impersonada (corpo em texto, como `/swap`). Protegida pelo service token **e** pelo magic, pois diferente de `admins` (apenas leitura) esta rota *emite* uma sessão como admin de qualquer conta. Adicionado o método correspondente `impersonateAccountAdmin(account, magic)(using ServiceToken, ApplicationCode): Task[RawToken]` no `MorbidClient` (`Remote`/`Local`/`Fake`) e o DTO `ImpersonateAccountAdminRequest` em commons. Usado pelo partner-api para autenticar no presto-api (listagem de 2FA) sem precisar descobrir o email do admin nem lidar com o cookie de `/impersonate`
+ - [Leandro] Correção no `RemoteMorbidClient`: o helper `delete[T]` enviava `Request.get` em vez de `Request.delete`, fazendo com que `managerRemoveAccount` e `managerRemoveUser` chamassem o servidor com o método errado (nenhuma rota GET correspondente → 404). Encontrado durante os testes do partner-api
+ - [Leandro] Falhas de corrida em `/provision` por identificador ou email já existentes (violação de unicidade durante a transação, após os prechecks) voltam a retornar 409 em vez do erro genérico "Error provisioning account" — restaura o comportamento documentado na v2.5.0, que havia regredido: o `mapError` genérico do router engolia `IdentifierTakenException`/`EmailTakenException`. `errors.scala` ganhou as variantes `emailTakenError`/`identifierTakenError` (valores) e os helpers de efeito passaram a delegar para elas — mensagem, código e status definidos em um único lugar
+
+## Release v2.9.1
+LTS: 06/10/2026
+
+ - [Junior] `usersByAccount` (rota `GET /app/{app}/manager/account/{acc}/users`) passa a retornar todos os usuários da conta, inclusive inativos e removidos, e também de contas inativas ou removidas, para exibição no console do Presto
+
+## Release v2.9.0
+LTS: 27/08/2026
+
+ - [Leandro] `RemoteMorbidClient.exec` não converte mais falhas UEF em erro genérico 500: o `ReturnUnifiedError` vindo do servidor (ex: 403 "Error verifying token" para token expirado) agora é propagado com o status original, permitindo que os consumidores (ex: presto-api → console) tratem 401/403 corretamente (logout)
+ - [Leandro] `LocalMorbidClient.tokenFrom` agora falha com `ReturnUnifiedError` 403 ("Error verifying token", code `MorbidError.Forbidden`) para token expirado/inválido, espelhando o comportamento do servidor — antes a exceção genérica virava 500 no guara
+
+## Release v2.8.2
+LTS: 24/08/2026
+
+ - [Matheus] Ajuste no método `admins` do client (rota errada)
+
+## Release v2.8.1
+LTS: 21/08/2026
+
+ - [Matheus] Removendo captura de Morbid-Token em rotas de service, mantendo apenas o ServiceToken
+ - [Matheus] Ajuste no client da rota admins para passar opcionalmente uma conta, passando uma conta, será feito a busca dos admins daquela conta, se omitido, será feito a busca de todos os admins de um app
+
+## Release v2.8.0
+LTS: 20/08/2026
+
+ - [Matheus] Add endpoint to get admin users by accounts
+   - `GET /service/app/{app}/accounts/admins`
+ - [Matheus] Implementation to call service routes for MorbidClient (client.scala)
+
+## Release v2.7.0
+LTS: 20/08/2026
+
+ - [Leandro] Logando `UserRow.active` e `UserRow.deleted` na atualização dos usuários (mascarenhas)
+ - [Leandro] Nova coluna `UserRow.updated`
+ - [Leandro] Parsing UEF error at `RemoteMorbidClient.perform`
+
+## Release v2.6.0
+LTS: 17/07/2026
+
+ - [Leandro] Opções customizadas para o cliente http do Morbid
+
+## Release v2.5.0
+LTS: 10/07/2026
+
+ - [Leandro] Nova rota `POST /account/by-identifier` (protegida por `magic`) que retorna `Option[RawAccount]` (JSON `null` quando não encontrado). Novo `FindAccountByIdentifierRequest(magic, identifier)` em `morbid-commons`, comando `FindAccountByIdentifier` no servidor com query Quill correspondente, e método `accountByIdentifier(request)` no `MorbidClient` (trait, `RemoteMorbidClient`, `LocalMorbidClient` e `FakeMorbidClient`)
+ - [Leandro] Nova coluna `accounts.identifier` (nullable, `VARCHAR(256)`) para armazenar CPF/CNPJ da conta. Índice único parcial `accounts_identifier_key ON accounts (identifier) WHERE identifier IS NOT NULL` — duas contas só podem compartilhar `identifier` se ambos forem `NULL`. Removida a constraint `UNIQUE(tenant, name)`: o nome da conta volta a ser apenas rótulo de exibição; a chave de negócio passa a ser `identifier`. Script idempotente em `sql/migrations/2026-06-19-add-account-identifier.sql` (`ADD COLUMN IF NOT EXISTS` + `DROP CONSTRAINT IF EXISTS` + `CREATE UNIQUE INDEX IF NOT EXISTS`, dentro de `BEGIN/COMMIT`)
+ - [Leandro] Novo `opaque type AccountIdentifier = String` em `morbid.types` (companion `OpaqueOps`, `JsonEncoder`/`JsonDecoder`, `MappedEncoding` para Quill). Propagado para `RawAccount`, `ProvisionRequest`, `StoreAccountRequest`, `CreateAccount`, `StoreAccount` (command interno) e `AccountRow`
+ - [Leandro] `LegacyMorbid.accountByIdentifier(identifier)` — novo método cliente que consulta `GET /account/identifier/:it` no legacy-morbid e retorna `Option[LegacyAccount]` (404 → `None`, 200 → `Some(...)`, demais códigos viram exceção). Mesmo padrão de `accountById`
+ - [Leandro] `CreateLegacyAccountRequest` e `LegacyAccount` ganham `identifier: Option[AccountIdentifier]`. O fluxo `accounts.provision` agora propaga `request.identifier` para o legacy-morbid backend (que também passou a aceitar/armazenar o campo — vide changes.md do morbid-deprecated). Isso permite que o legacy-morbid use o `identifier` como chave única no lugar do nome — então duas contas com mesmo nome de exibição mas CPF/CNPJ distintos não colidem mais
+ - [Leandro] `/provision` faz pre-check explícito de `identifier` via `FindAccountByIdentifier` (helper `ensureIdentifierAvailable`) antes de chamar `accounts.provision`. Erro retornado imediatamente como `409 Conflict` sem tocar Firebase/legacy-morbid. O índice único parcial `accounts_identifier_key` continua como rede de segurança contra race condition entre duas requisições simultâneas
+ - [Leandro] `/provision` agora responde `409 Conflict` (em vez de `500` com mensagem genérica) quando o `identifier` ou o `email` já estão em uso. Erros tipados `IdentifierTakenException` e `EmailTakenException` (em `morbid.accounts`) substituem o `Exception` genérico que antes engolia a causa específica — o router pattern-matcha e devolve `{"message":"Identifier 'X' already exists"}` ou `{"message":"Email 'X' already exists"}` com status 409, demais erros continuam como 500
+ - [Leandro] `accounts.provision` propaga `identifier` do `ProvisionRequest` para o `StoreAccount`. Helper de tradução de erro `asNameTaken` renomeado para `asIdentifierTaken` (agora casa a violação `accounts_identifier_key`)
+ - [Leandro] `/provision` agora exige `magic` no `ProvisionRequest` e valida via `ensureMagic` antes de qualquer side-effect (Firebase, legacy-morbid). Protege o endpoint público de abuso/spam que consumia quota de identidade e criava contas órfãs
+ - [Leandro] Melhorando a regexp de validação de emails
+ - [Leandro] Removendo `ProvisionNameTaken`, `ProvisionEmailTaken`, `ProvisionBadIntent` e `UnknownUser`
+ - [Leandro] Adicionando `MorbidClient.provisionRaw`
+
+## Release v2.4.0
+LTS 03/07/2026
+
+ - [Leandro] Adicionando `CloudUser` como abstração extra não referenciar diretamente o `UserRecord`
+ - [Leandro] Adicionando implementações de teste para `Identities` e `TokenGenerator`
+ - [Leandro] Refatorando a criação dos grupos ao criar uma conta
+
+## Release v2.3.1
+LTS 02/07/2026
+
+ - [Leandro] Associando o grupo admin com a permissão `adm` (role id = 1)
+
+## Release v2.3.0
+LTS 01/07/2026
+
+ - [Leandro] Refactoring da criação de contas (endpoint POST `/app/$app/account`)
+
+## Release v2.2.1
+LTS 18/06/2026
+
+ - [Matheus] Updated guara dependency to v1.3.1
+
+## Release v2.2.0
+LTS 16/06/2026
+
+ - [Leandro] `AccountName` aumentado de 64 para 256 caracteres (decoder `safeLatinName` em `commons.scala` e coluna `accounts.name` em `sql/schema.sql`)
+
+## Release v2.1.0
+LTS 15/06/2026
+
+ - [Leandro] `MorbidClient.exec` agora lê o corpo da resposta em erros não-200 e inclui no `Exception`, expondo o `CommonError` (com `trace`) do servidor em vez de um `ReturnResponseError` sem mensagem
+
+## Release v2.0.0
+LTS 01/06/2026
+
+ - [Leandro] Modelo de Planos e Features por aplicação (suporte ao freemium 2FA do presto)
+ - [Leandro] Provisionando contas de usuários
+ - [Leandro] Logando erros no `LegacyMorbidImpl`
+ - [Leandro] Corrigido conflito de UNIQUE(acc, app, name) em `AccountManager`: `AdminGroupName` agora é `"Admin"` (antes duplicava `"Todos"` com `DefaultGroupName`)
+
+## Release v1.14.0
+LTS 20/05/2026
+
+ - [Leandro] Nova rota `POST /app/{app}/user/groups/find` que retorna os grupos a que um usuário pertence (user code vai no corpo via `GetUserGroupsRequest`)
+   - Novo `GetUserGroupsRequest(user)` em `morbid-commons`
+   - Novo comando de repositório `FindGroupsByUser` com query Quill correspondente
+   - Novo método `groupsByUser(request: GetUserGroupsRequest)` no `MorbidClient` (trait, `RemoteMorbidClient`, `LocalMorbidClient` e `FakeMorbidClient`)
+ - [Leandro] Nova rota `POST /app/{app}/user/groups` para reatribuir os grupos de um usuário (user code vai no corpo via `SetUserGroupsRequest`; mesma dinâmica de diff add/remove usada em `storeGroup`)
+   - Novo `SetUserGroupsRequest(user, groups)` em `morbid-commons`
+   - Novo comando de repositório `SetUserGroups` (diffa contra o conjunto atual e insere/deleta linhas em `user_to_group`)
+   - Novo método `setUserGroups(request: SetUserGroupsRequest): Task[Boolean]` no `MorbidClient`
+
+
+## Release v1.13.0
+LTS 19/05/2026
+
+ - [Leandro] `POST /impersonate` now stashes the impersonator's JWT in a new `morbid-original-token` HttpOnly cookie
+ - [Leandro] `POST /logoff` detects the stash cookie and, when present, restores the impersonator's session (sets `morbid-token` to the stashed JWT, clears the stash) instead of fully logging out
+ - [Leandro] `/logoff` now returns `{"restored": Boolean}` so clients can decide whether to reload (restored) or proceed with the normal logout flow
+ - [Leandro] `POST /login` now also clears the stash cookie so a fresh login can't inherit a stale impersonator token
+ - [Leandro] Added `OriginalToken = "morbid-original-token"` to `MorbidCookies`
+ - [Leandro] Added `LogoffResponse(restored: Boolean)` to `morbid-commons` with a `JsonCodec`
+
+## Release v1.12.0
+LTS 01/05/2026
+
+ ** Morbid Unification (part 1) **
+
+ - [Leandro] Added `POST /swap` endpoint — exchanges a morbid-legacy token for a morbid token
+   - Validates magic password
+   - Calls morbid-legacy to resolve the token to a user
+   - Issues a new morbid token for the same user (must exist in morbid)
+ - [Leandro] Added `userByToken` to `LegacyMorbid` trait
+ - [Leandro] Added `client-okhttp` module — Scala 2.12 OkHttp3-based client for Java/Play services
+   - Self-contained domain types (no dependency on morbid-commons or ZIO)
+   - Supports remote and local (JWT) token verification
+ - [Leandro] Added `MorbidHeaders` and `MorbidCookies` constants to `morbid-commons`
+ - [Leandro] Replaced raw header/cookie strings with constants in server and client
+ - [Leandro] Changed `MagicConfig` to accept multiple passwords (`passwords` list instead of single `password`)
+ - [Leandro] Refactored magic validation into `ensureMagic` helper method
+ - [Leandro] Added data reconciliation and migration tooling under `data/`
+
+## Release v1.11.1
+## Release v1.11.0
+LTS: 31/03/2026
+
+ - [Leandro] Removed `ensureResponse` from `appRoute` — callers now handle response wrapping explicitly
+ - [Leandro] Added `.toTask` to all `ensureResponse` call sites in morbid-server router
+ - [Leandro] Updated guara dependency to v1.2.0
+
+## Release v1.10.1
+LTS: 30/03/2026
+
+ - [Matheus] Updating guara-zio `v1.1.14` -> `v1.1.15`
+
 ## Release v1.10.0
 LTS: 27/03/2026
 

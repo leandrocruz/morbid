@@ -2,8 +2,10 @@ package morbid
 
 import guara.errors.*
 import guara.router.{Echo, Router}
+import guara.utils.SafeResponse.*
 import guara.utils.{Origin, ensureResponse, parse}
 import io.scalaland.chimney.dsl.*
+import morbid.MorbidError.*
 import morbid.accounts.AccountManager
 import morbid.commands.*
 import morbid.config.MorbidConfig
@@ -15,7 +17,6 @@ import morbid.gip.*
 import morbid.legacy.{CreateLegacyAccountRequest, CreateLegacyUserRequest, LegacyMorbid, LegacyUser}
 import morbid.passwords.PasswordGenerator
 import morbid.pins.PinManager
-import morbid.protocol.{given, *}
 import morbid.proto.*
 import morbid.repo.Repo
 import morbid.secure.{AppRoute, appRoute, role}
@@ -36,7 +37,7 @@ import scala.util.{Failure, Random, Success}
 object cookies {
 
   val auth = Cookie.Response(
-    name       = "morbid-auth",
+    name       = morbid.MorbidCookies.Auth,
     content    = "true",
     maxAge     = Some(1.days),
     isHttpOnly = false,
@@ -45,7 +46,7 @@ object cookies {
   )
 
   val token = Cookie.Response(
-    name       = "morbid-token",
+    name       = morbid.MorbidCookies.Token,
     content    = "",
     maxAge     = Some(1.days),
     isHttpOnly = true,
@@ -53,9 +54,22 @@ object cookies {
     path       = Some(Path("/"))
   )
 
+  val original = Cookie.Response(
+    name       = morbid.MorbidCookies.OriginalToken,
+    content    = "",
+    maxAge     = Some(1.days),
+    isHttpOnly = true,
+    sameSite   = Some(SameSite.Lax),
+    path       = Some(Path("/"))
+  )
+
+  private val clearedOriginal = original.copy(maxAge = Some(0.seconds))
+
   extension (r: Response) {
-    def loggedIn(tk: String): Response = r.addCookie(auth).addCookie(token.copy(content = tk))
-    def logOff              : Response = r.addCookie(auth.copy(maxAge = Some(0.seconds))).addCookie(token.copy(maxAge = Some(0.seconds)))
+    def loggedIn(tk: String)        : Response = r.addCookie(auth).addCookie(token.copy(content = tk))
+    def stashOriginal(tk: String)   : Response = r.addCookie(original.copy(content = tk))
+    def clearOriginal               : Response = r.addCookie(clearedOriginal)
+    def logOff                      : Response = r.addCookie(auth.copy(maxAge = Some(0.seconds))).addCookie(token.copy(maxAge = Some(0.seconds))).addCookie(clearedOriginal)
   }
 }
 
@@ -87,30 +101,39 @@ object router {
   ) extends Router {
 
     private def protect(r: AppRoute)(app: String, request: Request): Task[Response] = {
-      appRoute(ApplicationCode.of(app), tokenFrom)(r)(request)
+      ensureResponse(appRoute(ApplicationCode.of(app), tokenFrom)(r)(request)).toTask
     }
 
-    private def forbidden(cause: Throwable) = ReturnResponseError(Response.forbidden(s"Error verifying token: ${cause.getMessage}"))
+    private def forbidden(cause: Throwable) = GuaraError.of(Forbidden, Status.Forbidden, s"Error verifying token")(cause)
+
+    private def ensureMagic(magic: Magic) = {
+      ZIO.when(!cfg.magic.isValid(magic)) {
+        ZIO.logWarning("bad magic") *> errors.badMagic
+      }
+    }
 
     private def testServiceToken(request: Request) = {
 
       def test(value: String) = {
         for
-          _ <- ZIO.when(cfg.service.token != value) { ZIO.fail(ReturnResponseError(Response.unauthorized("Bad Authorization"))) }
+          _ <- ZIO.when(cfg.service.token != value) { errors.notAuthorized("Bad Authorization") }
         yield ()
       }
 
-      (request.headers.get("X-Morbid-Service-Token"), request.cookie("morbid-service-token")) match
-        case (None, None)      => ZIO.fail(ReturnResponseError(Response.unauthorized("Authorization cookie or header is missing")))
+      (request.headers.get(morbid.MorbidHeaders.ServiceToken), request.cookie(morbid.MorbidCookies.ServiceToken)) match
+        case (None, None)      => errors.notAuthorized("Authorization cookie or header is missing")
         case (Some(header), _) => test(header)
         case (_, Some(cookie)) => test(cookie.content)
     }
 
+    private def rawTokenFrom(request: Request): Option[String] = {
+      request.headers.get(morbid.MorbidHeaders.Token).orElse(request.cookie(morbid.MorbidCookies.Token).map(_.content))
+    }
+
     private def tokenFrom(request: Request): Task[Token] = {
-      (request.headers.get("X-MorbidToken"), request.cookie("morbid-token")) match
-        case (None, None     ) => ZIO.fail(Exception("Authorization cookie or header is missing"))
-        case (Some(header), _) => tokens.verify(header)         .mapError(forbidden)
-        case (_, Some(cookie)) => tokens.verify(cookie.content) .mapError(forbidden)
+      rawTokenFrom(request) match
+        case None      => errors.notAuthorized("Authorization cookie or header is missing")
+        case Some(raw) => tokens.verify(raw).mapError(forbidden)
     }
 
     private def applicationDetailsGiven(request: Request): Task[Response] = ensureResponse {
@@ -118,7 +141,7 @@ object router {
         tk   <- tokenFrom(request)
         apps <- repo.exec(FindApplications(tk.user.details.accountCode))
       } yield Response.json(apps.toJson)
-    }
+    }.toTask
 
     private def applicationGiven(app: String, request: Request): Task[Response] = {
       for {
@@ -129,23 +152,21 @@ object router {
         case Some(application) => Response.json(application.toJson)
     }
 
-    private def createApplication(request: Request): Task[Response] = ensureResponse {
+    // Public: pricing/signup pages need to fetch the plan catalog before the user is authenticated.
+    private def plansByApp(app: String, request: Request): Task[Response] = {
       for
-        tk      <- tokenFrom(request)
-        req     <- request.body.parse[CreateApplicationRequest]().mapError(e => ReturnResponseError(Response.badRequest(e.getMessage)))
-        _       <- ZIO.logInfo(s"Creating application '${req.code}' - name: '${req.name}' || Requested by: ${tk.user.details.email}")
-        created <- repo.exec(CreateApplication(req.code, req.name))
-      yield Response.json(created.toJson)
+        plans <- repo.exec(FindPlansForApp(ApplicationCode.of(app)))
+      yield Response.json(plans.toJson)
     }
 
-    private def updateApplication(request: Request): Task[Response] = ensureResponse {
+    private def plansByAccountInApp(request: Request): Task[Response] = ensureResponse {
       for
-        tk      <- tokenFrom(request)
-        req     <- request.body.parse[UpdateApplicationRequest]().mapError(e => ReturnResponseError(Response.badRequest(e.getMessage)))
-        _       <- ZIO.logInfo(s"Updating application '${req.id}' - name: '${req.name}', active: ${req.active} || Requested by: ${tk.user.details.email}")
-        updated <- repo.exec(UpdateApplication(req.id, req.name, req.active))
-      yield Response.json(updated.toJson)
-    }
+        tk    <- tokenFrom(request)
+        req   <- request.body.parse[GetAccountPlansRequest]().mapError(errors.badRequest(s"Error parsing GetAccountPlansRequest"))
+        acc   =  if tk.isRoot then req.account else tk.user.details.account
+        plans <- repo.exec(FindPlansForAccountInApp(acc, req.application))
+      yield Response.json(plans.toJson)
+    }.toTask
 
     private def loginProvider(request: Request): Task[Response] = {
 
@@ -161,7 +182,7 @@ object router {
           req      <- request.body.parse[GetLoginMode]()
           provider <- identities.providerGiven(req.email, req.tenant)
         } yield Response.json(encode(provider))
-      }
+      }.toTask
     }
 
     private def loginProviderForAccount(request: Request): Task[Response] = {
@@ -198,17 +219,56 @@ object router {
       def ensureUser(identity: CloudIdentity)(maybeUser: Option[RawUser]): Task[RawUser] = {
         maybeUser match
           case Some(user) => ZIO.succeed(user)
-          case None       => accounts.provision(identity).mapError(err => Exception(s"Error provisioning user account for '${identity.email}': ${err.getMessage}", err))
+          case None       => accounts.provisionSSO(identity)
       }
 
       ensureResponse {
         for
-          vgt       <- request.body.parse[VerifyGoogleTokenRequest]() .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing VerifyGoogleTokenRequest: ${err.getMessage}")))
-          identity  <- identities.verify(vgt)                         .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error verifying firebase token '${vgt.token}: ${err.getMessage}'")))
+          vgt       <- request.body.parse[VerifyGoogleTokenRequest]() .mapError(errors.badRequest("Error parsing VerifyGoogleTokenRequest"))
+          identity  <- identities.verify(vgt)                         .mapError(GuaraError.of(FirebaseError, s"Error verifying firebase token '${vgt.token}'"))
           fn        =  ensureUser(identity)
           (tk, enc) <- tokenGiven(identity.email) { fn }
-        yield loginResponse(tk, enc)
+        yield loginResponse(tk, enc).clearOriginal
+      }.toTask
+    }
+
+    private def provision(request: Request): Task[Response] = {
+
+      def ensureIdentifierAvailable(id: AccountIdentifier) = {
+        for
+          maybe <- repo.exec(FindAccountByIdentifier(id)).mapError(GuaraError.of("Error checking existing identifier"))
+          _     <- ZIO.foreach(maybe) { _ => ZIO.logWarning(s"Account '$id' already exists") *> errors.identifierTaken(id) }
+        yield ()
       }
+
+      ensureResponse {
+        for
+          _         <- ZIO.logInfo("Provisioning account")
+          req       <- request.body.parse[ProvisionRequest]().mapError(GuaraError.of("bad request"))
+          _         <- ensureMagic(req.magic)
+          _         <- ZIO.foreach(req.identifier) { ensureIdentifierAvailable }
+          maybeUser <- repo.exec(FindUserByEmail(req.email)).mapError(GuaraError.of(UsersError, "Error checking existing user"))
+          _         <- ZIO.foreach(maybeUser) { _ => ZIO.logWarning(s"User '${req.email}' already exists") *> errors.emailTaken(req.email) }
+          user      <- accounts.provision(req).mapError {
+                         case errors.IdentifierTakenException(id, _) => errors.identifierTakenError(id)
+                         case errors.EmailTakenException(email, _)   => errors.emailTakenError(email)
+                         case other                                  => GuaraError.of("Error provisioning account")(other)
+                       }
+          token     <- tokens.asToken(user)   .mapError(GuaraError.of("Error minting the token"))
+          encoded   <- tokens.encode(token)   .mapError(GuaraError.of("Error encoding the token"))
+          _         <- ZIO.logInfo(s"Account '${req.email}' provisioned")
+        yield loginResponse(token, encoded).clearOriginal
+      }.toTask
+    }
+
+    private def findAccountByIdentifier(request: Request): Task[Response] = {
+      ensureResponse {
+        for
+          req     <- request.body.parse[FindAccountByIdentifierRequest]().mapError(errors.badRequest("Error parsing FindAccountByIdentifierRequest"))
+          _       <- ensureMagic(req.magic)
+          account <- repo.exec(FindAccountByIdentifier(req.identifier)).mapError(GuaraError.of(AccountNotFound, "Error looking up account by identifier"))
+        yield Response.json(account.toJson)
+      }.toTask
     }
 
     private def emitToken(request: Request) = {
@@ -221,29 +281,41 @@ object router {
 
         tuple match
           case Some(user, UserKind.SA) => ZIO.succeed(user)
-          case Some(_, _ )             => ZIO.fail(Exception(s"Can't find service account: $email"))
-          case None                    => ZIO.fail(Exception(s"Can't find user: $email"))
+          case Some(_, _ )             => GuaraError.fail(UserNotFound, s"Can't find service account: $email")
+          case None                    => GuaraError.fail(UserNotFound, s"Can't find user: $email")
       }
 
       ensureResponse {
         for
           owner    <- tokenFrom(request)
-          req      <- request.body.parse[EmitToken]() .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error parsing request: ${err.getMessage}")))
-          same     =  req.magic.is(cfg.magic.password)
-          _        <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
+          req      <- request.body.parse[EmitToken]().mapError(errors.badRequest("Error parsing request"))
+          _        <- ensureMagic(req.magic)
           (_, enc) <- tokenGiven(req.email, req.days.getOrElse(365), Some(owner)) { ensureUser(req.email) }
           _        <- ZIO.logWarning(s"Service Account Token '${req.email}' created by '${owner.user.details.email}'")
         yield Response.text(enc)
-      }
+      }.toTask
     }
+
+    private def swapToken(request: Request) = ensureResponse {
+      for
+        req     <- request.body.parse[SwapTokenRequest]().mapError(errors.badRequest(s"Error parsing swap request"))
+        _       <- ensureMagic(req.magic)
+        _       <- ZIO.logInfo(s"Swap token request received")
+        mlUser  <- legacy.userByToken(req.token).mapError(     GuaraError.of(LegacyUserNotFound, s"Error looking up legacy user by token"))
+        user    <- ZIO.fromOption(mlUser)       .mapError(_ => GuaraError.of(LegacyUserNotFound, "Legacy user not found for the given token"))
+        _       <- ZIO.logInfo(s"Legacy user found: ${user.email}")
+        result  <- tokenGiven(user.email) { maybe => ZIO.fromOption(maybe).mapError(_ => GuaraError.of(UserNotFound, s"User '${user.email}' not found in morbid")) }
+        _       <- ZIO.logInfo(s"Token swapped for user '${user.email}'")
+      yield Response.text(result._2)
+    }.toTask
 
     private def tokenGiven(email: Email, days: Int = 1, owner: Option[Token] = None)(ensureUser: Option[RawUser] => Task[RawUser]): Task[(Token, String)] = {
       for
-        maybeUser <- repo.exec(FindUserByEmail(email)).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error locating user '$email': ${err.getMessage}'")))
-        user      <- ensureUser(maybeUser)            .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error ensuring user '$email': ${err.getMessage}'")))
-        token     <- tokens.asToken(user, days)       .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error creating token '$email': ${err.getMessage}'")))
+        maybeUser <- repo.exec(FindUserByEmail(email)).mapError(GuaraError.of(UserNotFound, s"Error locating user '$email'"))
+        user      <- ensureUser(maybeUser)            .mapError(GuaraError.of(UsersError, s"Error ensuring user '$email'"))
+        token     <- tokens.asToken(user, days)       .mapError(GuaraError.of(TokenError, s"Error creating token '$email'"))
         result    =  token.copy(impersonatedBy = owner.map(_.user.details))
-        encoded   <- tokens.encode(result)             .mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error encoding token '$email': ${err.getMessage}'")))
+        encoded   <- tokens.encode(result)            .mapError(GuaraError.of(TokenError, s"Error encoding token '$email'"))
       yield (result, encoded)
     }
 
@@ -252,16 +324,28 @@ object router {
         for {
           req       <- request.body.parse[LoginViaEmailLinkRequest]()
           maybeUser <- repo.exec(FindUserByEmail(req.email))
-          _         <- ZIO.fromOption(maybeUser)                         .mapError(_   => ReturnResponseError(Response.notFound(s"Can't find user '${req.email}'")))
-          link      <- identities.signInWithEmailLink(req.email, req.url).mapError(err => ReturnResponseWithExceptionError(err, Response.internalServerError(s"Error generating login link for '${req.email}'")))
+          _         <- ZIO.fromOption(maybeUser)                         .mapError(_   => GuaraError.of(UserNotFound, s"Can't find user '${req.email}'"))
+          link      <- identities.signInWithEmailLink(req.email, req.url).mapError(       GuaraError.of(FirebaseError, s"Error generating login link for '${req.email}'"))
         } yield Response.json(LoginViaEmailLinkResponse(link).toJson)
-      }
+      }.toTask
     }
 
     private def logoff(request: Request): Task[Response] = {
-      ZIO.succeed {
-        Response.ok.logOff
+
+      def plainLogoff = ZIO.succeed(Response.json(LogoffResponse(restored = false).toJson).logOff)
+
+      def restore(raw: String): Task[Response] = {
+        tokens.verify(raw).foldZIO(
+          failure = err => ZIO.logWarning(s"Stashed impersonator token is invalid: ${err.getMessage}") *> plainLogoff,
+          success = impersonator =>
+            ZIO.logInfo(s"Restoring session for '${impersonator.user.details.email}' after impersonation logout") *>
+              ZIO.succeed(Response.json(LogoffResponse(restored = true).toJson).loggedIn(raw).clearOriginal)
+        )
       }
+
+      request.cookie(morbid.MorbidCookies.OriginalToken).map(_.content).filter(_.nonEmpty) match
+        case Some(raw) => restore(raw)
+        case None      => plainLogoff
     }
 
     private def userBy(request: Request): Task[Response] = {
@@ -271,7 +355,7 @@ object router {
 
       def get(cmd: Command[Option[RawUser]]) = {
         for
-          user <- repo.exec(cmd).mapError(Exception(s"Error searching for user (id:${id.getOrElse("_")}, email:${email.getOrElse("_")})", _))
+          user <- repo.exec(cmd).mapError(GuaraError.of(UsersError, s"Error searching for user (id:${id.getOrElse("_")}, email:${email.getOrElse("_")})"))
         yield user match
           case Some(usr) => Response.json(usr.toJson)
           case None      => Response.notFound
@@ -310,17 +394,17 @@ object router {
 
       def uniqueCode: Task[GroupCode] = ZIO.attempt(GroupCode.of(Random.alphanumeric.take(16).mkString("")))
 
-      (for
+      for
         now     <- Clock.localDateTime
-        req     <- request.body.parse[StoreGroupRequest]().mapError(err => ReturnResponseError(Response.badRequest(err.getMessage)))
-        app     <- repo.exec(FindApplication(token.user.details.accountCode, application)).orFail(s"Can't find application '${application}'")
+        req     <- request.body.parse[StoreGroupRequest]().mapError(errors.badRequest("Error parsing StoreGroupRequest"))
+        app     <- repo.exec(FindApplication(token.user.details.accountCode, application)).orFail(ApplicationNotFound, s"Can't find application '${application}'")
         code    <- req.code.map(ZIO.succeed).getOrElse(uniqueCode)
         _       <- ZIO.logInfo(s"Storing group '${req.name} (${req.id}/$code)' with '${req.users.length}' users, '${req.roles.length}' roles, app '${app.details.code}', account '${token.user.details.account}', tenant '${token.user.details.tenant}'")
         _       <- ZIO.foreach(req.roles) { code => ZIO.logInfo(s"role: $code") }
         _       <- ZIO.foreach(req.users) { code => ZIO.logInfo(s"user: $code") }
         create  =  build(req, app, code, now)
         created <- repo.exec(create)
-      yield Response.json(created.toJson)).errorToResponse(Response.internalServerError("Error creating group"))
+      yield Response.json(created.toJson)
     }
 
     private def storeUserCommon(
@@ -353,21 +437,21 @@ object router {
 
           groupsByApp.get(application.code) match {
             case Some(Seq(group)) if group.code == GroupAll => linkTo(group)
-            case _                                          => ZIO.fail(Exception(s"Can't find group '${GroupAll}' for application '${application.code}'"))
+            case _                                          => GuaraError.fail(GroupNotFound, Status.NotFound, s"Can't find group '${GroupAll}' for application '${application.code}'")
           }
         }
 
         for
           groups <- repo.exec(FindGroups(acc.code, Seq(application.code), Seq(GroupAll)))
-          _      <- link(groups, user).asCommonError(10012, "Error adding user to group ALL")
+          _      <- link(groups, user).mapError(GuaraError.of(GroupError, "Error adding user to group ALL"))
         yield ()
       }
 
       def handleFirebaseUser(req: StoreUserRequest, acc: RawAccount, pass: Password) = {
         (req.id, req.update) match
-          case (Some(_), false) => identities.createUser(req.email, acc.tenantCode, pass).asCommonError(10011, "Error storing user identity")
+          case (Some(_), false) => identities.createUser(req.email, acc.tenantCode, pass).mapError(GuaraError.of(FirebaseError, "Error storing user identity"))
           case (Some(_), true)  => identities.getUserByEmail(req.email, acc.tenantCode)
-          case (None   , _)     => ZIO.fail(Exception(s"User id not provided"))
+          case (None   , _)     => GuaraError.fail(BadRequest, Status.BadRequest, s"User id not provided")
       }
 
       def handleLegacyMorbid(req: StoreUserRequest, account: RawAccount) = {
@@ -387,20 +471,20 @@ object router {
           acc <- (req.update, req.id) match
             case (false, _)        => createWithEmail
             case (true , Some(id)) => ZIO.succeed(req)
-            case (true , None)     => ZIO.fail(Exception("Missing parameter 'id'"))
+            case (true , None)     => GuaraError.fail(BadRequest, Status.BadRequest, "Missing parameter 'id'")
         yield acc
       }
 
       for
-        req    <- request.body.parse[StoreUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        req    <- request.body.parse[StoreUserRequest]().mapError(errors.badRequest("Error parsing StoreUserRequest"))
         acc    <- getAccount()
         app    <- getApplication()
         pass   = Password.of(RandomStringUtils.secure().nextAlphanumeric(10))
         legacy <- handleLegacyMorbid(req, acc)
         fbUser <- handleFirebaseUser(legacy, acc, pass)
-        store  = buildRequest(legacy, acc, fbUser.getUid).copy(email = req.email.toLowerCase)
+        store  = buildRequest(legacy, acc, fbUser.id).copy(email = req.email.toLowerCase)
         _      <- ZIO.logInfo(s"Storing user ${store.id} - ${store.email} || Account ${store.account.id} || Tenant ${store.account.tenantCode} || Update: ${store.update}")
-        user   <- repo.exec(store).asCommonError(10010, s"Error storing user '${store.email}'")
+        user   <- repo.exec(store).mapError(GuaraError.of(UsersError, s"Error storing user '${store.email}'"))
         _      <- ZIO.logInfo(s"User ${user.id} - ${user.email} stored")
         _      <- ZIO.when(req.id.isEmpty && !req.update) { whenNewUser(acc, user, app) }
       yield Response.json(user.toJson)
@@ -411,9 +495,9 @@ object router {
       val code  = summon[ApplicationCode]
       storeUserCommon(
         request,
-        ()   => repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(s"Can't find account '${token.user.details.accountCode}'"),
-        ()   => repo.exec(FindApplicationDetails(code)).orFail(s"Can't find application '$code'"),
-        user => ZIO.whenDiscard(user.account.id != token.user.details.account) { ZIO.fail(ReturnResponseError(Response.badRequest(s"User already exists in another account || requested by: ${token.user.details.email}")))}
+        ()   => repo.exec(FindAccountByCode(token.user.details.accountCode)).orFail(AccountNotFound, s"Can't find account '${token.user.details.accountCode}'"),
+        ()   => repo.exec(FindApplicationDetails(code)).orFail(ApplicationNotFound, s"Can't find application '$code'"),
+        user => ZIO.whenDiscard(user.account.id != token.user.details.account) { GuaraError.fail(s"User already exists in another account || requested by: ${token.user.details.email}") }
       )
     }
 
@@ -429,7 +513,7 @@ object router {
       val account = token.user.details.account
 
       for
-        req <- request.body.parse[RemoveUserRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        req <- request.body.parse[RemoveUserRequest]().mapError(errors.badRequest("Error parsing RemoveUserRequest"))
         _   <- ZIO.logWarning(s"Removing user '${req.code}'")
         _   <- removeUserCommon(account, req.code)
       yield Response.ok
@@ -442,7 +526,7 @@ object router {
       val application = token.user.application.id
 
       for
-        req    <- request.body.parse[RemoveGroupRequest]().mapError(e => ReturnResponseWithExceptionError(e, Response.badRequest(e.getMessage)))
+        req    <- request.body.parse[RemoveGroupRequest]().mapError(errors.badRequest("Error parsing RemoveGroupRequest"))
         _      <- ZIO.logWarning(s"Removing group '${req.code}'")
         result <- repo.exec(RemoveGroup(account, application, req.code))
       yield Response.json(result.toJson)
@@ -464,40 +548,56 @@ object router {
         uid   =  token.impersonatedBy.map(_.id).getOrElse(token.user.details.id)
         valid <- pins.validate(uid, req.pin)
       } yield if(valid) res(Status.Ok, "true") else res(Status.Forbidden, "false")
-    }
+    }.toTask
 
     private def verify(request: Request): Task[Response] = ensureResponse {
       for {
         req   <- request.body.parse[VerifyMorbidTokenRequest]().mapError(forbidden)
         token <- tokens.verify(req.token)                      .mapError(forbidden)
       } yield Response.json(token.toJson)
-    }
+    }.toTask
 
     private def impersonate(request: Request): Task[Response] = ensureResponse {
-      for {
-        impersonator <- tokenFrom(request)
-        req          <- request.body.parse[ImpersonationRequest]()
-        same         =  req.magic.is(cfg.magic.password)
-        _            <- ZIO.when(!same) { ZIO.fail(new Exception("Bad Magic")) }
-        user         <- repo.exec(FindUserByEmail(req.email))
-        token        <- user match {
-                          case Some(usr) => tokens.asToken(usr)
-                          case None      => ZIO.fail(ReturnResponseError(Response.notFound(s"user ${req.email} not found")))
-                        }
-        _            <- ZIO.logInfo(s"User '${token.user.details.email}' impersonated by ${impersonator.user.details.email}")
-        impersonated = token.copy(impersonatedBy = Some(impersonator.user.details))
-        encoded      <- tokens.encode(impersonated)
-      } yield loginResponse(impersonated, encoded)
-    }
+      for
+        impersonator    <- tokenFrom(request)
+        impersonatorRaw <- ZIO.fromOption(rawTokenFrom(request)).mapError(GuaraError.of(Unauthorized, Status.Unauthorized, "Missing impersonator token"))
+        req             <- request.body.parse[ImpersonationRequest]()
+        _               <- ensureMagic(req.magic)
+        user            <- repo.exec(FindUserByEmail(req.email))
+        token           <- user match {
+                             case Some(usr) => tokens.asToken(usr)
+                             case None      => errors.userNotFound(s"user ${req.email} not found")
+                           }
+        _               <- ZIO.logInfo(s"User '${token.user.details.email}' impersonated by ${impersonator.user.details.email}")
+        impersonated    =  token.copy(impersonatedBy = Some(impersonator.user.details))
+        encoded         <- tokens.encode(impersonated)
+      yield loginResponse(impersonated, encoded).stashOriginal(impersonatorRaw)
+    }.toTask
 
     private def usersGiven(request: Request, application: ApplicationCode, group: Option[GroupCode] = None): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
         seq <- repo.exec(FindUsersInGroup(tk.user.details.accountCode, application, group))
       } yield Response.json(seq.toJson)
-    }
+    }.toTask
 
     private def groupUsers(app: String, group: String, request: Request): Task[Response] = usersGiven(request, ApplicationCode.of(app), Some(GroupCode.of(group)))
+
+    private def groupsByUser(app: String, request: Request): Task[Response] = ensureResponse {
+      for {
+        tk  <- tokenFrom(request)
+        req <- request.body.parse[GetUserGroupsRequest]().mapError(errors.badRequest("Error parsing request GetUserGroupsRequest"))
+        seq <- repo.exec(FindGroupsByUser(tk.user.details.accountCode, ApplicationCode.of(app), req.user))
+      } yield Response.json(seq.toJson)
+    }.toTask
+
+    private def setUserGroups(app: String, request: Request): Task[Response] = ensureResponse {
+      for
+        tk  <- tokenFrom(request)
+        req <- request.body.parse[SetUserGroupsRequest]().mapError(errors.badRequest("Error parsing request SetUserGroupsRequest"))
+        ok  <- repo.exec(SetUserGroups(tk.user.details.accountCode, ApplicationCode.of(app), req.user, req.groups))
+      yield Response.json(ok.toJson)
+    }.toTask
 
     private def groupsGiven(app: String, request: Request): Task[Response] = ensureResponse {
       val appCode = ApplicationCode.of(app)
@@ -508,31 +608,29 @@ object router {
       } yield map.get(appCode) match
         case Some(groups) => Response.json(groups.toJson)
         case None         => Response.notFound(s"Can't find groups for '$app'")
-    }
+    }.toTask
 
     private def rolesGiven(app: String, request: Request): Task[Response] = ensureResponse {
       for {
         tk  <- tokenFrom(request)
         seq <- repo.exec(FindRoles(tk.user.details.accountCode, ApplicationCode.of(app)))
       } yield Response.json(seq.toJson)
-    }
+    }.toTask
 
-    private def sameUserOr[T <: HasEmail, R](role: Role)(fn: (SingleAppUser, T) => Task[R])(request: Request)(using token: SingleAppToken)(using JsonDecoder[T], JsonEncoder[R]): Task[Response] = ensureResponse {
+    private def sameUserOr[T <: HasEmail, R](role: Role)(fn: (SingleAppUser, T) => Task[R])(request: Request)(using token: SingleAppToken)(using JsonDecoder[T], JsonEncoder[R]): Task[Response] = (ensureResponse {
 
       def ifAdmLoadUserSameAccount(token: SingleAppToken, req: T): Task[SingleAppUser] = {
-
-        def badRequest(reason: String) = ZIO.fail(ReturnResponseError(Response.badRequest(s"Can't find user '${req.email}' ($reason)")))
 
         val application = token.user.application.code
         val isAdm       = role.isSatisfiedBy(token)
 
         for
-          _           <- ZIO.when( !isAdm ) { badRequest("not admin") }
+          _           <- ZIO.when( !isAdm ) { errors.notAuthorized("not admin") }
           maybe       <- repo.exec(FindUserByEmail(req.email))
-          user        <- ZIO.fromOption(maybe).mapError(_ => ReturnResponseError(Response.notFound(s"Can't find user '${req.email}'")))
-          narrowed    <- ZIO.fromOption(user.narrowTo(application)).mapError(_ => ReturnResponseError(Response.forbidden(s"User '${req.email}' has no access to application '${application}'")))
+          user        <- ZIO.fromOption(maybe)                     .mapError(GuaraError.of(UserNotFound, Status.NotFound    , s"Can't find user '${req.email}'"))
+          narrowed    <- ZIO.fromOption(user.narrowTo(application)).mapError(GuaraError.of(Unauthorized, Status.Unauthorized, s"User '${req.email}' has no access to application '${application}'"))
           sameAccount = token.user.details.account == user.details.account
-          _           <- ZIO.when( !sameAccount ) { badRequest("other account") }
+          _           <- ZIO.when( !sameAccount ) { errors.notAuthorized("other account") }
         yield narrowed
       }
 
@@ -542,7 +640,7 @@ object router {
         user   <- if (me) ZIO.succeed(token.user) else ifAdmLoadUserSameAccount(token, req)
         result <- fn(user, req)
       } yield Response.json(result.toJson)
-    }
+    }).toTask
 
     private def setUserPin: AppRoute = sameUserOr[SetUserPin, Boolean]("adm" or "user_adm") { (user, req) =>
       for {
@@ -555,7 +653,7 @@ object router {
       val email = user.details.email
       for
         _ <- ZIO.logInfo(s"Changing password for '$email'")
-        _ <- ZIO.when(!req.password.isValid) { ZIO.fail(Exception(s"Password for user '$email' is not valid")) }
+        _ <- ZIO.when(!req.password.isValid) { GuaraError.fail(Forbidden, Status.Forbidden, s"Password for user '$email' is not valid") }
         _ <- identities.changePassword(email, req.password)
       yield true
     }
@@ -567,22 +665,20 @@ object router {
       yield link
     }
 
-    private def setUserPinToBeRemoved(request: Request)(using application: ApplicationCode): Task[Response] = ensureResponse {
+    private def setUserPinToBeRemoved(request: Request)(using application: ApplicationCode): Task[Response] = (ensureResponse {
 
       def changeMyPin(token: Token): Task[UserId] = ZIO.succeed(token.user.details.id)
 
       def changeSomebodyElse(token: Token, req: SetUserPin): Task[UserId] = {
 
-        def badRequest(reason: String) = ZIO.fail(ReturnResponseError(Response.badRequest(s"Can't reset PIN for '${req.email}' ($reason)")))
-
-        val isAdm =  ("adm" or "user_adm").isSatisfiedBy(token)
+        val isAdm = ("adm" or "user_adm").isSatisfiedBy(token)
 
         for
-          _           <- ZIO.when( !isAdm ) { badRequest("not admin") }
+          _           <- ZIO.when( !isAdm ) { errors.notAuthorized("not admin") }
           maybe       <- repo.exec(FindUserByEmail(req.email))
-          user        <- ZIO.fromOption(maybe).mapError(_ => ReturnResponseError(Response.notFound(s"Can't find user '${req.email}'")))
+          user        <- ZIO.fromOption(maybe).mapError(GuaraError.of(UserNotFound, Status.NotFound, s"Can't find user '${req.email}'"))
           sameAccount = token.user.details.account == user.details.account
-          _           <- ZIO.when( !sameAccount ) { badRequest("other account") }
+          _           <- ZIO.when( !sameAccount ) { errors.notAuthorized("other account") }
         yield user.details.id
       }
 
@@ -593,82 +689,40 @@ object router {
         id    <- if (me) changeMyPin(token) else changeSomebodyElse(token, req)
         _     <- pins.set(id, req.pin)
       } yield Response.json(true.toJson)
-    }
+    }).toTask
 
-    private def passwordResetLinkToBeRemoved(request: Request)(using application: ApplicationCode): Task[Response] = ensureResponse {
+    private def passwordResetLinkToBeRemoved(request: Request)(using application: ApplicationCode): Task[Response] = (ensureResponse {
 
       def changeMyPassword(token: Token, req: RequestPasswordRequestLink): Task[Email] = ZIO.succeed(token.user.details.email)
 
       def changeSomebodyElse(token: Token, req: RequestPasswordRequestLink): Task[Email] = {
 
-        def badRequest(reason: String) = ZIO.fail(ReturnResponseError(Response.badRequest(s"Can't reset password for '${req.email}' ($reason)")))
-
-        val isAdm =  ("adm" or "user_adm").isSatisfiedBy(token)
+        val isAdm = ("adm" or "user_adm").isSatisfiedBy(token)
 
         for
-          _           <- ZIO.when( !isAdm ) { badRequest("not admin") }
+          _           <- ZIO.when( !isAdm ) { errors.notAuthorized("not admin") }
           maybe       <- repo.exec(FindUserByEmail(req.email))
-          user        <- ZIO.fromOption(maybe).mapError(_ => ReturnResponseError(Response.notFound(s"Can't find user '${req.email}'")))
+          user        <- ZIO.fromOption(maybe).mapError(GuaraError.of(UserNotFound, Status.NotFound, s"Can't find user '${req.email}'"))
           sameAccount = token.user.details.account == user.details.account
-          _           <- ZIO.when( !sameAccount ) { badRequest("other account") }
+          _           <- ZIO.when( !sameAccount ) { errors.notAuthorized("other account") }
         yield req.email
       }
 
       for
         token <- tokenFrom(request)
-        req   <- request.body.parse[RequestPasswordRequestLink]()
+        req   <- request.body.parse[RequestPasswordRequestLink]().mapError(errors.badRequest("Error parsing RequestPasswordRequestLink"))
         me    =  token.user.details.email == req.email
         email <- if (me) changeMyPassword(token, req) else changeSomebodyElse(token, req)
         link  <- identities.passwordResetLink(email)
       yield Response.json(PasswordResetLink(link).toJson)
 
-    }
+    }).toTask
 
     private def provisionAccount: AppRoute = role("adm") { request =>
-
-      val Presto = summon[ApplicationCode]
-
-      def createGroups(now: LocalDateTime, app: RawApplication, acc: RawAccount): Task[Seq[RawGroup]] = {
-
-        val groups = Seq(
-          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.all  , name = GroupName.of("Todos"), roles = Seq.empty),
-          RawGroup(id = GroupId.of(0), created = now, deleted = None, code = GroupCode.admin, name = GroupName.of("Admin"), roles = Seq.empty)
-        )
-
-        val commands = groups.map { group =>
-          val roles = if(group.code == GroupCode.admin) Seq(RoleCode.of("adm")) else Seq.empty
-          StoreGroup(account = acc.id, accountCode = acc.code, application = app, group = group, users = Seq.empty, roles = roles)
-        }
-
-        ZIO.foreach(commands) {
-          repo.exec
-        }
-      }
-
       for
         req     <- request.body.parse[CreateAccount]()
-        _       <- ZIO.logInfo(s"Account Provisioning '${req.email}'")
-        maybe   <- repo.exec(FindApplicationDetails(Presto))
-        details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$Presto'"))
-        acc     <- repo.exec {
-          req
-            .into[StoreAccount]
-            .withFieldConst(_.active, true)
-            .withFieldConst(_.update, false)
-            .transform
-        }
-        app     =  RawApplication(details)
-        _       <- repo.exec(LinkAccountToApp(acc.id,  app.details.id))
-        now     <- Clock.localDateTime
-        groups  <- createGroups(now, app, acc)
-        admin   <- ZIO.fromOption(groups.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find group 'admin' after account creation"))
-        all     <- ZIO.fromOption(groups.find(_.code == GroupCode.all)  .map(_.id)).mapError(_ => Exception("Can't find group 'all' after account creation"))
-        fbUser  <- identities.createUser(req.email, acc.tenantCode, Password.of(RandomStringUtils.secure().nextAlphanumeric(10)))
-        store   = StoreUser(id = req.user, email = req.email.toLowerCase, code = UserCode.of(fbUser.getUid), account = acc, kind = None, update = false, active = true)
-        user    <- repo.exec(store)
-        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = admin, users = Seq(user.id)))
-        _       <- repo.exec(LinkUsersToGroup(application = app.details.id, group = all  , users = Seq(user.id)))
-        created <- repo.exec(FindUserById(user.id))
+        _       <- accounts.create(req).tapErrorCause(cause => ZIO.logErrorCause("Error creating account", cause))
+        created <- repo.exec(FindUserById(req.user))
       yield created match
         case None        => Response.internalServerError(s"Error provisioning account ${req.email}")
         case Some(value) => Response.json(value.toJson)
@@ -680,14 +734,14 @@ object router {
 
       for
         form    <- request.body.asMultipartForm
-        code    <- ZIO.fromOption(form.get("account")).mapError(_ => Exception("No field called 'account'"))
-        file    <- ZIO.fromOption(form.get("file"))   .mapError(_ => Exception("No field called 'file'"))
+        code    <- ZIO.fromOption(form.get("account")).mapError(GuaraError.of(BadRequest, Status.BadRequest, "No field called 'account'"))
+        file    <- ZIO.fromOption(form.get("file"))   .mapError(GuaraError.of(BadRequest, Status.BadRequest, "No field called 'file'"))
         value   <- code.asText
         text    <- file.asText
         acc     <- repo.get(FindAccountByCode(AccountCode.of(value))) { s"Can't find account '$value'" }
         app     <- repo.get(FindApplicationDetails(appCode))          { s"Can't find application '$appCode' "}
         groups  <- repo.exec(FindGroups(account = acc.code, apps = Seq(appCode)))
-        group   <- ZIO.fromOption(groups.get(appCode).flatMap(_.find(_.code == GroupCode.all))).mapError(_ => Exception(s"Can't find group '${GroupCode.all}' in account '${acc.id}'"))
+        group   <- ZIO.fromOption(groups.get(appCode).flatMap(_.find(_.code == GroupCode.all))).mapError(GuaraError.of(GroupNotFound, s"Can't find group '${GroupCode.all}' in account '${acc.id}'"))
         entries <- accounts.parseCSV(acc, text)
         created =  entries.map(_._2).filter(_.isSuccess).map(_.get).map(_.id)
         _       <- repo.exec(LinkUsersToGroup(app.id, group.id, created))
@@ -702,11 +756,10 @@ object router {
     private def entitiesByValidate[R](validateToken: ValidateToken)(request: Request, command: Command[R])(using JsonCodec[R]) = ensureResponse {
       for
         _   <- validateToken(request)
-        tk  <- tokenFrom(request)
-        _   <- ZIO.logInfo(s"Executing 'EntitiesByValidate' | Requested by: ${tk.user.details.email} | Command: ${command.getClass.toString}")
+        _   <- ZIO.logInfo(s"Executing 'EntitiesByValidate' | Requested by: Service | Command: ${command.getClass.toString}")
         res <- repo.exec(command)
       yield Response.json(res.toJson)
-    }
+    }.toTask
 
     private def accountsByApp(validateToken: ValidateToken)(app: String, request: Request) = {
       entitiesByValidate(validateToken)(request, FindAccountsByApp(ApplicationCode.of(app)))
@@ -736,8 +789,8 @@ object router {
 
         for
           grps  <- ZIO.foreach(commands) { repo.exec }
-          admin <- ZIO.fromOption(grps.find(_.code == GroupCode.admin).map(_.id)).mapError(_ => Exception("Can't find group 'admin' after account creation"))
-          all   <- ZIO.fromOption(grps.find(_.code == GroupCode.all).map(_.id)).mapError(_ => Exception("Can't find group 'all' after account creation"))
+          admin <- ZIO.fromOption(grps.find(_.code == GroupCode.admin).map(_.id)).mapError(GuaraError.of(GroupNotFound, "Can't find group 'admin' after account creation"))
+          all   <- ZIO.fromOption(grps.find(_.code == GroupCode.all).map(_.id))  .mapError(GuaraError.of(GroupNotFound, "Can't find group 'all' after account creation"))
         yield ()
       }
 
@@ -759,7 +812,7 @@ object router {
             case (false, Some(id)) => createWithId(id)
             case (false, None)     => createWithoutId // TODO Verificar, se não validarmos corretamente, vai ocasionar contas duplicadas, caso a conta já exista no console4 e o usuário não tenha passado o id da conta no Presto por ex
             case (true , Some(id)) => ZIO.succeed(req) // Legacy morbid does not update accounts
-            case (true , None)     => ZIO.fail(Exception("Missing parameter 'id'"))
+            case (true , None)     => GuaraError.fail(BadRequest, Status.BadRequest, "Missing parameter 'id'")
         yield acc
       }
 
@@ -774,6 +827,7 @@ object router {
         val app = RawApplication(details)
         for
           _   <- repo.exec(LinkAccountToApp(account.id, app.details.id))
+          _   <- accounts.linkDefaultPlan(account.id, app.details.code)
           now <- Clock.localDateTime
           _   <- ZIO.when(req.update) { createGroups(now, app, account) }
         yield ()
@@ -787,7 +841,7 @@ object router {
         legacy  <- handleLegacyMorbid(req)
         code    = ApplicationCode.of(app)
         maybe   <- repo.exec(FindApplicationDetails(code))
-        details <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Can't find application '$code'"))
+        details <- ZIO.fromOption(maybe).mapError(GuaraError.of(ApplicationNotFound, s"Can't find application '$code'"))
         acc     <- repo.exec(buildEntity(legacy))
         _       <- ZIO.unless(req.update) { afterInsert(details, acc, req) }
       yield Response.json(acc.toJson)
@@ -807,8 +861,8 @@ object router {
         _        <- requireRootAccount(request)
         response <- storeUserCommon(
           request,
-          ()   => repo.exec(FindAccountById(AccountId.of(acc))).orFail(s"Can't find account '$acc'"),
-          ()   => repo.exec(FindApplicationDetails(ApplicationCode.of(app))).orFail(s"Can't find application '$app'"),
+          ()   => repo.exec(FindAccountById(AccountId.of(acc))).orFail(AccountNotFound, s"Can't find account '$acc'"),
+          ()   => repo.exec(FindApplicationDetails(ApplicationCode.of(app))).orFail(ApplicationNotFound, s"Can't find application '$app'"),
           user => ZIO.unit
         )
       yield response
@@ -823,237 +877,49 @@ object router {
       yield Response.json(true.toJson)
     }
 
+    private def admins(validateToken: ValidateToken)(app: String, request: Request) = {
+      entitiesByValidate(validateToken)(request, GetAdmins(request.query("account").toOption.map(AccountId.of), ApplicationCode.of(app)))
+    }
+
+
+    // Service-to-service impersonation: given an account, elect its admin server-side and
+    // mint a session token for them, returning the encoded JWT (as /swap does). Gated by the
+    // service token AND magic, since this lets the holder act as any account's admin.
+    private def impersonateAccountAdmin(validateToken: ValidateToken)(app: String, acc: Long, request: Request): Task[Response] = ensureResponse {
+
+      // Deterministically elects an account's admin to impersonate: the oldest (lowest id)
+      // active admin user. GetAdmins already restricts to active users in the account's
+      // `admin` group, so this only tie-breaks between them for a reproducible choice.
+      def electAdmin(admins: Seq[RawAccountAdmin]): Option[RawUserEntry] = {
+        admins.flatMap(_.users).sortBy(user => UserId.value(user.id)).headOption
+      }
+
+      val account = AccountId.of(acc)
+      for
+        _         <- validateToken(request)
+        req       <- request.body.parse[ImpersonateAccountAdminRequest]().mapError(errors.badRequest("Error parsing ImpersonateAccountAdminRequest"))
+        _         <- ensureMagic(req.magic)
+        admins    <- repo.exec(GetAdmins(Some(account), ApplicationCode.of(app)))
+        entry     <- electAdmin(admins) match {
+                       case Some(entry) => ZIO.succeed(entry)
+                       case None        => errors.userNotFound(s"Account '$acc' has no admin user to impersonate")
+                     }
+        maybeUser <- repo.exec(FindUserByEmail(entry.email))
+        user      <- maybeUser match {
+                       case Some(usr) => ZIO.succeed(usr)
+                       case None      => errors.userNotFound(s"Admin user '${entry.email}' not found")
+                     }
+        token     <- tokens.asToken(user)
+        encoded   <- tokens.encode(token)
+        _         <- ZIO.logInfo(s"Admin '${entry.email}' of account '$acc' impersonated by service for app '$app'")
+      yield Response.text(encoded).loggedIn(encoded)
+    }.toTask
+
     private def requireRootAccount(request: Request) = {
       for
         tk <- tokenFrom(request)
-        _  <- ZIO.unless(tk.user.details.account == RootAccount) { ZIO.fail(ReturnResponseError(Response.forbidden("Operation required root account"))) }
+        _  <- ZIO.unless(tk.user.details.account == RootAccount) { errors.notAuthorized("Operation required root account") }
       yield ()
-    }
-
-    private def managerGetTenants(app: String, request: Request) = ensureResponse {
-      for
-        _    <- requireRootAccount(request)
-        rows <- repo.exec(FindTenants())
-      yield Response.json(rows.toJson)
-    }
-
-    private def managerStoreTenant(app: String, request: Request) = ensureResponse {
-      for
-        tk  <- tokenFrom(request)
-        _   <- requireRootAccount(request)
-        req <- request.body.parse[StoreTenantRequest]()
-        _   <- ZIO.logInfo(s"Store tenant ${req.id}-${req.code} || Requested by: ${tk.user.details.email}")
-        out <- repo.exec(StoreTenant(id = req.id, code = req.code, name = req.name, active = req.active))
-      yield Response.json(out.toJson)
-    }
-
-    private def managerUpdateTenant(app: String, id: Long, request: Request) = ensureResponse {
-      for
-        tk  <- tokenFrom(request)
-        _   <- requireRootAccount(request)
-        raw <- request.body.parse[StoreTenantRequest]()
-        _   <- ZIO.logInfo(s"Update tenant $id || Requested by: ${tk.user.details.email}")
-        out <- repo.exec(StoreTenant(id = Some(TenantId.of(id)), code = raw.code, name = raw.name, active = raw.active))
-      yield Response.json(out.toJson)
-    }
-
-    private def managerRemoveTenant(app: String, id: Long, request: Request) = ensureResponse {
-      for
-        tk <- tokenFrom(request)
-        _  <- requireRootAccount(request)
-        _  <- ZIO.logInfo(s"Delete tenant $id || Requested by: ${tk.user.details.email}")
-        n  <- repo.exec(RemoveTenant(TenantId.of(id)))
-      yield Response.json(n.toJson)
-    }
-
-    private def managerGetProviders(app: String, acc: Long, request: Request) = ensureResponse {
-      for
-        _    <- requireRootAccount(request)
-        rows <- repo.exec(FindProvidersByAccount(AccountId.of(acc)))
-      yield Response.json(rows.toJson)
-    }
-
-    private def managerStoreProvider(app: String, acc: Long, request: Request) = ensureResponse {
-      for
-        tk  <- tokenFrom(request)
-        _   <- requireRootAccount(request)
-        raw <- request.body.parse[StoreIdentityProviderRequest]()
-        _   <- ZIO.logInfo(s"Store provider ${raw.code} on account $acc || Requested by: ${tk.user.details.email}")
-        out <- repo.exec(StoreIdentityProvider(
-                 id      = raw.id,
-                 account = AccountId.of(acc),
-                 active  = raw.active,
-                 domain  = raw.domain,
-                 kind    = raw.kind,
-                 code    = raw.code,
-                 name    = raw.name,
-               ))
-      yield Response.json(out.toJson)
-    }
-
-    private def managerUpdateProvider(app: String, acc: Long, id: Long, request: Request) = ensureResponse {
-      for
-        tk  <- tokenFrom(request)
-        _   <- requireRootAccount(request)
-        raw <- request.body.parse[StoreIdentityProviderRequest]()
-        _   <- ZIO.logInfo(s"Update provider $id on account $acc || Requested by: ${tk.user.details.email}")
-        out <- repo.exec(StoreIdentityProvider(
-                 id      = Some(ProviderId.of(id)),
-                 account = AccountId.of(acc),
-                 active  = raw.active,
-                 domain  = raw.domain,
-                 kind    = raw.kind,
-                 code    = raw.code,
-                 name    = raw.name,
-               ))
-      yield Response.json(out.toJson)
-    }
-
-    private def managerRemoveProvider(app: String, acc: Long, id: Long, request: Request) = ensureResponse {
-      for
-        tk <- tokenFrom(request)
-        _  <- requireRootAccount(request)
-        _  <- ZIO.logInfo(s"Delete provider $id on account $acc || Requested by: ${tk.user.details.email}")
-        n  <- repo.exec(RemoveIdentityProvider(AccountId.of(acc), ProviderId.of(id)))
-      yield Response.json(n.toJson)
-    }
-
-    private def managerRemoveApplication(id: Long, request: Request) = ensureResponse {
-      for
-        tk <- tokenFrom(request)
-        _  <- requireRootAccount(request)
-        _  <- ZIO.logInfo(s"Delete application $id || Requested by: ${tk.user.details.email}")
-        n  <- repo.exec(RemoveApplication(ApplicationId.of(id)))
-      yield Response.json(n.toJson)
-    }
-
-    private def managerListApiKeys(app: String, acc: Long, request: Request) = ensureResponse {
-      for
-        _     <- requireRootAccount(request)
-        all   <- repo.exec(UsersByAccount(ApplicationCode.of(app), AccountId.of(acc)))
-        keys   = all.filter(_.kind.contains(UserKind.SA))
-      yield Response.json(keys.toJson)
-    }
-
-    private def managerIssueApiKey(app: String, acc: Long, request: Request) = ensureResponse {
-
-      def ensureUser(email: Email)(maybe: Option[RawUser]) = {
-        maybe.flatMap(u => u.details.kind.map(k => (u, k))) match
-          case Some(user, UserKind.SA) => ZIO.succeed(user)
-          case Some(_   , _ )          => ZIO.fail(Exception(s"User '$email' exists but is not a service account"))
-          case None                    => ZIO.fail(Exception(s"Service account '$email' not found after creation"))
-      }
-
-      for
-        owner    <- tokenFrom(request)
-        _        <- requireRootAccount(request)
-        req      <- request.body.parse[CreateApiKeyRequest]()
-        _        <- ZIO.logInfo(s"Issue API key for '${req.email}' on account $acc || Requested by: ${owner.user.details.email}")
-        storeReq  = StoreUserRequest(
-                      id       = None,
-                      code     = None,
-                      kind     = Some(UserKind.SA),
-                      email    = req.email,
-                      password = None,
-                      tenant   = None,
-                      active   = true,
-                      update   = false,
-                    )
-        bodyJson  = storeReq.toJson
-        synthetic = request.copy(body = Body.fromString(bodyJson))
-        response <- storeUserCommon(
-                      synthetic,
-                      ()   => repo.exec(FindAccountById(AccountId.of(acc))).orFail(s"Can't find account '$acc'"),
-                      ()   => repo.exec(FindApplicationDetails(ApplicationCode.of(app))).orFail(s"Can't find application '$app'"),
-                      user => ZIO.unit,
-                    )
-        _        <- ZIO.when(response.status.code != 200) { ZIO.fail(ReturnResponseError(response)) }
-        pair     <- tokenGiven(req.email, req.days.getOrElse(365), Some(owner)) { ensureUser(req.email) }
-        (_, enc)  = pair
-        maybe    <- repo.exec(FindUserByEmail(req.email))
-        user     <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Service account '${req.email}' missing after creation"))
-        entry     = user.details.transformInto[RawUserEntry]
-      yield Response.json(ApiKeyIssued(entry, enc).toJson)
-    }
-
-    private def managerRemoveApiKey(app: String, acc: Long, code: String, request: Request) = ensureResponse {
-      for
-        tk <- tokenFrom(request)
-        _  <- requireRootAccount(request)
-        _  <- ZIO.logInfo(s"Revoke API key $code on account $acc || Requested by: ${tk.user.details.email}")
-        _  <- removeUserCommon(AccountId.of(acc), UserCode.of(code))
-      yield Response.json(true.toJson)
-    }
-
-    private def managerListApplications(app: String, request: Request) = ensureResponse {
-      for
-        _    <- requireRootAccount(request)
-        rows <- repo.exec(FindAllApplications)
-      yield Response.json(rows.toJson)
-    }
-
-    private def managerListAllAccounts(app: String, request: Request) = ensureResponse {
-      for
-        _    <- requireRootAccount(request)
-        rows <- repo.exec(FindAllAccounts)
-      yield Response.json(rows.toJson)
-    }
-
-    private def managerListAccountApps(app: String, acc: Long, request: Request) = ensureResponse {
-      for
-        _    <- requireRootAccount(request)
-        rows <- repo.exec(FindApplicationsByAccountId(AccountId.of(acc)))
-      yield Response.json(rows.toJson)
-    }
-
-    private def managerLinkAccountApp(app: String, acc: Long, code: String, request: Request) = ensureResponse {
-      for
-        tk       <- tokenFrom(request)
-        _        <- requireRootAccount(request)
-        details  <- repo.exec(FindApplicationDetails(ApplicationCode.of(code)))
-                      .someOrFail(ReturnResponseError(Response.notFound(s"Application '$code' not found")))
-        _        <- ZIO.logInfo(s"Link account $acc to app '$code' || Requested by: ${tk.user.details.email}")
-        _        <- repo.exec(LinkAccountToApp(AccountId.of(acc), details.id))
-      yield Response.json(true.toJson)
-    }
-
-    private def managerUnlinkAccountApp(app: String, acc: Long, code: String, request: Request) = ensureResponse {
-      for
-        tk       <- tokenFrom(request)
-        _        <- requireRootAccount(request)
-        details  <- repo.exec(FindApplicationDetails(ApplicationCode.of(code)))
-                      .someOrFail(ReturnResponseError(Response.notFound(s"Application '$code' not found")))
-        _        <- ZIO.logInfo(s"Unlink account $acc from app '$code' || Requested by: ${tk.user.details.email}")
-        _        <- repo.exec(UnlinkAccountFromApp(AccountId.of(acc), details.id))
-      yield Response.json(true.toJson)
-    }
-
-    private def managerListAppRoles(app: String, code: String, request: Request) = ensureResponse {
-      for
-        _    <- requireRootAccount(request)
-        rows <- repo.exec(FindRolesByApp(ApplicationCode.of(code)))
-      yield Response.json(rows.toJson)
-    }
-
-    private def managerListAccountAppGroups(app: String, acc: Long, code: String, request: Request) = ensureResponse {
-      val appCode = ApplicationCode.of(code)
-      for
-        _       <- requireRootAccount(request)
-        account <- repo.exec(FindAccountById(AccountId.of(acc)))
-                     .someOrFail(ReturnResponseError(Response.notFound(s"Account '$acc' not found")))
-        map     <- repo.exec(FindGroups(account.code, Seq(appCode)))
-      yield Response.json(map.getOrElse(appCode, Seq.empty).toJson)
-    }
-
-    private def managerListGroupUsers(app: String, acc: Long, code: String, grp: String, request: Request) = ensureResponse {
-      val appCode   = ApplicationCode.of(code)
-      val groupCode = GroupCode.of(grp)
-      for
-        _       <- requireRootAccount(request)
-        account <- repo.exec(FindAccountById(AccountId.of(acc)))
-                     .someOrFail(ReturnResponseError(Response.notFound(s"Account '$acc' not found")))
-        users   <- repo.exec(FindUsersInGroup(account.code, appCode, Some(groupCode)))
-      yield Response.json(users.toJson)
     }
 
     private def managerRoutes = Routes(
@@ -1063,69 +929,48 @@ object router {
       Method.POST   / "app" / string("app") / "manager/account" / long("acc") / "user"                  -> handler(managerStoreUser),
       Method.DELETE / "app" / string("app") / "manager/account" / long("acc") / "user" / string("code") -> handler(managerRemoveUser),
       Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "users"                 -> handler(managerGetUsers),
-      /* tenants */
-      Method.GET    / "app" / string("app") / "manager/tenants"                                         -> handler(managerGetTenants),
-      Method.POST   / "app" / string("app") / "manager/tenants"                                         -> handler(managerStoreTenant),
-      Method.PUT    / "app" / string("app") / "manager/tenants" / long("id")                            -> handler(managerUpdateTenant),
-      Method.DELETE / "app" / string("app") / "manager/tenants" / long("id")                            -> handler(managerRemoveTenant),
-      /* identity providers per account */
-      Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "providers"             -> handler(managerGetProviders),
-      Method.POST   / "app" / string("app") / "manager/account" / long("acc") / "providers"             -> handler(managerStoreProvider),
-      Method.PUT    / "app" / string("app") / "manager/account" / long("acc") / "providers" / long("id")-> handler(managerUpdateProvider),
-      Method.DELETE / "app" / string("app") / "manager/account" / long("acc") / "providers" / long("id")-> handler(managerRemoveProvider),
-      /* applications delete */
-      Method.DELETE / "application" / long("id")                                                        -> handler(managerRemoveApplication),
-      /* api keys (service accounts) per account */
-      Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "api-keys"              -> handler(managerListApiKeys),
-      Method.POST   / "app" / string("app") / "manager/account" / long("acc") / "api-keys"              -> handler(managerIssueApiKey),
-      Method.DELETE / "app" / string("app") / "manager/account" / long("acc") / "api-keys" / string("code") -> handler(managerRemoveApiKey),
-      /* applications: system-wide listing + per-account enable/disable */
-      Method.GET    / "app" / string("app") / "manager/applications"                                    -> handler(managerListApplications),
-      /* accounts: system-wide listing (no X-Admin-App filter) */
-      Method.GET    / "app" / string("app") / "manager/accounts/all"                                    -> handler(managerListAllAccounts),
-      Method.GET    / "app" / string("app") / "manager/applications" / string("code") / "roles"         -> handler(managerListAppRoles),
-      Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "apps"                  -> handler(managerListAccountApps),
-      Method.POST   / "app" / string("app") / "manager/account" / long("acc") / "apps" / string("code") -> handler(managerLinkAccountApp),
-      Method.DELETE / "app" / string("app") / "manager/account" / long("acc") / "apps" / string("code") -> handler(managerUnlinkAccountApp),
-      /* groups of a specific account on a specific app (bypasses the caller's account filter) */
-      Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "apps" / string("code") / "groups" -> handler(managerListAccountAppGroups),
-      /* users in a specific group on a specific (account, app) */
-      Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "apps" / string("code") / "groups" / string("grp") / "users" -> handler(managerListGroupUsers),
     ).sandbox
 
     private def serviceRoutes = Routes(
-      Method.GET / "service" / "app" / string("app") /"users"    -> handler(usersByApp(testServiceToken)),
-      Method.GET / "service" / "app" / string("app") /"accounts" -> handler(accountsByApp(testServiceToken)),
+      Method.GET  / "service" / "app" / string("app") / "users"                                        -> handler(usersByApp(testServiceToken)),
+      Method.GET  / "service" / "app" / string("app") / "accounts"                                     -> handler(accountsByApp(testServiceToken)),
+      Method.GET  / "service" / "app" / string("app") / "admins"                                       -> handler(admins(testServiceToken)),
+      Method.POST / "service" / "app" / string("app") / "account" / long("acc") / "impersonate-admin"  -> handler(impersonateAccountAdmin(testServiceToken)),
     ).sandbox
 
     private def regular = Routes(
-      Method.POST / "application"                                               -> Handler.fromFunctionZIO[Request](createApplication),
-      Method.PUT  / "application"                                               -> Handler.fromFunctionZIO[Request](updateApplication),
-      Method.GET  / "applications"                                              -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
-      Method.GET  / "application" / string("app")                               -> handler(applicationGiven),
-      Method.POST / "login" / "provider"                                        -> Handler.fromFunctionZIO[Request](loginProvider),
-      Method.GET  / "login" / "provider"                                        -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
-      Method.POST / "login"                                                     -> Handler.fromFunctionZIO[Request](login),
-      Method.POST / "logoff"                                                    -> Handler.fromFunctionZIO[Request](logoff),
-      Method.POST / "verify"                                                    -> Handler.fromFunctionZIO[Request](verify),
-      Method.POST / "impersonate"                                               -> Handler.fromFunctionZIO[Request](impersonate),
-      Method.POST / "emit"                                                      -> Handler.fromFunctionZIO[Request](emitToken),
-      Method.GET  / "user"                                                      -> Handler.fromFunctionZIO[Request](userBy),
-      Method.POST / "user" / "pin" / "validate"                                 -> Handler.fromFunctionZIO[Request](validateUserPin),
-      Method.POST / "app" / string("app") / "login" / "email"                   -> handler(loginViaEmailLink),
-      Method.POST / "app" / string("app") / "user" / "pin"                      -> handler(protect(setUserPin)),
-      Method.POST / "app" / string("app") / "password" / "reset"                -> handler(protect(passwordResetLink)),
-      Method.POST / "app" / string("app") / "password" / "change"               -> handler(protect(changePassword)),
-      Method.GET  / "app" / string("app") / "users"                             -> handler(protect(usersGiven)),
-      Method.POST / "app" / string("app") / "user"                              -> handler(protect(storeUser)),
-      Method.POST / "app" / string("app") / "user"  / "delete"                  -> handler(protect(removeUser)),
-      Method.GET  / "app" / string("app") / "groups"                            -> handler(groupsGiven),
-      Method.POST / "app" / string("app") / "group"                             -> handler(protect(storeGroup)),
-      Method.POST / "app" / string("app") / "group" / "delete"                  -> handler(protect(removeGroup)),
-      Method.GET  / "app" / string("app") / "group"  / string("code") / "users" -> handler(groupUsers),
-      Method.GET  / "app" / string("app") / "roles"                             -> handler(rolesGiven),
-      Method.POST / "app" / string("app") / "account"                           -> handler(protect(provisionAccount)),
-      Method.POST / "app" / string("app") / "account" / "users"                 -> handler(protect(provisionUsers))
+      Method.GET  / "applications"                                               -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
+      Method.GET  / "application" / string("app")                                -> handler(applicationGiven),
+      Method.GET  / "application" / string("app") / "plans"                      -> handler(plansByApp),
+      Method.POST / "account" / "plans"                                          -> Handler.fromFunctionZIO[Request](plansByAccountInApp),
+      Method.POST / "login" / "provider"                                         -> Handler.fromFunctionZIO[Request](loginProvider),
+      Method.GET  / "login" / "provider"                                         -> Handler.fromFunctionZIO[Request](loginProviderForAccount),
+      Method.POST / "login"                                                      -> Handler.fromFunctionZIO[Request](login),
+      Method.POST / "provision"                                                  -> Handler.fromFunctionZIO[Request](provision),
+      Method.POST / "account" / "by-identifier"                                  -> Handler.fromFunctionZIO[Request](findAccountByIdentifier),
+      Method.POST / "logoff"                                                     -> Handler.fromFunctionZIO[Request](logoff),
+      Method.POST / "verify"                                                     -> Handler.fromFunctionZIO[Request](verify),
+      Method.POST / "impersonate"                                                -> Handler.fromFunctionZIO[Request](impersonate),
+      Method.POST / "emit"                                                       -> Handler.fromFunctionZIO[Request](emitToken),
+      Method.POST / "swap"                                                       -> Handler.fromFunctionZIO[Request](swapToken),
+      Method.GET  / "user"                                                       -> Handler.fromFunctionZIO[Request](userBy),
+      Method.POST / "user" / "pin" / "validate"                                  -> Handler.fromFunctionZIO[Request](validateUserPin),
+      Method.POST / "app" / string("app") / "login" / "email"                    -> handler(loginViaEmailLink),
+      Method.POST / "app" / string("app") / "user" / "pin"                       -> handler(protect(setUserPin)),
+      Method.POST / "app" / string("app") / "password" / "reset"                 -> handler(protect(passwordResetLink)),
+      Method.POST / "app" / string("app") / "password" / "change"                -> handler(protect(changePassword)),
+      Method.GET  / "app" / string("app") / "users"                              -> handler(protect(usersGiven)),
+      Method.POST / "app" / string("app") / "user"                               -> handler(protect(storeUser)),
+      Method.POST / "app" / string("app") / "user"  / "delete"                   -> handler(protect(removeUser)),
+      Method.GET  / "app" / string("app") / "groups"                             -> handler(groupsGiven),
+      Method.POST / "app" / string("app") / "group"                              -> handler(protect(storeGroup)),
+      Method.POST / "app" / string("app") / "group" / "delete"                   -> handler(protect(removeGroup)),
+      Method.GET  / "app" / string("app") / "group"  / string("code") / "users"  -> handler(groupUsers),
+      Method.POST / "app" / string("app") / "user"           / "groups" / "find" -> handler(groupsByUser),
+      Method.POST / "app" / string("app") / "user"                     / "groups"-> handler(setUserGroups),
+      Method.GET  / "app" / string("app") / "roles"                              -> handler(rolesGiven),
+      Method.POST / "app" / string("app") / "account"                            -> handler(protect(provisionAccount)),
+      Method.POST / "app" / string("app") / "account" / "users"                  -> handler(protect(provisionUsers))
     ).sandbox
 
     override def routes = Echo.routes ++ managerRoutes ++ regular ++ serviceRoutes @@ cors(corsConfig)
