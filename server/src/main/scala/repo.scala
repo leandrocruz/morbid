@@ -436,6 +436,20 @@ object repo {
         case r: FindTenantByCode       => tenantByCode(r)
         case r: FindPlanByCode         => planByCode(r)
         case r: GetAdmins              => admins(r)
+        case r: CreateApplication      => createApplication(r)
+        case r: UpdateApplication      => updateApplication(r)
+        case r: RemoveApplication      => removeApplication(r)
+        case   FindAllApplications     => allApplications
+        case r: FindApplicationsByAccountId => applicationsByAccountId(r)
+        case   FindAllAccounts         => allAccounts
+        case r: UnlinkAccountFromApp   => unlinkAccountFromApp(r)
+        case r: FindRolesByApp         => rolesByApp(r)
+        case r: FindTenants            => findTenants(r)
+        case r: StoreTenant            => storeTenant(r)
+        case r: RemoveTenant           => removeTenant(r)
+        case r: FindProvidersByAccount => findProvidersByAccount(r)
+        case r: StoreIdentityProvider  => storeIdentityProvider(r)
+        case r: RemoveIdentityProvider => removeIdentityProvider(r)
     }
 
     private def tenantByCode(request: FindTenantByCode): Task[Option[RawTenant]] = {
@@ -1580,6 +1594,248 @@ object repo {
       for
         rows <- exec(run(query))
       yield groupRows(rows)
+    }
+
+    /* ----------  Applications (admin-only) ---------- */
+
+    private def createApplication(request: CreateApplication): Task[RawApplicationDetails] = {
+      inline def stmt(row: ApplicationRow) = quote {
+        applications.insertValue(lift(row)).returning(a => a)
+      }
+
+      for
+        now <- Clock.localDateTime
+        row =  ApplicationRow(ApplicationId.of(0), now, None, true, request.code, request.name)
+        _   <- ZIO.log(s"Creating application '${request.code}' - name: '${request.name}'")
+        res <- exec(run(stmt(row)))
+      yield res.transformInto[RawApplicationDetails]
+    }
+
+    private def updateApplication(request: UpdateApplication): Task[RawApplicationDetails] = {
+      inline def stmt = quote {
+        applications
+          .filter(a => a.id == lift(request.id) && a.deleted.isEmpty)
+          .update(
+            _.name   -> lift(request.name),
+            _.active -> lift(request.active)
+          )
+          .returning(a => a)
+      }
+
+      for
+        _   <- ZIO.log(s"Updating application '${request.id}' - name: '${request.name}', active: ${request.active}")
+        row <- exec(run(stmt))
+      yield row.transformInto[RawApplicationDetails]
+    }
+
+    private def removeApplication(request: RemoveApplication): Task[Long] = {
+      for
+        now <- Clock.localDateTime
+        n   <- exec(run(quote {
+                 applications
+                   .filter(a => a.id == lift(request.id) && a.deleted.isEmpty)
+                   .update(_.deleted -> lift(Option(now): Option[LocalDateTime]), _.active -> lift(false))
+               }))
+      yield n
+    }
+
+    private def allApplications: Task[Seq[RawApplicationDetails]] = {
+      inline def query = quote {
+        applications.filter(_.deleted.isEmpty).sortBy(_.name)
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.map(_.transformInto[RawApplicationDetails])
+    }
+
+    private def applicationsByAccountId(request: FindApplicationsByAccountId): Task[Seq[RawApplicationDetails]] = {
+      inline def query = quote {
+        for {
+          acc <- accounts                              if acc.deleted.isEmpty && acc.active && acc.id == lift(request.account)
+          a2a <- account2app  .join(_.acc == acc.id)   if a2a.deleted.isEmpty
+          app <- applications .join(_.id == a2a.app)   if app.deleted.isEmpty && app.active
+        } yield app
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.map(_.transformInto[RawApplicationDetails])
+    }
+
+    private def unlinkAccountFromApp(request: UnlinkAccountFromApp): Task[Unit] = {
+      inline def stmt(at: LocalDateTime) = quote {
+        account2app
+          .filter(a => a.acc == lift(request.acc) && a.app == lift(request.app) && a.deleted.isEmpty)
+          .update(_.deleted -> Some(lift(at)))
+      }
+
+      for
+        now <- Clock.localDateTime
+        _   <- exec(run(stmt(now)))
+      yield ()
+    }
+
+    /* ----------  Accounts (admin-only, system-wide) ---------- */
+
+    private def allAccounts: Task[Seq[RawAccount]] = {
+      inline def query = quote {
+        for
+          acc <- accounts if acc.deleted.isEmpty
+          ten <- tenants.join(_.id == acc.tenant) if ten.deleted.isEmpty
+        yield (ten, acc)
+      }
+
+      for
+        rows <- exec(run(query))
+      yield rows.map {
+        (tenant, account) => account.into[RawAccount].withFieldConst(_.tenantCode, tenant.code).transform
+      }
+    }
+
+    /* ----------  Roles (admin-only, by app) ---------- */
+
+    private def rolesByApp(request: FindRolesByApp): Task[Seq[RawRole]] = {
+      inline def query = quote {
+        for {
+          app <- applications                           if app.deleted.isEmpty && app.active && app.code == lift(request.app)
+          rol <- roles        .join(_.app == app.id)    if rol.deleted.isEmpty
+          per <- permissions  .leftJoin(_.rid == rol.id) if per.exists(_.deleted.isEmpty)
+        } yield (rol, per)
+      }
+
+      for {
+        rows <- exec(run(query))
+      } yield rows.groupBy(_._1).map { case (rol, _) =>
+        rol.into[RawRole].withFieldConst(_.permissions, Seq.empty).transform
+      }.toSeq
+    }
+
+    /* ----------  Tenants (admin-only) ---------- */
+
+    private def findTenants(request: FindTenants): Task[Seq[RawTenantDetails]] = {
+      inline def query = quote { tenants.filter(_.deleted.isEmpty) }
+      for
+        rows <- exec(run(query))
+      yield rows.map(_.transformInto[RawTenantDetails])
+    }
+
+    private def storeTenant(request: StoreTenant): Task[RawTenantDetails] = {
+
+      def build(now: LocalDateTime, id: TenantId) = RawTenantDetails(
+        id      = id,
+        created = now,
+        deleted = None,
+        active  = request.active,
+        code    = request.code,
+        name    = request.name,
+      )
+
+      def insert(now: LocalDateTime): Task[RawTenantDetails] = {
+        val row = build(now, TenantId.of(0)).transformInto[TenantRow]
+        inline def stmt = quote { tenants.insertValue(lift(row)).returning(_.id) }
+        for
+          id <- exec(run(stmt))
+        yield build(now, id)
+      }
+
+      def update(id: TenantId, now: LocalDateTime): Task[RawTenantDetails] = {
+        inline def stmt = quote {
+          tenants.filter(_.id == lift(id)).update(
+            _.code   -> lift(request.code),
+            _.name   -> lift(request.name),
+            _.active -> lift(request.active),
+          )
+        }
+        for
+          _ <- exec(run(stmt))
+        yield build(now, id)
+      }
+
+      for
+        now    <- Clock.localDateTime
+        result <- request.id match
+          case Some(id) => update(id, now)
+          case None     => insert(now)
+      yield result
+    }
+
+    private def removeTenant(request: RemoveTenant): Task[Long] = {
+      for
+        now <- Clock.localDateTime
+        n   <- exec(run(quote {
+                 tenants
+                   .filter(t => t.id == lift(request.id) && t.deleted.isEmpty)
+                   .update(_.deleted -> lift(Option(now): Option[LocalDateTime]), _.active -> lift(false))
+               }))
+      yield n
+    }
+
+    /* ----------  Identity Providers (admin-only) ---------- */
+
+    private def findProvidersByAccount(request: FindProvidersByAccount): Task[Seq[RawIdentityProvider]] = {
+      inline def query = quote {
+        providers.filter(p => p.account == lift(request.account) && p.deleted.isEmpty)
+      }
+      for
+        rows <- exec(run(query))
+      yield rows.map(_.transformInto[RawIdentityProvider])
+    }
+
+    private def storeIdentityProvider(request: StoreIdentityProvider): Task[RawIdentityProvider] = {
+
+      def build(now: LocalDateTime, id: ProviderId) = RawIdentityProvider(
+        id      = id,
+        created = now,
+        deleted = None,
+        account = request.account,
+        active  = request.active,
+        domain  = request.domain,
+        kind    = request.kind,
+        code    = request.code,
+        name    = request.name,
+      )
+
+      def insert(now: LocalDateTime): Task[RawIdentityProvider] = {
+        val row = build(now, ProviderId.of(0)).transformInto[IdentityProviderRow]
+        inline def stmt = quote { providers.insertValue(lift(row)).returning(_.id) }
+        for
+          id <- exec(run(stmt))
+        yield build(now, id)
+      }
+
+      def update(id: ProviderId, now: LocalDateTime): Task[RawIdentityProvider] = {
+        inline def stmt = quote {
+          providers.filter(p => p.id == lift(id) && p.account == lift(request.account)).update(
+            _.active -> lift(request.active),
+            _.domain -> lift(request.domain),
+            _.kind   -> lift(request.kind),
+            _.code   -> lift(request.code),
+            _.name   -> lift(request.name),
+          )
+        }
+        for
+          _ <- exec(run(stmt))
+        yield build(now, id)
+      }
+
+      for
+        now    <- Clock.localDateTime
+        result <- request.id match
+          case Some(id) => update(id, now)
+          case None     => insert(now)
+      yield result
+    }
+
+    private def removeIdentityProvider(request: RemoveIdentityProvider): Task[Long] = {
+      for
+        now <- Clock.localDateTime
+        n   <- exec(run(quote {
+                 providers
+                   .filter(p => p.id == lift(request.id) && p.account == lift(request.account) && p.deleted.isEmpty)
+                   .update(_.deleted -> lift(Option(now): Option[LocalDateTime]), _.active -> lift(false))
+               }))
+      yield n
     }
   }
 }

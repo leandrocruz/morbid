@@ -17,6 +17,7 @@ import morbid.gip.*
 import morbid.legacy.{CreateLegacyAccountRequest, CreateLegacyUserRequest, LegacyMorbid, LegacyUser}
 import morbid.passwords.PasswordGenerator
 import morbid.pins.PinManager
+import morbid.protocol.{given, *}
 import morbid.proto.*
 import morbid.repo.Repo
 import morbid.secure.{AppRoute, appRoute, role}
@@ -151,6 +152,24 @@ object router {
         case None              => Response.notFound
         case Some(application) => Response.json(application.toJson)
     }
+
+    private def createApplication(request: Request): Task[Response] = ensureResponse {
+      for
+        tk      <- tokenFrom(request)
+        req     <- request.body.parse[CreateApplicationRequest]().mapError(e => ReturnResponseError(Response.badRequest(e.getMessage)))
+        _       <- ZIO.logInfo(s"Creating application '${req.code}' - name: '${req.name}' || Requested by: ${tk.user.details.email}")
+        created <- repo.exec(CreateApplication(req.code, req.name))
+      yield Response.json(created.toJson)
+    }.toTask
+
+    private def updateApplication(request: Request): Task[Response] = ensureResponse {
+      for
+        tk      <- tokenFrom(request)
+        req     <- request.body.parse[UpdateApplicationRequest]().mapError(e => ReturnResponseError(Response.badRequest(e.getMessage)))
+        _       <- ZIO.logInfo(s"Updating application '${req.id}' - name: '${req.name}', active: ${req.active} || Requested by: ${tk.user.details.email}")
+        updated <- repo.exec(UpdateApplication(req.id, req.name, req.active))
+      yield Response.json(updated.toJson)
+    }.toTask
 
     // Public: pricing/signup pages need to fetch the plan catalog before the user is authenticated.
     private def plansByApp(app: String, request: Request): Task[Response] = {
@@ -877,6 +896,232 @@ object router {
       yield Response.json(true.toJson)
     }
 
+    private def managerGetTenants(app: String, request: Request) = ensureResponse {
+      for
+        _    <- requireRootAccount(request)
+        rows <- repo.exec(FindTenants())
+      yield Response.json(rows.toJson)
+    }.toTask
+
+    private def managerStoreTenant(app: String, request: Request) = ensureResponse {
+      for
+        tk  <- tokenFrom(request)
+        _   <- requireRootAccount(request)
+        req <- request.body.parse[StoreTenantRequest]().mapError(errors.badRequest("Error parsing StoreTenantRequest"))
+        _   <- ZIO.logInfo(s"Store tenant ${req.id}-${req.code} || Requested by: ${tk.user.details.email}")
+        out <- repo.exec(StoreTenant(id = req.id, code = req.code, name = req.name, active = req.active))
+      yield Response.json(out.toJson)
+    }.toTask
+
+    private def managerUpdateTenant(app: String, id: Long, request: Request) = ensureResponse {
+      for
+        tk  <- tokenFrom(request)
+        _   <- requireRootAccount(request)
+        raw <- request.body.parse[StoreTenantRequest]().mapError(errors.badRequest("Error parsing StoreTenantRequest"))
+        _   <- ZIO.logInfo(s"Update tenant $id || Requested by: ${tk.user.details.email}")
+        out <- repo.exec(StoreTenant(id = Some(TenantId.of(id)), code = raw.code, name = raw.name, active = raw.active))
+      yield Response.json(out.toJson)
+    }.toTask
+
+    private def managerRemoveTenant(app: String, id: Long, request: Request) = ensureResponse {
+      for
+        tk <- tokenFrom(request)
+        _  <- requireRootAccount(request)
+        _  <- ZIO.logInfo(s"Delete tenant $id || Requested by: ${tk.user.details.email}")
+        n  <- repo.exec(RemoveTenant(TenantId.of(id)))
+      yield Response.json(n.toJson)
+    }.toTask
+
+    private def managerGetProviders(app: String, acc: Long, request: Request) = ensureResponse {
+      for
+        _    <- requireRootAccount(request)
+        rows <- repo.exec(FindProvidersByAccount(AccountId.of(acc)))
+      yield Response.json(rows.toJson)
+    }.toTask
+
+    private def managerStoreProvider(app: String, acc: Long, request: Request) = ensureResponse {
+      for
+        tk  <- tokenFrom(request)
+        _   <- requireRootAccount(request)
+        raw <- request.body.parse[StoreIdentityProviderRequest]().mapError(errors.badRequest("Error parsing StoreIdentityProviderRequest"))
+        _   <- ZIO.logInfo(s"Store provider ${raw.code} on account $acc || Requested by: ${tk.user.details.email}")
+        out <- repo.exec(StoreIdentityProvider(
+                 id      = raw.id,
+                 account = AccountId.of(acc),
+                 active  = raw.active,
+                 domain  = raw.domain,
+                 kind    = raw.kind,
+                 code    = raw.code,
+                 name    = raw.name,
+               ))
+      yield Response.json(out.toJson)
+    }.toTask
+
+    private def managerUpdateProvider(app: String, acc: Long, id: Long, request: Request) = ensureResponse {
+      for
+        tk  <- tokenFrom(request)
+        _   <- requireRootAccount(request)
+        raw <- request.body.parse[StoreIdentityProviderRequest]().mapError(errors.badRequest("Error parsing StoreIdentityProviderRequest"))
+        _   <- ZIO.logInfo(s"Update provider $id on account $acc || Requested by: ${tk.user.details.email}")
+        out <- repo.exec(StoreIdentityProvider(
+                 id      = Some(ProviderId.of(id)),
+                 account = AccountId.of(acc),
+                 active  = raw.active,
+                 domain  = raw.domain,
+                 kind    = raw.kind,
+                 code    = raw.code,
+                 name    = raw.name,
+               ))
+      yield Response.json(out.toJson)
+    }.toTask
+
+    private def managerRemoveProvider(app: String, acc: Long, id: Long, request: Request) = ensureResponse {
+      for
+        tk <- tokenFrom(request)
+        _  <- requireRootAccount(request)
+        _  <- ZIO.logInfo(s"Delete provider $id on account $acc || Requested by: ${tk.user.details.email}")
+        n  <- repo.exec(RemoveIdentityProvider(AccountId.of(acc), ProviderId.of(id)))
+      yield Response.json(n.toJson)
+    }.toTask
+
+    private def managerRemoveApplication(id: Long, request: Request) = ensureResponse {
+      for
+        tk <- tokenFrom(request)
+        _  <- requireRootAccount(request)
+        _  <- ZIO.logInfo(s"Delete application $id || Requested by: ${tk.user.details.email}")
+        n  <- repo.exec(RemoveApplication(ApplicationId.of(id)))
+      yield Response.json(n.toJson)
+    }.toTask
+
+    private def managerListApiKeys(app: String, acc: Long, request: Request) = ensureResponse {
+      for
+        _     <- requireRootAccount(request)
+        all   <- repo.exec(UsersByAccount(ApplicationCode.of(app), AccountId.of(acc)))
+        keys   = all.filter(_.kind.contains(UserKind.SA))
+      yield Response.json(keys.toJson)
+    }.toTask
+
+    private def managerIssueApiKey(app: String, acc: Long, request: Request) = ensureResponse {
+
+      def ensureUser(email: Email)(maybe: Option[RawUser]) = {
+        maybe.flatMap(u => u.details.kind.map(k => (u, k))) match
+          case Some(user, UserKind.SA) => ZIO.succeed(user)
+          case Some(_   , _ )          => ZIO.fail(Exception(s"User '$email' exists but is not a service account"))
+          case None                    => ZIO.fail(Exception(s"Service account '$email' not found after creation"))
+      }
+
+      for
+        owner    <- tokenFrom(request)
+        _        <- requireRootAccount(request)
+        req      <- request.body.parse[CreateApiKeyRequest]().mapError(errors.badRequest("Error parsing CreateApiKeyRequest"))
+        _        <- ZIO.logInfo(s"Issue API key for '${req.email}' on account $acc || Requested by: ${owner.user.details.email}")
+        storeReq  = StoreUserRequest(
+                      id       = None,
+                      code     = None,
+                      kind     = Some(UserKind.SA),
+                      email    = req.email,
+                      password = None,
+                      tenant   = None,
+                      active   = true,
+                      update   = false,
+                    )
+        bodyJson  = storeReq.toJson
+        synthetic = request.copy(body = Body.fromString(bodyJson))
+        response <- storeUserCommon(
+                      synthetic,
+                      ()   => repo.exec(FindAccountById(AccountId.of(acc))).orFail(AccountNotFound, s"Can't find account '$acc'"),
+                      ()   => repo.exec(FindApplicationDetails(ApplicationCode.of(app))).orFail(ApplicationNotFound, s"Can't find application '$app'"),
+                      user => ZIO.unit,
+                    )
+        _        <- ZIO.when(response.status.code != 200) { ZIO.fail(ReturnResponseError(response)) }
+        pair     <- tokenGiven(req.email, req.days.getOrElse(365), Some(owner)) { ensureUser(req.email) }
+        (_, enc)  = pair
+        maybe    <- repo.exec(FindUserByEmail(req.email))
+        user     <- ZIO.fromOption(maybe).mapError(_ => Exception(s"Service account '${req.email}' missing after creation"))
+        entry     = user.details.transformInto[RawUserEntry]
+      yield Response.json(ApiKeyIssued(entry, enc).toJson)
+    }.toTask
+
+    private def managerRemoveApiKey(app: String, acc: Long, code: String, request: Request) = ensureResponse {
+      for
+        tk <- tokenFrom(request)
+        _  <- requireRootAccount(request)
+        _  <- ZIO.logInfo(s"Revoke API key $code on account $acc || Requested by: ${tk.user.details.email}")
+        _  <- removeUserCommon(AccountId.of(acc), UserCode.of(code))
+      yield Response.json(true.toJson)
+    }.toTask
+
+    private def managerListApplications(app: String, request: Request) = ensureResponse {
+      for
+        _    <- requireRootAccount(request)
+        rows <- repo.exec(FindAllApplications)
+      yield Response.json(rows.toJson)
+    }.toTask
+
+    private def managerListAllAccounts(app: String, request: Request) = ensureResponse {
+      for
+        _    <- requireRootAccount(request)
+        rows <- repo.exec(FindAllAccounts)
+      yield Response.json(rows.toJson)
+    }.toTask
+
+    private def managerListAccountApps(app: String, acc: Long, request: Request) = ensureResponse {
+      for
+        _    <- requireRootAccount(request)
+        rows <- repo.exec(FindApplicationsByAccountId(AccountId.of(acc)))
+      yield Response.json(rows.toJson)
+    }.toTask
+
+    private def managerLinkAccountApp(app: String, acc: Long, code: String, request: Request) = ensureResponse {
+      for
+        tk       <- tokenFrom(request)
+        _        <- requireRootAccount(request)
+        details  <- repo.exec(FindApplicationDetails(ApplicationCode.of(code)))
+                      .someOrFail(ReturnResponseError(Response.notFound(s"Application '$code' not found")))
+        _        <- ZIO.logInfo(s"Link account $acc to app '$code' || Requested by: ${tk.user.details.email}")
+        _        <- repo.exec(LinkAccountToApp(AccountId.of(acc), details.id))
+      yield Response.json(true.toJson)
+    }.toTask
+
+    private def managerUnlinkAccountApp(app: String, acc: Long, code: String, request: Request) = ensureResponse {
+      for
+        tk       <- tokenFrom(request)
+        _        <- requireRootAccount(request)
+        details  <- repo.exec(FindApplicationDetails(ApplicationCode.of(code)))
+                      .someOrFail(ReturnResponseError(Response.notFound(s"Application '$code' not found")))
+        _        <- ZIO.logInfo(s"Unlink account $acc from app '$code' || Requested by: ${tk.user.details.email}")
+        _        <- repo.exec(UnlinkAccountFromApp(AccountId.of(acc), details.id))
+      yield Response.json(true.toJson)
+    }.toTask
+
+    private def managerListAppRoles(app: String, code: String, request: Request) = ensureResponse {
+      for
+        _    <- requireRootAccount(request)
+        rows <- repo.exec(FindRolesByApp(ApplicationCode.of(code)))
+      yield Response.json(rows.toJson)
+    }.toTask
+
+    private def managerListAccountAppGroups(app: String, acc: Long, code: String, request: Request) = ensureResponse {
+      val appCode = ApplicationCode.of(code)
+      for
+        _       <- requireRootAccount(request)
+        account <- repo.exec(FindAccountById(AccountId.of(acc)))
+                     .someOrFail(ReturnResponseError(Response.notFound(s"Account '$acc' not found")))
+        map     <- repo.exec(FindGroups(account.code, Seq(appCode)))
+      yield Response.json(map.getOrElse(appCode, Seq.empty).toJson)
+    }.toTask
+
+    private def managerListGroupUsers(app: String, acc: Long, code: String, grp: String, request: Request) = ensureResponse {
+      val appCode   = ApplicationCode.of(code)
+      val groupCode = GroupCode.of(grp)
+      for
+        _       <- requireRootAccount(request)
+        account <- repo.exec(FindAccountById(AccountId.of(acc)))
+                     .someOrFail(ReturnResponseError(Response.notFound(s"Account '$acc' not found")))
+        users   <- repo.exec(FindUsersInGroup(account.code, appCode, Some(groupCode)))
+      yield Response.json(users.toJson)
+    }.toTask
+
     private def admins(validateToken: ValidateToken)(app: String, request: Request) = {
       entitiesByValidate(validateToken)(request, GetAdmins(request.query("account").toOption.map(AccountId.of), ApplicationCode.of(app)))
     }
@@ -929,6 +1174,32 @@ object router {
       Method.POST   / "app" / string("app") / "manager/account" / long("acc") / "user"                  -> handler(managerStoreUser),
       Method.DELETE / "app" / string("app") / "manager/account" / long("acc") / "user" / string("code") -> handler(managerRemoveUser),
       Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "users"                 -> handler(managerGetUsers),
+      /* tenants */
+      Method.GET    / "app" / string("app") / "manager/tenants"                                         -> handler(managerGetTenants),
+      Method.POST   / "app" / string("app") / "manager/tenants"                                         -> handler(managerStoreTenant),
+      Method.PUT    / "app" / string("app") / "manager/tenants" / long("id")                            -> handler(managerUpdateTenant),
+      Method.DELETE / "app" / string("app") / "manager/tenants" / long("id")                            -> handler(managerRemoveTenant),
+      /* identity providers per account */
+      Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "providers"             -> handler(managerGetProviders),
+      Method.POST   / "app" / string("app") / "manager/account" / long("acc") / "providers"             -> handler(managerStoreProvider),
+      Method.PUT    / "app" / string("app") / "manager/account" / long("acc") / "providers" / long("id")-> handler(managerUpdateProvider),
+      Method.DELETE / "app" / string("app") / "manager/account" / long("acc") / "providers" / long("id")-> handler(managerRemoveProvider),
+      /* api keys (service accounts) per account */
+      Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "api-keys"              -> handler(managerListApiKeys),
+      Method.POST   / "app" / string("app") / "manager/account" / long("acc") / "api-keys"              -> handler(managerIssueApiKey),
+      Method.DELETE / "app" / string("app") / "manager/account" / long("acc") / "api-keys" / string("code") -> handler(managerRemoveApiKey),
+      /* applications: system-wide listing + per-account enable/disable */
+      Method.GET    / "app" / string("app") / "manager/applications"                                    -> handler(managerListApplications),
+      /* accounts: system-wide listing (no X-Admin-App filter) */
+      Method.GET    / "app" / string("app") / "manager/accounts/all"                                    -> handler(managerListAllAccounts),
+      Method.GET    / "app" / string("app") / "manager/applications" / string("code") / "roles"         -> handler(managerListAppRoles),
+      Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "apps"                  -> handler(managerListAccountApps),
+      Method.POST   / "app" / string("app") / "manager/account" / long("acc") / "apps" / string("code") -> handler(managerLinkAccountApp),
+      Method.DELETE / "app" / string("app") / "manager/account" / long("acc") / "apps" / string("code") -> handler(managerUnlinkAccountApp),
+      /* groups of a specific account on a specific app (bypasses the caller's account filter) */
+      Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "apps" / string("code") / "groups" -> handler(managerListAccountAppGroups),
+      /* users in a specific group on a specific (account, app) */
+      Method.GET    / "app" / string("app") / "manager/account" / long("acc") / "apps" / string("code") / "groups" / string("grp") / "users" -> handler(managerListGroupUsers),
     ).sandbox
 
     private def serviceRoutes = Routes(
@@ -939,6 +1210,9 @@ object router {
     ).sandbox
 
     private def regular = Routes(
+      Method.POST   / "application"                                              -> Handler.fromFunctionZIO[Request](createApplication),
+      Method.PUT    / "application"                                              -> Handler.fromFunctionZIO[Request](updateApplication),
+      Method.DELETE / "application" / long("id")                                 -> handler(managerRemoveApplication),
       Method.GET  / "applications"                                               -> Handler.fromFunctionZIO[Request](applicationDetailsGiven),
       Method.GET  / "application" / string("app")                                -> handler(applicationGiven),
       Method.GET  / "application" / string("app") / "plans"                      -> handler(plansByApp),
