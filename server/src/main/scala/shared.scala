@@ -259,4 +259,66 @@ object commands {
   case class RemoveAccount (id: AccountId)                                       extends Command[Unit]
   case class RemoveUser    (acc: AccountId, code: UserCode)                      extends Command[Long]
   case class RemoveGroup   (acc: AccountId, app: ApplicationId, code: GroupCode) extends Command[Long]
+
+  /* applications (admin) */
+
+  case class CreateApplication(
+    code : ApplicationCode,
+    name : ApplicationName,
+  ) extends Command[RawApplicationDetails]
+
+  case class UpdateApplication(
+    id     : ApplicationId,
+    name   : ApplicationName,
+    active : Boolean,
+  ) extends Command[RawApplicationDetails]
+
+  case class RemoveApplication(id: ApplicationId) extends Command[Long]
+
+  /** All applications in the system, regardless of account linkage. Admin-only. */
+  case object FindAllApplications extends Command[Seq[RawApplicationDetails]]
+
+  /** Applications linked to a specific account (by id). Admin-only use. */
+  case class FindApplicationsByAccountId(account: AccountId) extends Command[Seq[RawApplicationDetails]]
+
+  /** All accounts in the system, regardless of account/app linkage. Admin-only. */
+  case object FindAllAccounts extends Command[Seq[RawAccount]]
+
+  /** Soft-delete the account/app link (sets deleted timestamp). Admin-only. */
+  case class UnlinkAccountFromApp(
+    acc: AccountId,
+    app: ApplicationId,
+  ) extends Command[Unit]
+
+  /** All roles on an application, regardless of account linkage. Admin-only. */
+  case class FindRolesByApp(app: ApplicationCode) extends Command[Seq[RawRole]]
+
+  /* tenants (admin) */
+
+  case class FindTenants() extends Command[Seq[RawTenantDetails]]
+
+  case class StoreTenant(
+    id     : Option[TenantId],
+    code   : TenantCode,
+    name   : TenantName,
+    active : Boolean,
+  ) extends Command[RawTenantDetails]
+
+  case class RemoveTenant(id: TenantId) extends Command[Long]
+
+  /* identity providers (admin) */
+
+  case class FindProvidersByAccount(account: AccountId) extends Command[Seq[RawIdentityProvider]]
+
+  case class StoreIdentityProvider(
+    id      : Option[ProviderId],
+    account : AccountId,
+    active  : Boolean,
+    domain  : Domain,
+    kind    : ProviderKind,
+    code    : ProviderCode,
+    name    : ProviderName,
+  ) extends Command[RawIdentityProvider]
+
+  case class RemoveIdentityProvider(account: AccountId, id: ProviderId) extends Command[Long]
 }

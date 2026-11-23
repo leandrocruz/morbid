@@ -17,6 +17,7 @@ object tokens {
   import javax.crypto.spec.SecretKeySpec
   import java.time.{ZoneId, ZonedDateTime, LocalDateTime}
   import io.scalaland.chimney.dsl.*
+  import morbid.transformers.given
 
   trait TokenGenerator {
     def verify(payload: String)              : Task[Token]
