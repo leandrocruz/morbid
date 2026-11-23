@@ -1,6 +1,8 @@
 # Morbid
 
-## Unreleased
+## Release v3.0.1
+## Release v3.0.0
+LTS: 23/11/2026
 
  - [Leandro] morbid-server: gate `POST /application` and `PUT /application` with `requireRootAccount`. The handlers at `router.scala:createApplication`/`updateApplication` were only verifying that a JWT was present, so any authenticated morbid user (not just the root `oystr` account) could create a new application or rename/deactivate any existing one — including setting `active=false` on `presto` itself. Not exploitable through the admin-UI (admin-api still gates on root + `adm`), but exploitable by any caller reaching morbid directly. Every other `/manager/...` route on this branch already had this check; these two did not because they live in the `regular` routes block with the legacy `/application` path.
  - [Leandro] admin: API key creation now lets the admin pick which groups the service account joins. New `groups: List[GroupCode]` field on `CreateApiKeyRequest` (commons/shared) and `CreateApiKeyBody` (admin-api DTO); admin-api forwards it to morbid-server, and `managerIssueApiKey` calls `SetUserGroups(acc, app, user, groups)` after `storeUserCommon` when the list is non-empty — replacing the default "all" auto-link with the chosen set. Admin UI: the "New API Key" modal now shows a checkbox list of groups available on (selected app, account), loaded from `listGroups(app, Some(acc))` and refreshed when the TopBar app selector changes; the picker gracefully degrades to a hint when no app is picked. Leaving the list empty preserves today's behavior (SA joins only `all`). i18n keys (EN + PT) added for the new labels.
