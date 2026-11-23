@@ -1,5 +1,11 @@
 # Morbid
 
+## Release v3.0.2
+LTS: 23/11/2026
+
+ - [Matheus] Hotfix: token voltou a carregar os planos (e as features) das contas. Desde a v3.0.0, o `Transformer[RawApplication, CompactApplication]` de `commons/jvm/.../chimney.scala` (usado pelo `jwt.scala` no login, swap e impersonação) montava o `CompactApplication` só com `id`, `code` e `groups`, e todo token emitido saía com `plans` vazio: para o presto-api e o console, as contas apareciam sem plano (ex.: 3982 e 3256), mesmo com o `account_to_plan` correto no banco. Os transformers agora delegam para `CompactApplication.of`/`CompactGroup.of` de `domain.token`. Teste de regressão em `PlansSpec`. Quem fez login entre o deploy da v3.0.0 e este precisa logar de novo para receber um token com os planos
+ - [Matheus] `ThisBuild / version` em `v3.0.2` (a imagem v3.0.0 foi gerada com o jar ainda como `v2.11.0`)
+
 ## Release v3.0.1
 ## Release v3.0.0
 LTS: 23/11/2026

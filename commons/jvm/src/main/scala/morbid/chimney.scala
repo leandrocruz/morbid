@@ -8,6 +8,8 @@ object transformers {
   import io.scalaland.chimney.Transformer
   import io.scalaland.chimney.dsl.*
 
-  given Transformer[RawGroup, CompactGroup]             = (original: RawGroup)       => CompactGroup(code = original.code, roles = original.roles.map(_.code))
-  given Transformer[RawApplication, CompactApplication] = (original: RawApplication) => CompactApplication(id = original.details.id, code = original.details.code, groups = original.groups.map(_.transformInto[CompactGroup]))
+  // Delegam para os construtores de domain.token, que montam groups E plans. Um Transformer
+  // escrito à mão aqui já deixou os planos de fora do token (v3.0.0/v3.0.1).
+  given Transformer[RawGroup, CompactGroup]             = CompactGroup.of(_)
+  given Transformer[RawApplication, CompactApplication] = CompactApplication.of(_)
 }
