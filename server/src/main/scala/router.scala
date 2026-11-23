@@ -156,6 +156,7 @@ object router {
     private def createApplication(request: Request): Task[Response] = ensureResponse {
       for
         tk      <- tokenFrom(request)
+        _       <- requireRootAccount(request)
         req     <- request.body.parse[CreateApplicationRequest]().mapError(e => ReturnResponseError(Response.badRequest(e.getMessage)))
         _       <- ZIO.logInfo(s"Creating application '${req.code}' - name: '${req.name}' || Requested by: ${tk.user.details.email}")
         created <- repo.exec(CreateApplication(req.code, req.name))
@@ -165,6 +166,7 @@ object router {
     private def updateApplication(request: Request): Task[Response] = ensureResponse {
       for
         tk      <- tokenFrom(request)
+        _       <- requireRootAccount(request)
         req     <- request.body.parse[UpdateApplicationRequest]().mapError(e => ReturnResponseError(Response.badRequest(e.getMessage)))
         _       <- ZIO.logInfo(s"Updating application '${req.id}' - name: '${req.name}', active: ${req.active} || Requested by: ${tk.user.details.email}")
         updated <- repo.exec(UpdateApplication(req.id, req.name, req.active))
