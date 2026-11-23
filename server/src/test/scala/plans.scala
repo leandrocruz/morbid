@@ -105,5 +105,35 @@ object PlansSpec extends ZIOSpecDefault {
         val token = buildToken(Seq.empty)
         assertTrue(token.features.isEmpty, !token.hasFeature(FeatureCode.of("tfa")), token.featureValue(FeatureCode.of("tfa")) == None)
       },
+      test("RawUser -> CompactUser (the conversion jwt.scala uses) keeps groups and plans") {
+        // Regressão v3.0.0/v3.0.1: o Transformer de morbid.transformers montava o CompactApplication
+        // sem os planos, e todo token emitido saía sem features.
+        import io.scalaland.chimney.dsl.*
+        import morbid.transformers.given
+        given ApplicationCode = ApplicationCode.of("presto")
+
+        val ts      = LocalDateTime.now
+        val appId   = ApplicationId.of(2)
+        val details = buildToken(Seq.empty).user.details
+        val ftr     = RawFeature(id = FeatureId.of(1), created = ts, deleted = None, app = appId, code = FeatureCode.of("credentials"), name = FeatureName.of("Credenciais"))
+        val pln     = RawPlan(id = PlanId.of(1), created = ts, deleted = None, active = true, app = appId, code = PlanCode.of("default"), name = PlanName.of("Default"), features = Seq(RawPlanFeature(ftr, Some(3L))))
+        val role    = RawRole(id = RoleId.of(1), created = ts, deleted = None, code = RoleCode.of("adm"), name = RoleName.of("Admin"))
+        val grp     = RawGroup(id = GroupId.of(1), created = ts, deleted = None, code = GroupCode.of("all"), name = GroupName.of("All"), roles = Seq(role))
+        val app     = RawApplication(
+          details = RawApplicationDetails(id = appId, created = ts, deleted = None, active = true, code = ApplicationCode.of("presto"), name = ApplicationName.of("Presto")),
+          groups  = Seq(grp),
+          plans   = Seq(pln),
+        )
+
+        val user  = RawUser(details, Seq(app)).transformInto[CompactUser]
+        val token = Token(created = now, expires = None, user = user)
+        val capp  = user.applications.head
+
+        assertTrue(
+          capp.plans  == Seq(plan("default", feature("credentials", Some(3L)))),
+          capp.groups == Seq(CompactGroup(GroupCode.of("all"), Seq(RoleCode.of("adm")))),
+          token.hasFeature(FeatureCode.of("credentials")),
+        )
+      },
     )
 }
